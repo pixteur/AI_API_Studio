@@ -24,7 +24,7 @@ def _bootstrap():
         return
     pkgs = [pkg for _, pkg in missing]
     print("\n" + "="*52)
-    print("  🍌 Nano Banana Studio — First-run Setup")
+    print("  Nano Banana Studio - First-run Setup")
     print("="*52)
     print(f"  Missing packages: {', '.join(pkgs)}")
     print("  Installing automatically... (one-time only)\n")
@@ -32,9 +32,9 @@ def _bootstrap():
         subprocess.check_call(
             [sys.executable, "-m", "pip", "install", "--quiet"] + pkgs
         )
-        print("\n  ✅ Done! Starting Nano Banana Studio...\n")
+        print("\n  Done! Starting Nano Banana Studio...\n")
     except subprocess.CalledProcessError as e:
-        print(f"\n  ❌ Install failed: {e}")
+        print(f"\n  Install failed: {e}")
         print("  Try manually: pip install -r requirements.txt")
         sys.exit(1)
 

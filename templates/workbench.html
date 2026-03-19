@@ -317,8 +317,8 @@ function renderRecentRuns(rows) {
   body.innerHTML = rows.map(row => `
     <tr>
       <td>${escapeHtml(row.created_at_label || '')}</td>
-      <td>${escapeHtml(row.client_name || '—')}</td>
-      <td>${escapeHtml(row.project_name || '—')}</td>
+      <td>${escapeHtml(row.client_name || '-')}</td>
+      <td>${escapeHtml(row.project_name || '-')}</td>
       <td>${escapeHtml(row.task_name || '')}</td>
       <td>${escapeHtml(row.status || 'planned')}</td>
       <td>${escapeHtml(row.run_count || 0)}</td>
@@ -365,10 +365,10 @@ function renderResults(result, taskRun) {
   `).join('');
   const textBlock = result.text ? `<div class="wb-result-text">${escapeHtml(result.text)}</div>` : '';
   const lastRunLabel = taskRun && taskRun.last_run_at_label ? taskRun.last_run_at_label : 'just now';
-  byId('lastRunMeta').textContent = `${images.length} images generated • $${Number(result.cost || 0).toFixed(4)} • ${lastRunLabel}`;
+  byId('lastRunMeta').textContent = `${images.length} images generated  -  $${Number(result.cost || 0).toFixed(4)}  -  ${lastRunLabel}`;
   byId('resultsPanel').className = '';
   byId('resultsPanel').innerHTML = `
-    <div class="wb-result-topline"><strong>${images.length} images generated</strong><span>${escapeHtml((result.params || {}).aspectRatio || '')} • ${escapeHtml((result.params || {}).imageSize || '')}</span></div>
+    <div class="wb-result-topline"><strong>${images.length} images generated</strong><span>${escapeHtml((result.params || {}).aspectRatio || '')}  -  ${escapeHtml((result.params || {}).imageSize || '')}</span></div>
     <div class="wb-results-grid">${cards || ''}</div>
     ${textBlock}
   `;

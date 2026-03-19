@@ -139,8 +139,8 @@ function renderRecentRuns(rows) {
     return `
       <tr>
         <td>${escapeHtml(row.created_at_label || '')}</td>
-        <td>${escapeHtml(row.client_name || '—')}</td>
-        <td>${escapeHtml(row.project_name || '—')}</td>
+        <td>${escapeHtml(row.client_name || '-')}</td>
+        <td>${escapeHtml(row.project_name || '-')}</td>
         <td>${escapeHtml(row.task_name || '')}</td>
         <td>${escapeHtml(row.recommended_workflow || '')}</td>
         <td><span class="rep-status ${escapeHtml(status)}">${escapeHtml(status)}</span></td>
@@ -148,7 +148,7 @@ function renderRecentRuns(rows) {
         <td>${escapeHtml(row.actual_images || 0)}</td>
         <td>$${Number(row.actual_cost_usd || 0).toFixed(4)}</td>
         <td>$${Number(row.estimated_cost_low || 0).toFixed(4)}-$${Number(row.estimated_cost_high || 0).toFixed(4)}</td>
-        <td>${escapeHtml(row.last_run_at_label || '—')}</td>
+        <td>${escapeHtml(row.last_run_at_label || '-')}</td>
       </tr>
     `;
   }).join('');
