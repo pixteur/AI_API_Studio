@@ -168,6 +168,7 @@ body.sidebar-no-scroll { overflow: hidden; }
   display: flex;
   height: 100vh;
   padding-top: var(--navbar-h);
+  overflow: hidden;
 }
 
 /* ============================================================
@@ -349,15 +350,101 @@ input:checked + .slider::before { transform: translateX(16px); }
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  min-height: 0;
 }
 
 /* ============================================================
    GALLERY — masonry CSS columns (stile Higgsfield)
    ============================================================ */
+.gallery-toolbar {
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.gallery-toolbar-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.gallery-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 120px;
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.gallery-filter-field-model {
+  min-width: 180px;
+  flex: 1;
+}
+
+.gallery-filter-field select,
+.gallery-filter-field input {
+  background-color: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 13px;
+  outline: none;
+}
+
+.gallery-filter-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 10px 6px;
+  padding-right: 34px;
+}
+
+.gallery-filter-field input::-webkit-calendar-picker-indicator {
+  opacity: 0.8;
+}
+
+.gallery-toolbar-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.gallery-filter-count {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.gallery-filter-reset {
+  background: transparent;
+  border: 1px solid var(--border2);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.gallery-filter-reset:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .gallery {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
+  min-height: 0;
 }
 
 .gallery::-webkit-scrollbar { width: 6px; }
@@ -377,10 +464,38 @@ input:checked + .slider::before { transform: translateX(16px); }
 .gallery-placeholder p { font-size: 14px; }
 .placeholder-sub { font-size: 12px; color: var(--text-muted); }
 
+.gallery-empty-state {
+  display: none;
+  min-height: 220px;
+  border: 1px dashed var(--border2);
+  border-radius: 16px;
+  background: var(--surface2);
+  color: var(--text-muted);
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+  padding: 24px;
+}
+
+.gallery-empty-title {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.gallery-empty-sub {
+  font-size: 13px;
+  max-width: 360px;
+}
+
 /* Griglia masonry: CSS columns */
 .gallery-grid {
-  columns: 3 220px;
-  column-gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  align-items: start;
 }
 
 /* Card generata */
@@ -391,8 +506,7 @@ input:checked + .slider::before { transform: translateX(16px); }
   background: var(--surface2);
   border: 1px solid var(--border);
   cursor: pointer;
-  break-inside: avoid;
-  margin-bottom: 10px;
+  min-width: 0;
   transition: transform 0.15s, border-color 0.2s, box-shadow 0.2s;
 }
 
@@ -538,15 +652,41 @@ input:checked + .slider::before { transform: translateX(16px); }
   word-break: break-word;
 }
 
+.text-card pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.text-card-meta {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
 /* Gen status */
 .gen-status {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 12px;
+  padding: 12px 16px;
   font-size: 13px;
   color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  min-height: 46px;
+}
+
+.gen-status-error {
+  color: #ff8080;
+}
+
+.gen-status-success {
+  color: var(--green);
 }
 
 .spinner {
@@ -578,6 +718,10 @@ input:checked + .slider::before { transform: translateX(16px); }
   background: var(--surface);
   padding: 12px 16px 14px;
   flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 8;
+  box-shadow: 0 -10px 24px rgba(0,0,0,0.22);
 }
 
 .prompt-wrap {
@@ -1057,8 +1201,7 @@ input:checked + .slider::before { transform: translateX(16px); }
    GALLERY — text card (risposta testo in griglia)
    ============================================================ */
 .text-card-wrapper {
-  break-inside: avoid;
-  margin-bottom: 10px;
+  grid-column: 1 / -1;
 }
 
 /* Lightbox inner container */
@@ -2971,7 +3114,7 @@ input:checked + .slider::before { transform: translateX(16px); }
 @media (max-width: 1024px) {
   :root { --sidebar-w: 240px; }
 
-  .gallery-grid { columns: 2 180px; }
+  .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .prompt-meta { flex-wrap: wrap; gap: 6px; }
 
@@ -3017,8 +3160,28 @@ input:checked + .slider::before { transform: translateX(16px); }
   .main-area { width: 100%; }
 
   /* Gallery */
+  .gallery-toolbar {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .gallery-toolbar-row {
+    gap: 8px;
+  }
+
+  .gallery-filter-field,
+  .gallery-filter-field-model {
+    min-width: calc(50% - 4px);
+    flex: 1 1 calc(50% - 4px);
+  }
+
+  .gallery-toolbar-meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .gallery { padding: 10px; }
-  .gallery-grid { columns: 1; }
+  .gallery-grid { grid-template-columns: 1fr; }
 
   /* Prompt bar */
   .prompt-bar {
@@ -3137,7 +3300,7 @@ input:checked + .slider::before { transform: translateX(16px); }
     padding: 4px 6px;
   }
 
-  .gallery-grid { columns: 1; column-gap: 8px; }
+  .gallery-grid { grid-template-columns: 1fr; gap: 8px; }
 
   .pub-grid { grid-template-columns: repeat(2, 1fr); gap: 6px; }
 
@@ -3600,6 +3763,10 @@ input:checked + .slider::before { transform: translateX(16px); }
 /* Select dropdown chevron (darker for light bg) */
 [data-theme="light"] select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E");
+}
+
+[data-theme="light"] .gallery-filter-field select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
 }
 
 /* Input focus color */

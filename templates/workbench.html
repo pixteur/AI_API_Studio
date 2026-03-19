@@ -24,6 +24,8 @@
   .wb-field.wb-span-2 { grid-column:span 2; }
   .wb-label { font-size:12px; color:var(--text); font-weight:600; }
   .wb-input, .wb-textarea, .wb-select { width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:10px; padding:12px 13px; font-size:14px; outline:none; }
+  .wb-select { appearance:none; -webkit-appearance:none; -moz-appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 14px center; background-size:10px 6px; padding-right:36px; }
+  .wb-select::-ms-expand { display:none; }
   .wb-input:focus, .wb-textarea:focus, .wb-select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(200,255,0,.08); }
   .wb-textarea { min-height:104px; resize:vertical; line-height:1.6; }
   .wb-helper, .wb-note { font-size:12px; line-height:1.6; color:var(--text-dim); background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:12px 13px; }
@@ -76,6 +78,7 @@
   .wb-result-topline strong { color:var(--text); font-size:16px; }
   .wb-link-row { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:14px; }
   .wb-link-row a { font-size:12px; }
+  [data-theme="light"] .wb-select { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E"); }
   @media (max-width: 1100px) {
     .wb-grid, .wb-breakdowns { grid-template-columns:1fr; }
     .wb-metrics { grid-template-columns:repeat(3, minmax(0,1fr)); }

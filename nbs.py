@@ -893,6 +893,25 @@ def normalize_image_b64(image_b64: str, mime_type: str) -> tuple:
     return b64_out, "image/jpeg", orig_w, orig_h, new_w, new_h, resized
 
 
+def convert_image_b64_to_png(image_b64: str, mime_type: str) -> tuple[str, str]:
+    """Convert a base64 image payload to PNG while preserving alpha when present."""
+    raw = base64.b64decode(image_b64)
+    img = Image.open(io.BytesIO(raw))
+    img.load()
+
+    has_alpha = ("A" in img.getbands()) or (img.mode == "P" and "transparency" in img.info)
+    if has_alpha:
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
+    elif img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("utf-8"), "image/png"
+
+
 def name_to_slug(name: str) -> str:
     """Converte nome in slug (lowercase, underscore, senza accenti)."""
     slug = unicodedata.normalize("NFKD", name.lower())
@@ -1925,6 +1944,21 @@ def run_generation_job(body: dict, api_key: str) -> dict:
                 elif "text" in part:
                     text_parts.append(part["text"])
 
+    png_images = []
+    for img in images:
+        try:
+            png_b64, png_mime = convert_image_b64_to_png(
+                img.get("data", ""),
+                img.get("mime_type", "image/png")
+            )
+            png_images.append({
+                "mime_type": png_mime,
+                "data": png_b64,
+            })
+        except Exception:
+            png_images.append(img)
+    images = png_images
+
     price_per_image = PRICING.get(model_id, {}).get(image_size, 0.0)
     cost = price_per_image * len(images)
     params_meta = {
@@ -1975,19 +2009,24 @@ def persist_generation_result(result: dict):
     gen_day_dir = os.path.join(GENERATIONS_DIR, date_str)
     os.makedirs(gen_day_dir, exist_ok=True)
     for g_idx, img in enumerate(result.get("images", [])):
-        ext = img.get("mime_type", "image/jpeg").split("/")[-1]
         basename = f"{time_str}_{g_idx}"
-        img["gen_date"] = date_str
-        img["gen_filename"] = f"{basename}.{ext}"
         try:
-            img_path = os.path.join(gen_day_dir, f"{basename}.{ext}")
+            png_b64, png_mime = convert_image_b64_to_png(
+                img.get("data", ""),
+                img.get("mime_type", "image/png")
+            )
+            img["data"] = png_b64
+            img["mime_type"] = png_mime
+            img["gen_date"] = date_str
+            img["gen_filename"] = f"{basename}.png"
+            img_path = os.path.join(gen_day_dir, f"{basename}.png")
             meta_path = os.path.join(gen_day_dir, f"{basename}.json")
             with open(img_path, "wb") as fh:
-                fh.write(base64.b64decode(img["data"]))
+                fh.write(base64.b64decode(png_b64))
             gen_meta = dict(params)
             gen_meta.update({
                 "generated_at": now.isoformat(),
-                "mime_type": img.get("mime_type", "image/jpeg"),
+                "mime_type": png_mime,
                 "filename": os.path.basename(img_path),
                 "text": result.get("text", "") if g_idx == 0 else "",
             })
@@ -2179,7 +2218,12 @@ def api_publish():
     day_dir = os.path.join(LOVED_DIR, date_str)
     os.makedirs(day_dir, exist_ok=True)
 
-    ext         = mime_type.split("/")[-1] if "/" in mime_type else "png"
+    try:
+        img_b64, mime_type = convert_image_b64_to_png(img_b64, mime_type)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Image conversion error: {e}"})
+
+    ext         = "png"
     model_short = (meta.get("model_label", "nb")
                    .replace(" ", "").lower()
                    .replace("nanobanana", "nb"))
@@ -2198,6 +2242,7 @@ def api_publish():
     with open(img_path, "wb") as f:
         f.write(img_bytes)
 
+    meta["mime_type"]    = mime_type
     meta["published_at"] = now.isoformat()
     meta["filename"]     = os.path.basename(img_path)
     with open(meta_path, "w") as f:

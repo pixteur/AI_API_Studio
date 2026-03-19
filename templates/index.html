@@ -194,16 +194,75 @@
   ================================================================ -->
   <section class="main-area">
 
+    <div class="gallery-toolbar" id="galleryToolbar">
+      <div class="gallery-toolbar-row">
+        <label class="gallery-filter-field">
+          <span>Sort</span>
+          <select id="gallerySortSelect">
+            <option value="newest" selected>Newest</option>
+            <option value="oldest">Oldest</option>
+          </select>
+        </label>
+        <label class="gallery-filter-field">
+          <span>Image Size</span>
+          <select id="gallerySizeFilter">
+            <option value="all" selected>All sizes</option>
+            <option value="1K">1K</option>
+            <option value="2K">2K</option>
+            <option value="4K">4K</option>
+          </select>
+        </label>
+        <label class="gallery-filter-field">
+          <span>Date</span>
+          <input type="date" id="galleryDateFilter">
+        </label>
+        <label class="gallery-filter-field">
+          <span>Aspect Ratio</span>
+          <select id="galleryRatioFilter">
+            <option value="all" selected>All ratios</option>
+            <option value="1:1">1:1</option>
+            <option value="16:9">16:9</option>
+            <option value="9:16">9:16</option>
+            <option value="4:5">4:5</option>
+            <option value="4:3">4:3</option>
+            <option value="3:4">3:4</option>
+            <option value="3:2">3:2</option>
+            <option value="2:3">2:3</option>
+            <option value="21:9">21:9</option>
+            <option value="5:4">5:4</option>
+            <option value="4:1">4:1</option>
+            <option value="1:4">1:4</option>
+            <option value="8:1">8:1</option>
+            <option value="1:8">1:8</option>
+          </select>
+        </label>
+        <label class="gallery-filter-field gallery-filter-field-model">
+          <span>Model</span>
+          <select id="galleryModelFilter">
+            <option value="all" selected>All models</option>
+          </select>
+        </label>
+      </div>
+      <div class="gallery-toolbar-meta">
+        <span class="gallery-filter-count" id="galleryFilterCount">No generations yet</span>
+        <button class="gallery-filter-reset" type="button" onclick="resetGalleryFilters()">Clear filters</button>
+      </div>
+    </div>
+
     <div class="gallery" id="gallery">
       <div class="gallery-placeholder" id="galleryPlaceholder">
-        <div class="placeholder-icon">🍌</div>
+        <div class="placeholder-icon">NB</div>
         <p>Generated images will appear here</p>
         <p class="placeholder-sub">Write a prompt and press Generate</p>
+      </div>
+      <div class="gallery-empty-state" id="galleryEmptyState" style="display:none">
+        <div class="gallery-empty-title">No generations match these filters</div>
+        <div class="gallery-empty-sub">Try a different date, model, size, or clear the filters.</div>
       </div>
     </div>
 
     <div class="gen-status" id="genStatus" style="display:none">
-      <div class="spinner"></div>
+      <div class="spinner" id="genStatusSpinner"></div>
       <span id="genStatusText">Generating...</span>
     </div>
 
@@ -1551,25 +1610,47 @@ async function generate() {
     refImages:      refImages.map(r => ({ mime_type: r.mime_type, data: r.data }))
   };
 
-  setLoading(true);
   hideError();
+  setLoading(true);
 
   try {
-    const r    = await fetch("/api/generate", {
-      method:  "POST",
+    const r = await fetch("/api/generate", {
+      method: "POST",
       headers: {"Content-Type":"application/json"},
-      body:    JSON.stringify(payload)
+      body: JSON.stringify(payload)
     });
-    const data = await r.json();
 
-    if (!data.ok) { showError(data.error || "Unknown error"); return; }
+    const contentType = (r.headers.get("content-type") || "").toLowerCase();
+    let data;
 
+    if (contentType.includes("application/json")) {
+      data = await r.json();
+    } else {
+      const rawText = (await r.text()).trim();
+      data = {
+        ok: r.ok,
+        error: rawText || `Generation failed (${r.status})`
+      };
+    }
+
+    if (!r.ok || !data.ok) {
+      setLoading(false);
+      showError(data.error || `Generation failed (${r.status})`);
+      return;
+    }
+
+    setLoading(false);
     renderGallery(data.images || [], data.text, data.params || payload);
+    const imageCount = (data.images || []).length;
+    showStatus(
+      imageCount > 0 ? `Generated ${imageCount} image${imageCount === 1 ? "" : "s"}.` : "Generation complete.",
+      "success",
+      2500
+    );
     if (data.cost > 0) showCostToast(data.cost, data.model_label);
   } catch(e) {
-    showError("Network error: " + e.message);
-  } finally {
     setLoading(false);
+    showError("Network error: " + e.message);
   }
 }
 
@@ -1583,15 +1664,24 @@ function autoResize(el) {
 }
 
 // ============================================================
-// Gallery — masonry grid
+// Gallery - masonry grid with filters
 // ============================================================
-let _galleryGrid = null;   // riferimento al .gallery-grid persistente
-let _infoPopup   = null;   // popup info prompt (singleton)
+let _galleryGrid = null;
+let _infoPopup   = null;
+let galleryEntries = [];
+let galleryEntrySequence = 0;
+const GALLERY_FILTER_DEFAULTS = {
+  sort: "newest",
+  size: "all",
+  date: "",
+  ratio: "all",
+  model: "all",
+};
+let galleryFilters = Object.assign({}, GALLERY_FILTER_DEFAULTS);
 
 function getGalleryGrid() {
   if (_galleryGrid && _galleryGrid.isConnected) return _galleryGrid;
   const gallery = document.getElementById("gallery");
-  document.getElementById("galleryPlaceholder").style.display = "none";
   let g = gallery.querySelector(".gallery-grid");
   if (!g) {
     g = document.createElement("div");
@@ -1602,33 +1692,227 @@ function getGalleryGrid() {
   return g;
 }
 
-function renderGallery(images, text, params) {
-  const grid      = getGalleryGrid();
-  const modelInfo = MODELS_INFO[params.model];
-  const label     = modelInfo ? modelInfo.label : (params.model || "NB");
+function nextGallerySequence() {
+  galleryEntrySequence += 1;
+  return galleryEntrySequence;
+}
 
-  // Ogni immagine diventa una card individuale nel masonry
-  images.forEach((img, i) => {
-    // Merge per-image disk references into params for delete button
-    const cardParams = Object.assign({}, params, {
-      gen_date:     img.gen_date     || "",
-      gen_filename: img.gen_filename || "",
-    });
-    const card = buildImgCard(img, i, cardParams, label);
-    // Prepend: le nuove immagini appaiono in cima
-    grid.insertBefore(card, grid.firstChild);
+function parseGalleryTimestamp(value, fallbackDate) {
+  if (value) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+  }
+  if (fallbackDate) {
+    const parsed = new Date(fallbackDate);
+    if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+  }
+  return Date.now();
+}
+
+function formatGalleryDateKey(value, fallbackDate) {
+  if (value) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  }
+  return fallbackDate || "";
+}
+
+function registerGalleryImageEntry(img, idx, params, badgeLabel, generatedAt, fallbackDate) {
+  galleryEntries.push({
+    id: `gallery-image-${nextGallerySequence()}`,
+    type: "image",
+    image: img,
+    idx,
+    params,
+    badgeLabel,
+    generatedAt: generatedAt || params.generated_at || "",
+    dateKey: formatGalleryDateKey(generatedAt || params.generated_at || "", fallbackDate || params.gen_date || ""),
+    sortTimestamp: parseGalleryTimestamp(generatedAt || params.generated_at || "", fallbackDate || params.gen_date || ""),
+    sequence: galleryEntrySequence,
+  });
+}
+
+function registerGalleryTextEntry(text, params, generatedAt, fallbackDate) {
+  if (!text) return;
+  const modelInfo = MODELS_INFO[params.model] || {};
+  galleryEntries.push({
+    id: `gallery-text-${nextGallerySequence()}`,
+    type: "text",
+    text,
+    params,
+    badgeLabel: modelInfo.label || params.model_label || params.model || "Generator",
+    generatedAt: generatedAt || params.generated_at || "",
+    dateKey: formatGalleryDateKey(generatedAt || params.generated_at || "", fallbackDate || params.gen_date || ""),
+    sortTimestamp: parseGalleryTimestamp(generatedAt || params.generated_at || "", fallbackDate || params.gen_date || ""),
+    sequence: galleryEntrySequence,
+  });
+}
+
+function updateGalleryFilterCount(visibleCount, totalCount) {
+  const el = document.getElementById("galleryFilterCount");
+  if (!el) return;
+  if (totalCount === 0) {
+    el.textContent = "No generations yet";
+    return;
+  }
+  if (visibleCount === totalCount) {
+    el.textContent = `${totalCount} items shown`;
+    return;
+  }
+  el.textContent = `Showing ${visibleCount} of ${totalCount} items`;
+}
+
+function getGalleryFilteredEntries() {
+  const filtered = galleryEntries.filter(entry => {
+    const params = entry.params || {};
+    if (galleryFilters.size !== "all" && params.imageSize !== galleryFilters.size) return false;
+    if (galleryFilters.date && entry.dateKey !== galleryFilters.date) return false;
+    if (galleryFilters.ratio !== "all" && params.aspectRatio !== galleryFilters.ratio) return false;
+    if (galleryFilters.model !== "all" && params.model !== galleryFilters.model) return false;
+    return true;
   });
 
-  // Se c'è testo Gemini, aggiungilo come text-card
-  if (text) {
-    const wrap = document.createElement("div");
-    wrap.className = "text-card-wrapper";
-    const tc = document.createElement("div");
-    tc.className = "text-card";
-    tc.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
-    wrap.appendChild(tc);
-    grid.insertBefore(wrap, grid.firstChild);
+  filtered.sort((a, b) => {
+    const direction = galleryFilters.sort === "oldest" ? 1 : -1;
+    if (a.sortTimestamp !== b.sortTimestamp) {
+      return (a.sortTimestamp - b.sortTimestamp) * direction;
+    }
+    return (a.sequence - b.sequence) * direction;
+  });
+  return filtered;
+}
+
+function buildTextCard(entry) {
+  const wrap = document.createElement("div");
+  wrap.className = "text-card-wrapper";
+
+  const card = document.createElement("div");
+  card.className = "text-card";
+
+  const meta = document.createElement("div");
+  meta.className = "text-card-meta";
+  const tags = [entry.badgeLabel];
+  if (entry.params && entry.params.imageSize) tags.push(entry.params.imageSize);
+  if (entry.params && entry.params.aspectRatio) tags.push(entry.params.aspectRatio);
+  meta.textContent = tags.filter(Boolean).join(" - ");
+
+  const pre = document.createElement("pre");
+  pre.textContent = entry.text;
+
+  card.append(meta, pre);
+  wrap.appendChild(card);
+  return wrap;
+}
+
+function renderGalleryEntries() {
+  const grid = getGalleryGrid();
+  const placeholder = document.getElementById("galleryPlaceholder");
+  const emptyState = document.getElementById("galleryEmptyState");
+  const entries = getGalleryFilteredEntries();
+
+  grid.innerHTML = "";
+  updateGalleryFilterCount(entries.length, galleryEntries.length);
+
+  if (galleryEntries.length === 0) {
+    placeholder.style.display = "flex";
+    emptyState.style.display = "none";
+    grid.style.display = "none";
+    return;
   }
+
+  placeholder.style.display = "none";
+
+  if (entries.length === 0) {
+    emptyState.style.display = "flex";
+    grid.style.display = "none";
+    return;
+  }
+
+  emptyState.style.display = "none";
+  grid.style.display = "grid";
+
+  entries.forEach(entry => {
+    if (entry.type === "text") {
+      grid.appendChild(buildTextCard(entry));
+      return;
+    }
+    grid.appendChild(buildImgCard(entry.image, entry.idx || 0, entry.params || {}, entry.badgeLabel || "NB"));
+  });
+}
+
+function readGalleryFiltersFromUi() {
+  galleryFilters = {
+    sort: document.getElementById("gallerySortSelect").value || GALLERY_FILTER_DEFAULTS.sort,
+    size: document.getElementById("gallerySizeFilter").value || GALLERY_FILTER_DEFAULTS.size,
+    date: document.getElementById("galleryDateFilter").value || "",
+    ratio: document.getElementById("galleryRatioFilter").value || GALLERY_FILTER_DEFAULTS.ratio,
+    model: document.getElementById("galleryModelFilter").value || GALLERY_FILTER_DEFAULTS.model,
+  };
+}
+
+function applyGalleryFilters() {
+  readGalleryFiltersFromUi();
+  renderGalleryEntries();
+}
+
+function resetGalleryFilters() {
+  document.getElementById("gallerySortSelect").value = GALLERY_FILTER_DEFAULTS.sort;
+  document.getElementById("gallerySizeFilter").value = GALLERY_FILTER_DEFAULTS.size;
+  document.getElementById("galleryDateFilter").value = GALLERY_FILTER_DEFAULTS.date;
+  document.getElementById("galleryRatioFilter").value = GALLERY_FILTER_DEFAULTS.ratio;
+  document.getElementById("galleryModelFilter").value = GALLERY_FILTER_DEFAULTS.model;
+  applyGalleryFilters();
+}
+
+function bindGalleryFilters() {
+  [
+    "gallerySortSelect",
+    "gallerySizeFilter",
+    "galleryDateFilter",
+    "galleryRatioFilter",
+    "galleryModelFilter",
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("change", applyGalleryFilters);
+    el.addEventListener("input", applyGalleryFilters);
+  });
+}
+
+function populateGalleryModelFilter() {
+  const select = document.getElementById("galleryModelFilter");
+  if (!select || select.options.length > 1) return;
+  Object.entries(MODELS_INFO).forEach(([modelId, info]) => {
+    const opt = document.createElement("option");
+    opt.value = modelId;
+    opt.textContent = info.label || modelId;
+    select.appendChild(opt);
+  });
+}
+
+function renderGallery(images, text, params) {
+  const generatedAt = new Date().toISOString();
+  const modelInfo = MODELS_INFO[params.model] || {};
+  const label = modelInfo.label || params.model_label || params.model || "NB";
+
+  images.forEach((img, i) => {
+    const cardParams = Object.assign({}, params, {
+      gen_date: img.gen_date || params.gen_date || generatedAt.slice(0, 10),
+      gen_filename: img.gen_filename || "",
+      generated_at: params.generated_at || generatedAt,
+    });
+    registerGalleryImageEntry(img, i, cardParams, label, generatedAt, cardParams.gen_date);
+  });
+
+  if (text) {
+    const textParams = Object.assign({}, params, {
+      generated_at: params.generated_at || generatedAt,
+      gen_date: params.gen_date || generatedAt.slice(0, 10),
+    });
+    registerGalleryTextEntry(text, textParams, generatedAt, textParams.gen_date);
+  }
+
+  renderGalleryEntries();
 }
 
 function buildImgCard(img, idx, params, badgeLabel) {
@@ -1668,7 +1952,7 @@ function buildImgCard(img, idx, params, badgeLabel) {
 
   // 🗑 Delete generation from disk
   const delBtn = makeActionBtn(SVG_TRASH, "Delete");
-  delBtn.onclick = (e) => { e.stopPropagation(); deleteGeneration(params.gen_date, params.gen_filename, card); };
+  delBtn.onclick = (e) => { e.stopPropagation(); deleteGeneration(params.gen_date, params.gen_filename); };
 
   actions.append(favBtn, dlBtn, copyBtn, infoBtn, delBtn);
 
@@ -1698,27 +1982,23 @@ function makeActionBtn(icon, title) {
   return btn;
 }
 
-async function deleteGeneration(date, filename, card) {
-  // If no disk reference (shouldn't happen), just remove from DOM
-  if (!date || !filename) { card && card.remove(); return; }
+async function deleteGeneration(date, filename) {
+  if (!date || !filename) return;
 
   try {
     const r = await fetch(`/api/generations/${date}/${filename}`, { method: "DELETE" });
     const d = await r.json();
     if (d.ok || d.error === "File not found") {
-      // Animate out then remove
-      if (card) {
-        card.style.transition = "opacity 0.2s, transform 0.2s";
-        card.style.opacity = "0";
-        card.style.transform = "scale(0.92)";
-        setTimeout(() => card.remove(), 200);
-      }
+      galleryEntries = galleryEntries.filter(entry => {
+        const params = entry.params || {};
+        return !(params.gen_date === date && params.gen_filename === filename);
+      });
+      renderGalleryEntries();
     } else {
       showError("Could not delete: " + (d.error || "Unknown error"));
     }
   } catch(e) {
-    // On network error, remove from DOM anyway (best effort)
-    card && card.remove();
+    showError("Network error: " + e.message);
   }
 }
 
@@ -1920,22 +2200,55 @@ document.addEventListener("DOMContentLoaded", () => {
 // ============================================================
 // UI helpers
 // ============================================================
+let statusHideTimer = null;
+
+function showStatus(msg, tone, autoHideMs) {
+  const el = document.getElementById("genStatus");
+  const spinner = document.getElementById("genStatusSpinner");
+  const text = document.getElementById("genStatusText");
+  clearTimeout(statusHideTimer);
+  text.textContent = msg || "";
+  el.dataset.tone = tone || "info";
+  el.className = `gen-status gen-status-${tone || "info"}`;
+  spinner.style.display = tone === "loading" ? "block" : "none";
+  el.style.display = msg ? "flex" : "none";
+  if (autoHideMs) {
+    statusHideTimer = setTimeout(() => hideStatus(), autoHideMs);
+  }
+}
+
+function hideStatus() {
+  clearTimeout(statusHideTimer);
+  const el = document.getElementById("genStatus");
+  const spinner = document.getElementById("genStatusSpinner");
+  el.style.display = "none";
+  el.dataset.tone = "";
+  el.className = "gen-status";
+  if (spinner) spinner.style.display = "none";
+}
+
 function setLoading(on) {
-  document.getElementById("generateBtn").disabled     = on;
-  document.getElementById("genStatus").style.display  = on ? "flex" : "none";
+  document.getElementById("generateBtn").disabled = on;
+  if (on) {
+    showStatus("Generating...", "loading");
+  } else {
+    hideStatus();
+  }
 }
 
 function showError(msg, type) {
-  const el = document.getElementById("errorBanner");
-  el.textContent   = (type === "success" ? "" : "✗ ") + msg;
-  el.style.display = "block";
-  el.style.background  = type === "success" ? "rgba(76,255,145,0.08)"  : "";
-  el.style.borderColor = type === "success" ? "rgba(76,255,145,0.25)"  : "";
-  el.style.color       = type === "success" ? "var(--green)"           : "";
-  setTimeout(() => { hideError(); el.style.cssText = ""; }, 5000);
+  if (type === "success") {
+    showStatus(msg, "success", 4000);
+  } else {
+    showStatus(msg, "error", 9000);
+  }
+  document.getElementById("errorBanner").style.display = "none";
 }
 
-function hideError() { document.getElementById("errorBanner").style.display = "none"; }
+function hideError() {
+  document.getElementById("errorBanner").style.display = "none";
+  hideStatus();
+}
 
 function showCostToast(cost, label) {
   const t = document.createElement("div");
@@ -2744,25 +3057,30 @@ async function loadGenerations() {
     const r = await fetch("/api/generations");
     if (!r.ok) return;
     const items = await r.json();
-    if (!Array.isArray(items) || items.length === 0) return;
+    if (!Array.isArray(items)) return;
 
-    // Render oldest-first so newest ends up at top of the grid
-    const reversed = [...items].reverse();
-    for (const item of reversed) {
-      const img    = { mime_type: item.mime_type, data: item.data };
-      const base   = item.params || {};
+    galleryEntries = [];
+    galleryEntrySequence = 0;
+
+    for (const item of items) {
+      const img = { mime_type: item.mime_type, data: item.data };
+      const base = item.params || {};
       const params = Object.assign({}, base, {
-        gen_date:     item.gen_date     || "",
+        gen_date: item.gen_date || "",
         gen_filename: item.gen_filename || "",
+        generated_at: item.generated_at || "",
       });
-      const modelInfo = MODELS_INFO[params.model];
-      const label     = modelInfo ? modelInfo.label : (params.model_label || "NB");
-      const grid      = getGalleryGrid();
-      const card      = buildImgCard(img, 0, params, label);
-      grid.appendChild(card);
+      const modelInfo = MODELS_INFO[params.model] || {};
+      const label = modelInfo.label || params.model_label || "NB";
+      registerGalleryImageEntry(img, 0, params, label, item.generated_at || "", item.gen_date || "");
+      if (item.text) {
+        registerGalleryTextEntry(item.text, params, item.generated_at || "", item.gen_date || "");
+      }
     }
+
+    renderGalleryEntries();
   } catch(e) {
-    // Silently fail — generations are a convenience, not critical
+    // Silently fail - generations are a convenience, not critical
   }
 }
 
@@ -2819,10 +3137,12 @@ async function initGeneratorPage() {
   initArPicker();
   initSidebarArGrid();
   bindDraftPersistence();
+  populateGalleryModelFilter();
+  bindGalleryFilters();
   await restoreGeneratorDraft();
   onModelChange();
   syncImgCount();
-  loadGenerations();
+  await loadGenerations();
   applyLovedReuse();
 }
 
