@@ -230,7 +230,8 @@ function openLightbox(date, filename, meta) {
   const label = MODEL_LABELS[meta.model] || meta.model_label || meta.model || "";
   const parts = [label, meta.imageSize, meta.aspectRatio].filter(Boolean);
   if (meta.temperature != null) parts.push("t=" + parseFloat(meta.temperature).toFixed(2));
-  document.getElementById("pubLbMeta").textContent = parts.join(" · ");
+  if (meta.seedValue != null) parts.push("seed=" + meta.seedValue);
+  document.getElementById("pubLbMeta").textContent = parts.join(" | ");
 
   const dl = document.getElementById("pubLbDownload");
   dl.href     = imgUrl;
@@ -259,6 +260,8 @@ function toggleLbInfo() {
   if (m.aspectRatio) html += row("Ratio",     escapeHtml(m.aspectRatio));
   if (m.temperature != null)
                      html += row("Temp",      parseFloat(m.temperature).toFixed(2));
+  if (m.seedValue != null)
+                     html += row("Seed",      escapeHtml(m.seedValue));
   if (m.published_at)
                      html += row("Saved",     escapeHtml(m.published_at.replace("T"," ").slice(0,16)));
   if (m.ref_count)   html += row("Refs",      m.ref_count);
@@ -282,7 +285,13 @@ function lbGoToGenerator() {
     aspectRatio: m.aspectRatio || "",
     imageSize:   m.imageSize   || "",
     temperature: m.temperature != null ? m.temperature : 1.0,
-    topP:        m.topP        != null ? m.topP        : 0.95
+    topP:        m.topP        != null ? m.topP        : 0.95,
+    thinkingLevel: m.thinkingLevel || "Minimal",
+    useSearch:   m.useSearch   != null ? m.useSearch : false,
+    outputMode:  m.outputMode  || "images_text",
+    seedMode:    m.seedMode    || "random",
+    seedValue:   m.seedValue   != null ? m.seedValue : 1,
+    refArchive:  m.refArchive  || []
   };
   try { sessionStorage.setItem("nb_reuse_params", JSON.stringify(reuse)); } catch(e){}
   window.location.href = "/index";

@@ -48,6 +48,7 @@ import glob
 import io
 import json
 import os
+import random
 import re
 import shutil
 import sqlite3
@@ -79,6 +80,7 @@ LOVED_DIR        = os.path.join(BASE_DIR, "loved")
 GENERATIONS_DIR  = os.path.join(BASE_DIR, "generations")
 ELEMENTS_DIR     = os.path.join(BASE_DIR, "Elements")
 STUDIO_DB_FILE   = os.path.join(BASE_DIR, "studio.db")
+REFERENCE_ARCHIVE_DIR = os.path.join(BASE_DIR, "reference_archive")
 
 # Mapping folder → display name and icon for Elements
 ELEMENTS_CATEGORIES = {
@@ -159,14 +161,14 @@ GEMINI_BASE_URL    = "https://generativelanguage.googleapis.com/v1beta/models/{m
 
 # ---------------------------------------------------------------------------
 # Vocabolario canonico — caricato da talent_vocabulary.json se presente
-# Usato per vincolare Gemini a restituire solo valori normalizzati
+# Used to constrain Gemini to return normalized values only
 # ---------------------------------------------------------------------------
 _VOCAB_PATH = os.path.join(BASE_DIR, "talent_vocabulary.json")
 if os.path.exists(_VOCAB_PATH):
     with open(_VOCAB_PATH, encoding="utf-8") as _vf:
         TALENT_VOCABULARY = json.load(_vf)
 else:
-    # Fallback inline minimo (aggiorna eseguendo normalize_talent_json.py)
+    # Minimal inline fallback (refresh by running normalize_talent_json.py)
     TALENT_VOCABULARY = {
         "gender":     ["female","male","non-binary","androgynous"],
         "ethnicity":  ["african","afro_caribbean","east_asian","south_asian","southeast_asian",
@@ -197,13 +199,13 @@ def _build_vocab_prompt_block() -> str:
     return "\n".join(lines)
 
 
-# Modello per analisi visiva talent (solo text output, non image generation)
-# gemini-3-flash-preview  = Gemini 3 Flash (anteprima) — più capace del lite, ottimo per JSON strutturato
-# gemini-3.1-flash-lite-preview = versione lite (più veloce/economica ma meno precisa)
+# Model for talent visual analysis (text output only, not image generation)
+# gemini-3-flash-preview = Gemini 3 Flash (preview) - more capable than lite, great for structured JSON
+# gemini-3.1-flash-lite-preview = lite version (faster/cheaper but less precise)
 TALENT_ANALYSIS_MODEL = "gemini-3-flash-preview"
 
 # ---------------------------------------------------------------------------
-# Prezzi Vision / Analisi (per token, non per immagine)
+# Vision / analysis pricing (per token, not per image)
 # Fonte: Google AI pricing Marzo 2026
 # ---------------------------------------------------------------------------
 VISION_MODELS_INFO = {
@@ -236,9 +238,9 @@ VISION_MODELS_INFO = {
 
 # ---------------------------------------------------------------------------
 # Helpers — Talent individual JSON
-# I JSON dei talent per "Model Managment" risiedono nella sottocartella json/
+# Talent JSON files for "Model Managment" live in the json/ subfolder
 # ---------------------------------------------------------------------------
-TALENT_JSON_SUBDIR = "json"   # sottocartella dentro Model Managment/
+TALENT_JSON_SUBDIR = "json"   # subfolder inside Model Managment/
 
 
 # ---------------------------------------------------------------------------
@@ -820,8 +822,8 @@ def get_workbench_report() -> dict:
         "recent_runs": recent_runs,
     }
 def talent_json_dir(folder_path: str) -> str:
-    """Restituisce la directory effettiva dei JSON per un folder di talent.
-    Per 'Model Managment' usa la sottocartella json/, per gli altri usa la root.
+    """Return the effective JSON directory for a talent folder.
+    For 'Model Managment' use the json/ subfolder; for other folders use the root.
     """
     if os.path.basename(folder_path) == "Model Managment":
         return os.path.join(folder_path, TALENT_JSON_SUBDIR)
@@ -829,12 +831,12 @@ def talent_json_dir(folder_path: str) -> str:
 
 
 def talent_json_path(folder_path: str, talent_id: str) -> str:
-    """Percorso del file JSON individuale per un talent."""
+    """Path to the individual JSON file for a talent."""
     return os.path.join(talent_json_dir(folder_path), f"{talent_id}.json")
 
 
 def load_talent_json(json_path: str) -> dict | None:
-    """Carica un JSON individuale di talent; None se non trovato/invalido."""
+    """Load an individual talent JSON; returns None if missing/invalid."""
     try:
         with open(json_path, encoding="utf-8") as f:
             return json.load(f)
@@ -843,28 +845,28 @@ def load_talent_json(json_path: str) -> dict | None:
 
 
 def save_talent_json(json_path: str, data: dict):
-    """Salva i dati di un talent nel file JSON (crea le dir intermedie se mancano)."""
+    """Save talent data to the JSON file (creating parent dirs when needed)."""
     os.makedirs(os.path.dirname(json_path), exist_ok=True)
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------------------
-# Helper — Normalizzazione immagine
+# Helper - image normalization
 #   • Se larghezza > MAX_IMG_WIDTH: ridimensiona mantenendo aspect ratio
-#   • Converte sempre in JPG con qualità JPEG_QUALITY
+#   - Always converts to JPG with JPEG_QUALITY quality
 #   • Ritorna (b64_string, "image/jpeg", orig_w, orig_h, new_w, new_h)
 # ---------------------------------------------------------------------------
 MAX_IMG_WIDTH  = 4000   # px sulla dimensione orizzontale
-JPEG_QUALITY   = 90     # % qualità JPG output
+JPEG_QUALITY   = 90     # JPG output quality %
 
 
 def normalize_image_b64(image_b64: str, mime_type: str) -> tuple:
     """
-    Elabora un'immagine base64:
+    Process a base64 image:
       - se larghezza > MAX_IMG_WIDTH → ridimensiona a MAX_IMG_WIDTH (mantiene ratio)
       - converte in JPG a JPEG_QUALITY
-    Ritorna (b64_processata, "image/jpeg", orig_w, orig_h, final_w, final_h, resized: bool)
+    Returns (processed_b64, "image/jpeg", orig_w, orig_h, final_w, final_h, resized: bool)
     """
     raw = base64.b64decode(image_b64)
     img = Image.open(io.BytesIO(raw))
@@ -922,7 +924,7 @@ def name_to_slug(name: str) -> str:
 
 
 def get_next_image_number(folder_path: str, slug: str) -> int:
-    """Ritorna il prossimo numero progressivo per slug_NNN.ext."""
+    """Return the next incremental number for slug_NNN.ext."""
     pattern = re.compile(
         r"^" + re.escape(slug) + r"_(\d+)\.(jpg|jpeg|png|webp)$",
         re.IGNORECASE
@@ -936,8 +938,8 @@ def get_next_image_number(folder_path: str, slug: str) -> int:
 
 
 def list_talent_jsons(folder_path: str) -> list[str]:
-    """Elenca tutti i JSON individuali di talent.
-    Per 'Model Managment' cerca in json/, altrimenti nella root della cartella.
+    """List all individual talent JSON files.
+    For 'Model Managment' search in json/; otherwise search in the folder root.
     """
     excluded = {"catalog.json", "catalog.json.bak"}
     search_dir = talent_json_dir(folder_path)
@@ -945,6 +947,117 @@ def list_talent_jsons(folder_path: str) -> list[str]:
         p for p in glob.glob(os.path.join(search_dir, "*.json"))
         if os.path.basename(p) not in excluded
     ]
+
+
+MAX_SEED_VALUE = 2147483647
+
+
+def normalize_seed_mode(value) -> str:
+    mode = str(value or "random").strip().lower()
+    return mode if mode in {"fixed", "random", "incremental"} else "random"
+
+
+def coerce_seed_value(value) -> int:
+    try:
+        seed = int(str(value).strip())
+    except Exception:
+        seed = random.randint(1, MAX_SEED_VALUE)
+    return max(1, min(seed, MAX_SEED_VALUE))
+
+
+def build_reference_archive_entries(ref_images: list[dict], date_str: str, time_prefix: str) -> list[dict]:
+    if not ref_images:
+        return []
+    archive_day_dir = os.path.join(REFERENCE_ARCHIVE_DIR, date_str)
+    os.makedirs(archive_day_dir, exist_ok=True)
+    archived = []
+    for idx, img in enumerate(ref_images):
+        if not isinstance(img, dict):
+            continue
+        img_b64 = str(img.get("data", "") or "").strip()
+        if not img_b64:
+            continue
+        mime_type = str(img.get("mime_type", "image/png") or "image/png")
+        try:
+            png_b64, png_mime = convert_image_b64_to_png(img_b64, mime_type)
+        except Exception:
+            continue
+        original_name = os.path.basename(str(img.get("name", "") or f"reference-{idx + 1}.png"))
+        stem = os.path.splitext(original_name)[0] or f"reference-{idx + 1}"
+        safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-._") or f"reference-{idx + 1}"
+        filename = f"{time_prefix}_ref_{idx + 1}_{uuid4().hex[:6]}_{safe_stem}.png"
+        archive_path = os.path.join(archive_day_dir, filename)
+        with open(archive_path, "wb") as fh:
+            fh.write(base64.b64decode(png_b64))
+        archived.append({
+            "date": date_str,
+            "filename": filename,
+            "name": original_name,
+            "mime_type": png_mime,
+            "url": f"/reference-archive/{date_str}/{filename}",
+        })
+    return archived
+
+
+def delete_reference_archive_entries(entries: list[dict]):
+    safe_root = os.path.realpath(REFERENCE_ARCHIVE_DIR)
+    for item in entries or []:
+        if not isinstance(item, dict):
+            continue
+        date_str = str(item.get("date", "") or "").strip()
+        filename = os.path.basename(str(item.get("filename", "") or "").strip())
+        if not date_str or not filename:
+            continue
+        archive_path = os.path.realpath(os.path.join(REFERENCE_ARCHIVE_DIR, date_str, filename))
+        if not archive_path.startswith(safe_root + os.sep):
+            continue
+        if os.path.exists(archive_path):
+            try:
+                os.remove(archive_path)
+            except Exception:
+                pass
+        archive_day_dir = os.path.dirname(archive_path)
+        if os.path.isdir(archive_day_dir) and not os.listdir(archive_day_dir):
+            try:
+                os.rmdir(archive_day_dir)
+            except Exception:
+                pass
+
+
+def summarize_generate_response_issue(result: dict) -> str:
+    details = []
+    prompt_feedback = result.get("promptFeedback") or {}
+    block_reason = prompt_feedback.get("blockReason")
+    block_reason_message = prompt_feedback.get("blockReasonMessage")
+    if block_reason:
+        details.append(f"Prompt blocked: {block_reason}")
+    if block_reason_message:
+        details.append(str(block_reason_message))
+
+    candidate_notes = []
+    for idx, candidate in enumerate(result.get("candidates", []) or []):
+        finish_reason = candidate.get("finishReason")
+        finish_message = candidate.get("finishMessage")
+        parts = (candidate.get("content") or {}).get("parts") or []
+        has_image = any("inlineData" in part for part in parts)
+        if finish_reason and finish_reason != "STOP":
+            note = finish_reason
+            if finish_message:
+                note += f": {finish_message}"
+            candidate_notes.append(f"Candidate {idx + 1}: {note}")
+        elif finish_reason == "STOP" and not has_image:
+            note = "STOP but no image was returned"
+            if finish_message:
+                note += f": {finish_message}"
+            candidate_notes.append(f"Candidate {idx + 1}: {note}")
+
+    if candidate_notes:
+        details.extend(candidate_notes)
+
+    if not details:
+        details.append("Gemini returned no image for this request.")
+    return " | ".join(details)
+
 
 
 # ---------------------------------------------------------------------------
@@ -1100,7 +1213,7 @@ def loved_gallery():
                 try:
                     with open(mf) as f:
                         meta = json.load(f)
-                    # Cerca il file immagine con qualsiasi estensione supportata
+                    # Look for the image file with any supported extension
                     base     = mf[:-5]  # rimuove ".json"
                     img_path = None
                     for ext in (".jpeg", ".jpg", ".png", ".webp"):
@@ -1130,6 +1243,13 @@ def loved_gallery():
 @login_required
 def serve_loved(date_str, filename):
     day_path = os.path.join(LOVED_DIR, date_str)
+    return send_from_directory(day_path, filename)
+
+
+@app.route("/reference-archive/<date_str>/<filename>")
+@login_required
+def serve_reference_archive(date_str, filename):
+    day_path = os.path.join(REFERENCE_ARCHIVE_DIR, date_str)
     return send_from_directory(day_path, filename)
 
 
@@ -1190,7 +1310,7 @@ def api_loved_list():
                 try:
                     with open(mf) as f:
                         meta = json.load(f)
-                    # Cerca il file immagine con qualsiasi estensione supportata
+                    # Look for the image file with any supported extension
                     base     = mf[:-5]  # rimuove ".json"
                     img_path = None
                     filename = None
@@ -1222,7 +1342,7 @@ def api_loved_list():
 @app.route("/elements/<path:filepath>")
 @login_required
 def serve_element_file(filepath):
-    """Serve immagini degli elementi (model, location, prop)."""
+    """Serve element images (model, location, prop)."""
     full_path = os.path.join(ELEMENTS_DIR, filepath)
     directory = os.path.dirname(full_path)
     filename  = os.path.basename(full_path)
@@ -1233,7 +1353,7 @@ def serve_element_file(filepath):
 @login_required
 def api_elements_catalog():
     """
-    Ritorna tutte le categorie e i loro asset dal catalog.json.
+    Return all categories and their assets from catalog.json.
     Supporta ?category=slug e ?q=search per filtrare.
     """
     category_filter = request.args.get("category", "all")
@@ -1272,7 +1392,7 @@ def api_elements_catalog():
         if category_filter not in ("all", cat_meta["slug"]):
             continue
 
-        # ── Priorità 1: JSON individuali per talent ──────────────────────
+        # Priority 1: individual talent JSON files
         individual_jsons = list_talent_jsons(folder_path)
         if individual_jsons:
             raw_items = []
@@ -1280,7 +1400,7 @@ def api_elements_catalog():
                 talent = load_talent_json(jpath)
                 if not talent:
                     continue
-                # Ricava image_path dall'immagine primaria (o prima disponibile)
+                # Derive image_path from the primary image (or the first available one)
                 images = talent.get("images", [])
                 primary = next((i for i in images if i.get("is_primary")), None)
                 if not primary and images:
@@ -1288,7 +1408,7 @@ def api_elements_catalog():
                 if primary:
                     talent["image_path"] = primary.get("path", "")
                 raw_items.append(talent)
-        # ── Priorità 2: catalog.json legacy ─────────────────────────────
+        # Priority 2: legacy catalog.json
         elif os.path.exists(catalog_path):
             try:
                 with open(catalog_path, encoding="utf-8") as f:
@@ -1297,7 +1417,7 @@ def api_elements_catalog():
             except Exception:
                 raw_items = []
         else:
-            # Fallback: scansiona immagini nella cartella images/
+            # Fallback: scan images in the images/ folder
             img_dir   = os.path.join(folder_path, "images")
             raw_items = []
             if os.path.isdir(img_dir):
@@ -1308,7 +1428,7 @@ def api_elements_catalog():
 
         for item in raw_items:
             img_path = item.get("image_path", "")
-            # Verifica che l'immagine esista su disco
+            # Verify that the image exists on disk
             full_img = os.path.join(folder_path, img_path)
             if not os.path.exists(full_img):
                 continue
@@ -1324,7 +1444,7 @@ def api_elements_catalog():
                 "img_url":     img_url,
                 "folder":      folder_name,
                 "img_path":    img_path,
-                # Tutti i metadati fisici per il prompt @mention
+                # All physical metadata for the @mention prompt
                 "gender":      item.get("gender", ""),
                 "ethnicity":   item.get("ethnicity", ""),
                 "age_group":   item.get("age_group", ""),
@@ -1340,7 +1460,7 @@ def api_elements_catalog():
             }
             all_items.append(asset)
 
-    # Deduplicazione per id (stessa persona con più img nel catalog)
+    # Deduplicate by id (same person with multiple images in the catalog)
     seen_ids = set()
     unique_items = []
     for it in all_items:
@@ -1348,7 +1468,7 @@ def api_elements_catalog():
             seen_ids.add(it["id"])
             unique_items.append(it)
 
-    # Filtra per ricerca testuale
+    # Filter by text search
     if search_query:
         def matches(item):
             return (search_query in item["name"].lower() or
@@ -1369,7 +1489,7 @@ def api_elements_catalog():
     unique_items = _exact(unique_items, "hair_style", f_hair_style)
     unique_items = _exact(unique_items, "body_type",  f_body)
 
-    # Più recenti prima, poi preferiti in cima
+    # Newest first, then favorites at the top
     unique_items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     unique_items.sort(key=lambda x: not x.get("is_favorite", False))
 
@@ -1390,7 +1510,7 @@ def api_elements_catalog():
 @app.route("/api/elements/toggle-favorite", methods=["POST"])
 @login_required
 def api_elements_toggle_favorite():
-    """Aggiorna is_favorite di un asset (JSON individuale o catalog.json)."""
+    """Update is_favorite for an asset (individual JSON or catalog.json)."""
     body        = request.get_json()
     asset_id    = body.get("id")
     folder_name = body.get("folder")
@@ -1430,14 +1550,14 @@ def api_elements_toggle_favorite():
 
 
 # ---------------------------------------------------------------------------
-# API — Elements: migrazione catalog → JSON individuali
+# API - Elements: catalog migration -> individual JSON files
 # ---------------------------------------------------------------------------
 @app.route("/api/elements/migrate-catalog", methods=["POST"])
 @login_required
 def api_migrate_catalog():
     """
-    Migra catalog.json in file JSON individuali (un file per talent).
-    Sicuro: non sovrascrive JSON esistenti. Backup automatico di catalog.json.
+    Migrate catalog.json into individual JSON files (one file per talent).
+    Safe: does not overwrite existing JSON files. Creates an automatic backup of catalog.json.
     """
     body        = request.get_json(silent=True) or {}
     folder_name = body.get("folder", "Model Managment")
@@ -1509,7 +1629,7 @@ def api_migrate_catalog():
         save_talent_json(jpath, talent_data)
         created += 1
 
-    # Backup catalog.json (una sola volta)
+    # Backup catalog.json (one time only)
     bak_path = catalog_path + ".bak"
     if not os.path.exists(bak_path):
         shutil.copy2(catalog_path, bak_path)
@@ -1519,19 +1639,19 @@ def api_migrate_catalog():
         "created": created,
         "skipped": skipped,
         "total":   len(seen),
-        "message": f"Migrazione completata: {created} creati, {skipped} già esistenti su {len(seen)} talent."
+        "message": f"Migration completed: {created} created, {skipped} already existed across {len(seen)} talents."
     })
 
 
 # ---------------------------------------------------------------------------
-# API — Elements: analisi immagine con Gemini Vision
+# API - Elements: image analysis with Gemini Vision
 # ---------------------------------------------------------------------------
 @app.route("/api/elements/analyze-image", methods=["POST"])
 @login_required
 def api_analyze_talent_image():
     """
-    Analizza un'immagine talent con Gemini Vision e restituisce i metadati JSON.
-    Usa TALENT_ANALYSIS_MODEL (gemini-3-flash-preview) — più capace per estrazione JSON strutturato.
+    Analyze a talent image with Gemini Vision and return JSON metadata.
+    Uses TALENT_ANALYSIS_MODEL (gemini-3-flash-preview) - more capable for structured JSON extraction.
     """
     config  = load_config()
     api_key = config.get("api_key", "").strip()
@@ -1545,7 +1665,7 @@ def api_analyze_talent_image():
     if not image_b64:
         return jsonify({"ok": False, "error": "Image data missing"})
 
-    # Normalizza immagine prima di inviarla a Gemini
+    # Normalize the image before sending it to Gemini
     try:
         image_b64, mime_type, orig_w, orig_h, proc_w, proc_h, was_resized = \
             normalize_image_b64(image_b64, mime_type)
@@ -1659,7 +1779,7 @@ def api_analyze_talent_image():
 
     # Parsing JSON robusto: prova diretta, poi estrai il primo { ... } block
     metadata = None
-    # 1) Rimuovi eventuali code fence markdown ```json ... ```
+    # 1) Remove any markdown code fences ```json ... ```
     cleaned = re.sub(r"```(?:json)?\s*", "", raw_text).replace("```", "").strip()
     for candidate_text in [cleaned, raw_text]:
         try:
@@ -1667,7 +1787,7 @@ def api_analyze_talent_image():
             break
         except json.JSONDecodeError:
             pass
-        # Cerca il blocco JSON più esteso
+        # Look for the largest JSON block
         match = re.search(r"\{[\s\S]*\}", candidate_text)
         if match:
             try:
@@ -1679,7 +1799,7 @@ def api_analyze_talent_image():
     if metadata is None:
         return jsonify({"ok": False, "error": "Could not extract JSON from response", "raw": raw_text[:500]})
 
-    # Normalizza chiavi mancanti con valori vuoti
+    # Normalize missing keys with empty values
     defaults = {"name":"","gender":"","ethnicity":"","age_group":"","skin_tone":"",
                 "hair_color":"","hair_style":"","eye_color":"","body_type":"","description":"","tags":[]}
     for k, v in defaults.items():
@@ -1697,14 +1817,14 @@ def api_analyze_talent_image():
 
 
 # ---------------------------------------------------------------------------
-# API — Elements: salvataggio nuovo talent
+# API - Elements: save new talent
 # ---------------------------------------------------------------------------
 @app.route("/api/elements/save-talent", methods=["POST"])
 @login_required
 def api_save_talent():
     """
-    Salva un nuovo talent: immagine con nome progressivo + JSON metadati.
-    Se il talent (slug) esiste già, aggiunge la nuova immagine all'array images[].
+    Save a new talent: image with an incremental filename + JSON metadata.
+    If the talent (slug) already exists, append the new image to images[].
     """
     body        = request.get_json(silent=True) or {}
     image_b64   = body.get("image_data", "")
@@ -1722,7 +1842,7 @@ def api_save_talent():
     name = metadata.get("name", "talent").strip() or "talent"
     slug = name_to_slug(name)
 
-    # Normalizza immagine (resize se >4000px, converti in JPG 90%)
+    # Normalize image (resize if >4000px, convert to JPG 90%)
     try:
         image_b64, mime_type, _, _, _, _, _ = normalize_image_b64(image_b64, mime_type)
     except Exception as e:
@@ -1733,7 +1853,7 @@ def api_save_talent():
     img_file = f"{slug}_{num:03d}.jpg"
     img_full = os.path.join(folder_path, img_file)
 
-    # Salva immagine su disco
+    # Save image to disk
     try:
         img_bytes = base64.b64decode(image_b64)
         with open(img_full, "wb") as f:
@@ -1747,7 +1867,7 @@ def api_save_talent():
         "filename":   img_file,
         "path":       img_file,
         "added_at":   now_ts,
-        "is_primary": not os.path.exists(jpath),   # prima immagine = primaria
+        "is_primary": not os.path.exists(jpath),   # first image = primary
         "analyzed":   True,
     }
 
@@ -1759,7 +1879,7 @@ def api_save_talent():
             talent["updated_at"] = now_ts
             save_talent_json(jpath, talent)
     else:
-        # Nuovo talent
+        # New talent
         talent = {
             "id":          slug,
             "name":        metadata.get("name", name),
@@ -1809,7 +1929,7 @@ def api_verify_key():
     data = request.get_json()
     key  = data.get("api_key", "").strip()
     if not key:
-        return jsonify({"ok": False, "error": "API key vuota"})
+        return jsonify({"ok": False, "error": "API key is empty"})
     try:
         resp = requests.get(
             "https://generativelanguage.googleapis.com/v1beta/models",
@@ -1844,6 +1964,9 @@ def run_generation_job(body: dict, api_key: str) -> dict:
     output_mode  = body.get("outputMode", "images_text")
     ref_images   = body.get("refImages", [])
     aspect_ratio = body.get("aspectRatio", "1:1")
+    seed_mode    = normalize_seed_mode(body.get("seedMode", "random"))
+    seed_value   = coerce_seed_value(body.get("seedValue", 1))
+    actual_seed  = seed_value if seed_mode != "random" else random.randint(1, MAX_SEED_VALUE)
 
     raw_prompt = body.get("prompt", "")
     if isinstance(raw_prompt, dict):
@@ -1869,7 +1992,15 @@ def run_generation_job(body: dict, api_key: str) -> dict:
     max_ref = model_info["max_ref_images"]
     if ref_images and max_ref == 0:
         raise ValueError(f"{model_info['label']} does not support reference images.")
-    ref_images = ref_images[:max_ref]
+    ref_images = [
+        {
+            "mime_type": img.get("mime_type", "image/png"),
+            "data": img.get("data", ""),
+            "name": img.get("name", ""),
+        }
+        for img in (ref_images[:max_ref] if isinstance(ref_images, list) else [])
+        if isinstance(img, dict) and img.get("data")
+    ]
 
     parts = []
     for img in ref_images:
@@ -1931,8 +2062,10 @@ def run_generation_job(body: dict, api_key: str) -> dict:
 
     images = []
     text_parts = []
+    response_issues = []
     for response in all_responses:
         result = response.json()
+        response_images_before = len(images)
         for candidate in result.get("candidates", []):
             for part in candidate.get("content", {}).get("parts", []):
                 if "inlineData" in part:
@@ -1943,6 +2076,12 @@ def run_generation_job(body: dict, api_key: str) -> dict:
                     })
                 elif "text" in part:
                     text_parts.append(part["text"])
+        if len(images) == response_images_before:
+            response_issues.append(summarize_generate_response_issue(result))
+
+    if not images:
+        issue_message = next((msg for msg in response_issues if msg), "Gemini returned no image for this request.")
+        raise RuntimeError(issue_message)
 
     png_images = []
     for img in images:
@@ -1968,8 +2107,13 @@ def run_generation_job(body: dict, api_key: str) -> dict:
         "aspectRatio": aspect_ratio,
         "temperature": temperature,
         "topP": top_p,
+        "thinkingLevel": thinking_lvl,
+        "useSearch": use_search,
+        "outputMode": output_mode,
         "prompt": prompt,
         "ref_count": len(ref_images),
+        "seedMode": seed_mode,
+        "seedValue": actual_seed,
     }
     return {
         "ok": True,
@@ -1978,6 +2122,7 @@ def run_generation_job(body: dict, api_key: str) -> dict:
         "cost": round(cost, 4),
         "model_label": model_info["label"],
         "params": params_meta,
+        "_input_ref_images": ref_images,
     }
 
 
@@ -1988,6 +2133,7 @@ def persist_generation_result(result: dict):
     stats["total_images"]   = stats.get("total_images", 0) + len(result.get("images", []))
     stats["total_cost_usd"] = round(stats.get("total_cost_usd", 0.0) + result.get("cost", 0.0), 6)
     params = result.get("params", {})
+    raw_ref_images = result.pop("_input_ref_images", [])
     log_entry = {
         "ts": datetime.utcnow().isoformat(),
         "model": params.get("model", ""),
@@ -2006,6 +2152,11 @@ def persist_generation_result(result: dict):
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
     time_str = now.strftime("%H%M%S%f")[:12]
+    archived_refs = build_reference_archive_entries(raw_ref_images, date_str, time_str)
+    params["refArchive"] = archived_refs
+    params["ref_count"] = len(archived_refs)
+    result["params"] = params
+
     gen_day_dir = os.path.join(GENERATIONS_DIR, date_str)
     os.makedirs(gen_day_dir, exist_ok=True)
     for g_idx, img in enumerate(result.get("images", [])):
@@ -2030,16 +2181,13 @@ def persist_generation_result(result: dict):
                 "filename": os.path.basename(img_path),
                 "text": result.get("text", "") if g_idx == 0 else "",
             })
-            with open(meta_path, "w") as fh:
+            with open(meta_path, "w", encoding="utf-8") as fh:
                 json.dump(gen_meta, fh, indent=2, ensure_ascii=False)
         except Exception:
             pass
     return result
 
 
-# ---------------------------------------------------------------------------
-# API — Generate (con supporto immagini di riferimento)
-# ---------------------------------------------------------------------------
 @app.route("/api/generate", methods=["POST"])
 @login_required
 def api_generate():
@@ -2151,14 +2299,20 @@ def api_generations():
                         "gen_date":     date_str,
                         "gen_filename": meta.get("filename", ""),
                         "params": {
-                            "model":       meta.get("model", ""),
-                            "model_label": meta.get("model_label", ""),
-                            "imageSize":   meta.get("imageSize", ""),
-                            "aspectRatio": meta.get("aspectRatio", ""),
-                            "temperature": meta.get("temperature", 1.0),
-                            "topP":        meta.get("topP", 0.95),
-                            "prompt":      meta.get("prompt", ""),
-                            "ref_count":   meta.get("ref_count", 0),
+                            "model":        meta.get("model", ""),
+                            "model_label":  meta.get("model_label", ""),
+                            "imageSize":    meta.get("imageSize", ""),
+                            "aspectRatio":  meta.get("aspectRatio", ""),
+                            "temperature":  meta.get("temperature", 1.0),
+                            "topP":         meta.get("topP", 0.95),
+                            "thinkingLevel": meta.get("thinkingLevel", "Minimal"),
+                            "useSearch":    meta.get("useSearch", False),
+                            "outputMode":   meta.get("outputMode", "images_text"),
+                            "prompt":       meta.get("prompt", ""),
+                            "ref_count":    meta.get("ref_count", 0),
+                            "refArchive":   meta.get("refArchive", []),
+                            "seedMode":     meta.get("seedMode", "random"),
+                            "seedValue":    meta.get("seedValue", 1),
                         }
                     })
                 except Exception:
@@ -2185,10 +2339,22 @@ def api_delete_generation(date_str, filename):
         return jsonify({"ok": False, "error": "File not found"}), 404
 
     try:
-        os.remove(img_path)
         json_path = os.path.splitext(img_path)[0] + ".json"
+        archived_refs = []
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, encoding="utf-8") as fh:
+                    meta = json.load(fh)
+                archived_refs = meta.get("refArchive", [])
+            except Exception:
+                archived_refs = []
+
+        os.remove(img_path)
         if os.path.exists(json_path):
             os.remove(json_path)
+
+        delete_reference_archive_entries(archived_refs)
+
         day_dir = os.path.dirname(img_path)
         if os.path.isdir(day_dir) and not os.listdir(day_dir):
             os.rmdir(day_dir)
@@ -2331,6 +2497,7 @@ def api_models_info():
 if __name__ == "__main__":
     os.makedirs(LOVED_DIR, exist_ok=True)
     os.makedirs(GENERATIONS_DIR, exist_ok=True)
+    os.makedirs(REFERENCE_ARCHIVE_DIR, exist_ok=True)
     init_studio_db()
     # Migrate old published/ folder to loved/ if it exists and loved/ is empty
     _old_pub = os.path.join(BASE_DIR, "published")

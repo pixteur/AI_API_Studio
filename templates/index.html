@@ -271,7 +271,7 @@
     <!-- PROMPT BAR -->
     <div class="prompt-bar" id="promptBar">
 
-      <!-- Strip immagini di riferimento (visibile solo se ci sono immagini) -->
+      <!-- Reference image strip (visible only when images exist) -->
       <div class="ref-strip" id="refStrip" style="display:none">
         <div class="ref-strip-inner" id="refStripInner"></div>
         <div class="ref-strip-meta">
@@ -374,7 +374,7 @@
             </div>
           </div>
 
-          <!-- Contatore immagini output -->
+          <!-- Output image counter -->
           <div class="img-count-ctrl">
             <button onclick="changeNumImg(-1)">−</button>
             <span id="imgCountDisplay">1/4</span>
@@ -389,7 +389,7 @@
           <!-- Separatore -->
           <div class="meta-sep"></div>
 
-          <!-- Bottoni aggiunta immagini di riferimento -->
+          <!-- Reference image add buttons -->
           <div class="ref-actions" id="refActions">
             <!-- Upload da file -->
             <button class="ref-action-btn" id="refUploadBtn"
@@ -422,6 +422,19 @@
             Generate <span class="gen-icon">✦</span> <span id="imgCountBadge">1</span>
           </button>
         </div>
+      </div>
+
+      <div class="prompt-bottom-row">
+        <div class="seed-control-group">
+          <span class="seed-control-label">Seed</span>
+          <select id="seedModeSelect" class="seed-mode-select" onchange="syncSeedControls()">
+            <option value="random" selected>Random</option>
+            <option value="fixed">Fixed</option>
+            <option value="incremental">Incremental</option>
+          </select>
+          <input id="seedValueInput" class="seed-value-input" type="number" min="1" max="2147483647" step="1" inputmode="numeric" placeholder="Seed value" oninput="syncSeedControls({persist:false})" onchange="syncSeedControls()">
+        </div>
+        <div class="seed-hint" id="seedModeHint">Random stores a new seed value each time you generate.</div>
       </div>
     </div>
 
@@ -525,7 +538,7 @@
 
       <!-- Griglia asset -->
       <div class="elements-grid-wrap">
-        <!-- Filter bar — visibile solo per Characters -->
+        <!-- Filter bar - visible only for Characters -->
         <div id="elFiltersBar" class="el-filters-bar" style="display:none"></div>
         <div class="elements-grid-loading" id="elementsLoading">
           <div class="spinner"></div> Loading assets...
@@ -567,7 +580,7 @@
 
     <!-- Header -->
     <div class="modal-header">
-      <h3>✦ Nuovo Talent</h3>
+      <h3>✦ New Talent</h3>
       <div class="modal-header-right">
         <span class="wizard-step-label" id="wizStepLabel">Upload image</span>
         <button class="modal-close-btn" onclick="closeWizard()" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -591,29 +604,29 @@
     <div class="wizard-step wiz-step-scan" id="wizStep2" style="display:none">
       <div class="wiz-scan-layout">
 
-        <!-- Immagine con overlay scanner -->
+        <!-- Image with scanner overlay -->
         <div class="wiz-scan-wrap" id="wizScanWrap">
           <img id="wizPreviewImg" src="" alt="" class="wiz-scan-img">
-          <!-- Linea di scansione -->
+          <!-- Scan line -->
           <div class="wiz-scan-line" id="wizScanLine"></div>
-          <!-- Glow sotto la linea -->
+          <!-- Glow under the line -->
           <div class="wiz-scan-glow" id="wizScanGlow"></div>
-          <!-- Angoli scanner -->
+          <!-- Scanner corners -->
           <div class="wiz-corner wiz-corner-tl"></div>
           <div class="wiz-corner wiz-corner-tr"></div>
           <div class="wiz-corner wiz-corner-bl"></div>
           <div class="wiz-corner wiz-corner-br"></div>
-          <!-- Badge pulsante -->
+          <!-- Button badge -->
           <div class="wiz-scan-badge"><span class="wiz-scan-dot"></span>SCANNING</div>
         </div>
 
-        <!-- Pannello rilevamento campi -->
+        <!-- Field detection panel -->
         <div class="wiz-detect-panel">
           <div class="wiz-detect-header">
             <div class="wiz-detect-spinner"></div>
             <div>
               <div class="wiz-detect-title">Gemini Vision</div>
-              <div class="wiz-detect-sub">Estrazione caratteristiche…</div>
+              <div class="wiz-detect-sub">Extracting attributes...</div>
             </div>
           </div>
           <div class="wiz-detect-fields" id="wizDetectFields"></div>
@@ -625,20 +638,20 @@
     <!-- Step 3: Confirm and edit metadata -->
     <div class="wizard-step" id="wizStep3" style="display:none">
       <div class="wizard-confirm-layout">
-        <!-- Immagine preview -->
+        <!-- Image preview -->
         <div class="wizard-confirm-img-wrap">
           <img id="wizConfirmImg" src="" alt="">
           <div class="wizard-confirm-model-badge" id="wizModelBadge">gemini-3.1-flash-lite-preview</div>
         </div>
-        <!-- Form metadati -->
+        <!-- Metadata form -->
         <div class="wizard-form-scroll">
           <div class="wiz-row">
             <div class="wiz-field wiz-field-wide">
               <label>Nome</label>
-              <input type="text" id="wfName" placeholder="Es. Sofia">
+              <input type="text" id="wfName" placeholder="e.g. Sofia">
             </div>
             <div class="wiz-field">
-              <label>Genere</label>
+              <label>Gender</label>
               <select id="wfGender">
                 <option value="female">Female</option>
                 <option value="male">Male</option>
@@ -648,11 +661,11 @@
           </div>
           <div class="wiz-row">
             <div class="wiz-field">
-              <label>Etnia</label>
+              <label>Ethnicity</label>
               <input type="text" id="wfEthnicity">
             </div>
             <div class="wiz-field">
-              <label>Fascia età</label>
+              <label>Age Range</label>
               <select id="wfAgeGroup">
                 <option value="teen">Teen</option>
                 <option value="young_adult">Young Adult</option>
@@ -663,37 +676,37 @@
           </div>
           <div class="wiz-row">
             <div class="wiz-field">
-              <label>Carnagione</label>
-              <input type="text" id="wfSkinTone" placeholder="es. medium_olive">
+              <label>Skin Tone</label>
+              <input type="text" id="wfSkinTone" placeholder="e.g. medium_olive">
             </div>
             <div class="wiz-field">
-              <label>Colore capelli</label>
-              <input type="text" id="wfHairColor" placeholder="es. dark_brown">
+              <label>Hair Color</label>
+              <input type="text" id="wfHairColor" placeholder="e.g. dark_brown">
             </div>
           </div>
           <div class="wiz-row">
             <div class="wiz-field">
-              <label>Stile capelli</label>
-              <input type="text" id="wfHairStyle" placeholder="es. long_wavy">
+              <label>Hair Style</label>
+              <input type="text" id="wfHairStyle" placeholder="e.g. long_wavy">
             </div>
             <div class="wiz-field">
-              <label>Colore occhi</label>
-              <input type="text" id="wfEyeColor" placeholder="es. hazel">
+              <label>Eye Color</label>
+              <input type="text" id="wfEyeColor" placeholder="e.g. hazel">
             </div>
           </div>
           <div class="wiz-row">
             <div class="wiz-field wiz-field-wide">
-              <label>Corporatura</label>
-              <input type="text" id="wfBodyType" placeholder="es. athletic">
+              <label>Body Type</label>
+              <input type="text" id="wfBodyType" placeholder="e.g. athletic">
             </div>
             <div class="wiz-field wiz-field-wide">
-              <label>Tag (separati da virgola)</label>
-              <input type="text" id="wfTags" placeholder="es. fashion, editorial, dark_hair">
+              <label>Tags (comma-separated)</label>
+              <input type="text" id="wfTags" placeholder="e.g. fashion, editorial, dark_hair">
             </div>
           </div>
           <div class="wiz-field" style="margin-top:4px">
-            <label>Descrizione</label>
-            <textarea id="wfDescription" rows="3" placeholder="Descrizione fisica per il prompt AI…"></textarea>
+            <label>Description</label>
+            <textarea id="wfDescription" rows="3" placeholder="Physical description for the AI prompt..."></textarea>
           </div>
         </div>
       </div>
@@ -712,8 +725,8 @@
     <div class="modal-footer">
       <div id="wizFooterLeft">
         <button class="btn-wiz-migrate" id="wizMigrateBtn" onclick="migrateCatalog()"
-                title="Migra catalog.json in JSON individuali per talent">
-          ⚙ Migra catalog
+                title="Migrate catalog.json into individual talent JSON files">
+          ⚙ Migrate catalog
         </button>
         <button class="btn-wiz-migrate" id="wizLogBtn" onclick="wizToggleLog()"
                 title="Show/hide Gemini debug log">
@@ -753,6 +766,72 @@ const GENERATOR_DRAFT_RECORD_ID = "generator-main";
 let draftSaveTimer = null;
 let isRestoringDraft = false;
 let draftBindingsReady = false;
+const MAX_SEED_VALUE = 2147483647;
+
+function generateRandomSeedValue() {
+  if (window.crypto && window.crypto.getRandomValues) {
+    const arr = new Uint32Array(1);
+    window.crypto.getRandomValues(arr);
+    return Math.max(1, (arr[0] % MAX_SEED_VALUE) + 1);
+  }
+  return Math.max(1, Math.floor(Math.random() * MAX_SEED_VALUE));
+}
+
+function normalizeSeedValue(value) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return generateRandomSeedValue();
+  return Math.max(1, Math.min(parsed, MAX_SEED_VALUE));
+}
+
+function syncSeedControls(options = {}) {
+  const persist = options.persist !== false;
+  const modeEl = document.getElementById("seedModeSelect");
+  const valueEl = document.getElementById("seedValueInput");
+  const hintEl = document.getElementById("seedModeHint");
+  if (!modeEl || !valueEl || !hintEl) return;
+
+  const mode = ["fixed", "random", "incremental"].includes(modeEl.value) ? modeEl.value : "random";
+  modeEl.value = mode;
+  valueEl.value = normalizeSeedValue(valueEl.value || generateRandomSeedValue());
+
+  const hints = {
+    fixed: "Fixed keeps the same saved seed value for every run.",
+    random: "Random stores a new seed value each time you generate.",
+    incremental: "Incremental uses the current seed, then advances it by 1 after a successful run.",
+  };
+  hintEl.textContent = hints[mode] || hints.random;
+
+  if (persist) scheduleDraftSave();
+}
+
+function ensureSeedState() {
+  const valueEl = document.getElementById("seedValueInput");
+  if (valueEl && !valueEl.value) valueEl.value = generateRandomSeedValue();
+  syncSeedControls({ persist: false });
+}
+
+function resolveSeedForGeneration() {
+  const modeEl = document.getElementById("seedModeSelect");
+  const valueEl = document.getElementById("seedValueInput");
+  const seedMode = modeEl ? modeEl.value : "random";
+  const baseSeed = normalizeSeedValue(valueEl ? valueEl.value : generateRandomSeedValue());
+  const seedValue = seedMode === "random" ? generateRandomSeedValue() : baseSeed;
+  if (valueEl) valueEl.value = seedValue;
+  syncSeedControls({ persist: false });
+  return { seedMode, seedValue };
+}
+
+function commitSeedAfterGeneration(seedConfig) {
+  const valueEl = document.getElementById("seedValueInput");
+  if (!valueEl || !seedConfig) return;
+  if (seedConfig.seedMode === "incremental") {
+    valueEl.value = normalizeSeedValue(seedConfig.seedValue + 1);
+  } else {
+    valueEl.value = normalizeSeedValue(seedConfig.seedValue);
+  }
+  syncSeedControls({ persist: false });
+  scheduleDraftSave();
+}
 
 function getOutputModeButton(mode) {
   return document.getElementById(mode === "images_only" ? "tabImgOnly" : "tabImgText");
@@ -798,6 +877,8 @@ function collectGeneratorDraft() {
     useSearch: document.getElementById("useSearchToggle").checked,
     stopSequence: document.getElementById("stopSeq").value || "",
     outputLength: parseInt(document.getElementById("outLenRange").value || "65536", 10),
+    seedMode: document.getElementById("seedModeSelect").value || "random",
+    seedValue: normalizeSeedValue(document.getElementById("seedValueInput").value || generateRandomSeedValue()),
     outputMode,
     refImages: refImages.map(img => ({
       mime_type: img.mime_type,
@@ -935,6 +1016,9 @@ function applyDraftState(draft, options = {}) {
       document.getElementById("outLenRange").value = outputLength;
       document.getElementById("outLenVal").textContent = outputLength;
     }
+    document.getElementById("seedModeSelect").value = draft.seedMode || "random";
+    document.getElementById("seedValueInput").value = normalizeSeedValue(draft.seedValue || generateRandomSeedValue());
+    syncSeedControls({ persist: false });
     applyOutputMode(draft.outputMode || "images_text");
     if (includeRefImages && Array.isArray(draft.refImages)) {
       releaseRefPreviewUrls(refImages);
@@ -974,7 +1058,9 @@ function bindDraftPersistence() {
     "useSearchToggle",
     "stopSeq",
     "outLenRange",
-    "topPRange"
+    "topPRange",
+    "seedModeSelect",
+    "seedValueInput"
   ].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -1050,7 +1136,7 @@ function onModelChange() {
   uploadBtn.disabled    = (maxRef === 0);
   publishedBtn.disabled = (maxRef === 0);
 
-  // Rimuovi immagini in eccesso se il nuovo modello ha limite inferiore
+  // Remove extra images if the new model has a lower limit
   if (refImages.length > maxRef) {
     refImages = refImages.slice(0, maxRef);
     renderRefStrip();
@@ -1083,7 +1169,7 @@ function positionPickerAboveChip(panel, wrapId) {
   const wrap = document.getElementById(wrapId);
   const rect = wrap.getBoundingClientRect();
   const minW = 240;
-  // Allinea al bordo sinistro del chip; evita uscita destra dello schermo
+  // Align to the chip's left edge; avoid overflowing off the right side of the screen
   let left = rect.left;
   if (left + minW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minW - 8);
   // Posiziona appena sopra il chip (translateY -100% = si apre verso l'alto)
@@ -1353,7 +1439,7 @@ function renderRefStrip() {
 }
 
 function removeRefImage(idx) {
-  // Revoca URL oggetto se è un blob URL
+  // Revoke object URL if it is a blob URL
   if (refImages[idx].previewUrl && refImages[idx].previewUrl.startsWith("blob:")) {
     URL.revokeObjectURL(refImages[idx].previewUrl);
   }
@@ -1596,6 +1682,7 @@ async function generate() {
 
   await persistDraftNow();
 
+  const seedConfig = resolveSeedForGeneration();
   const payload = {
     model:          modelId,
     prompt:         prompt,
@@ -1607,6 +1694,8 @@ async function generate() {
     thinkingLevel:  document.getElementById("thinkingSelect").value,
     useSearch:      document.getElementById("useSearchToggle").checked,
     outputMode:     outputMode,
+    seedMode:       seedConfig.seedMode,
+    seedValue:      seedConfig.seedValue,
     refImages:      refImages.map(r => ({ mime_type: r.mime_type, data: r.data }))
   };
 
@@ -1640,7 +1729,12 @@ async function generate() {
     }
 
     setLoading(false);
-    renderGallery(data.images || [], data.text, data.params || payload);
+    const responseParams = data.params || payload;
+    renderGallery(data.images || [], data.text, responseParams);
+    commitSeedAfterGeneration({
+      seedMode: responseParams.seedMode || seedConfig.seedMode,
+      seedValue: responseParams.seedValue != null ? responseParams.seedValue : seedConfig.seedValue
+    });
     const imageCount = (data.images || []).length;
     showStatus(
       imageCount > 0 ? `Generated ${imageCount} image${imageCount === 1 ? "" : "s"}.` : "Generation complete.",
@@ -1919,7 +2013,7 @@ function buildImgCard(img, idx, params, badgeLabel) {
   const card = document.createElement("div");
   card.className = "img-card";
 
-  // Immagine — altezza naturale
+  // Image - natural height
   const image   = document.createElement("img");
   image.src     = `data:${img.mime_type};base64,${img.data}`;
   image.alt     = `Generated ${idx+1}`;
@@ -1942,11 +2036,11 @@ function buildImgCard(img, idx, params, badgeLabel) {
   const dlBtn = makeActionBtn(SVG_DOWNLOAD, "Download");
   dlBtn.onclick = (e) => { e.stopPropagation(); downloadImage(img, idx); };
 
-  // ↩ Riusa — copia prompt e parametri nel form
+  // Reuse - copy prompt and parameters into the form
   const copyBtn = makeActionBtn(SVG_REUSE, "Reuse prompt & parameters");
-  copyBtn.onclick = (e) => { e.stopPropagation(); reuseParams(params); };
+  copyBtn.onclick = async (e) => { e.stopPropagation(); await reuseParams(params); };
 
-  // ⓘ Info — mostra prompt in popup
+  // Info - show prompt in popup
   const infoBtn = makeActionBtn(SVG_INFO, "Info prompt");
   infoBtn.onclick = (e) => { e.stopPropagation(); toggleInfoPopup(params, infoBtn); };
 
@@ -2011,39 +2105,88 @@ function downloadImage(img, idx) {
 }
 
 // Copia prompt e parametri nel form
-function reuseParams(params) {
-  // Prompt
+async function restoreRefArchive(refArchive) {
+  clearAllRefImages();
+  const items = Array.isArray(refArchive) ? refArchive : [];
+  for (const item of items) {
+    if (!item || !item.url) continue;
+    await addRefImageFromUrl(item.url, item.name || item.filename || "reference");
+  }
+}
+
+async function applyReusableParams(params, successMessage) {
   const promptEl = document.getElementById("promptInput");
   if (promptEl && params.prompt) {
     promptEl.value = params.prompt;
     autoResize(promptEl);
   }
-  // Modello
+
   const modelEl = document.getElementById("modelSelect");
   if (modelEl && params.model) {
     modelEl.value = params.model;
     if (typeof onModelChange === "function") onModelChange();
   }
-  // Aspect ratio (select sidebar)
+
   const arEl = document.getElementById("aspectSelect");
-  if (arEl && params.aspectRatio) arEl.value = params.aspectRatio;
-  // Temperature
+  if (arEl && params.aspectRatio) {
+    arEl.value = params.aspectRatio;
+    syncArChip();
+  }
+
+  const resEl = document.getElementById("resSelect");
+  if (resEl && params.imageSize) {
+    resEl.value = params.imageSize;
+    syncResChip();
+  }
+
   const tempEl = document.getElementById("tempRange");
   if (tempEl && params.temperature != null) {
     tempEl.value = params.temperature;
     const lbl = document.getElementById("tempVal");
     if (lbl) lbl.textContent = parseFloat(params.temperature).toFixed(2);
   }
-  // Scroll al prompt
+
+  const topPEl = document.getElementById("topPRange");
+  if (topPEl && params.topP != null) {
+    topPEl.value = params.topP;
+    const lbl = document.getElementById("topPVal");
+    if (lbl) lbl.textContent = parseFloat(params.topP).toFixed(2);
+  }
+
+  if (params.thinkingLevel) {
+    document.getElementById("thinkingSelect").value = params.thinkingLevel;
+  }
+
+  if (params.useSearch != null) {
+    const checked = Boolean(params.useSearch);
+    document.getElementById("useSearchToggle").checked = checked;
+    const mini = document.getElementById("searchMini");
+    if (mini) mini.checked = checked;
+  }
+
+  if (params.outputMode) {
+    applyOutputMode(params.outputMode);
+  }
+
+  document.getElementById("seedModeSelect").value = params.seedMode || "random";
+  document.getElementById("seedValueInput").value = normalizeSeedValue(params.seedValue || generateRandomSeedValue());
+  syncSeedControls({ persist: false });
+
+  await restoreRefArchive(params.refArchive || []);
+
   promptEl && promptEl.scrollIntoView({behavior:"smooth", block:"center"});
   promptEl && promptEl.focus();
   scheduleDraftSave();
-  showError("Prompt and parameters copied to form ✓", "success");
+  showError(successMessage, "success");
+}
+
+async function reuseParams(params) {
+  await applyReusableParams(params || {}, "Prompt and parameters copied to form");
 }
 
 // Info popup prompt (singleton flottante)
 function toggleInfoPopup(params, anchorEl) {
-  // Chiudi se già aperto sullo stesso pulsante
+  // Close if already open on the same button
   if (_infoPopup && _infoPopup._anchor === anchorEl) {
     _infoPopup.remove();
     _infoPopup = null;
@@ -2064,16 +2207,17 @@ function toggleInfoPopup(params, anchorEl) {
     `<p>${escapeHtml(prompt)}</p>` +
     `<div class="info-meta">` +
       `<span class="info-tag">${escapeHtml(label)}</span>` +
-      (params.imageSize   ? `<span class="info-tag">${escapeHtml(params.imageSize)}</span>` : "") +
+      (params.imageSize ? `<span class="info-tag">${escapeHtml(params.imageSize)}</span>` : "") +
       (params.aspectRatio ? `<span class="info-tag">${escapeHtml(params.aspectRatio)}</span>` : "") +
       (params.temperature != null ? `<span class="info-tag">t=${parseFloat(params.temperature).toFixed(2)}</span>` : "") +
-      (params.ref_count   ? `<span class="info-tag">📎 ${params.ref_count} ref</span>` : "") +
+      (params.seedValue != null ? `<span class="info-tag">seed ${escapeHtml(params.seedValue)}</span>` : "") +
+      ((params.ref_count || (Array.isArray(params.refArchive) ? params.refArchive.length : 0)) ? `<span class="info-tag">refs ${params.ref_count || params.refArchive.length}</span>` : "") +
     `</div>`;
 
   document.body.appendChild(popup);
   _infoPopup = popup;
 
-  // Posiziona vicino al pulsante, evitando uscita dal viewport
+  // Position near the button while avoiding viewport overflow
   const r = anchorEl.getBoundingClientRect();
   let top  = r.bottom + 6;
   let left = r.right  - popup.offsetWidth;
@@ -2083,7 +2227,7 @@ function toggleInfoPopup(params, anchorEl) {
   popup.style.top  = top  + "px";
   popup.style.left = left + "px";
 
-  // Chiudi cliccando fuori
+  // Close by clicking outside
   setTimeout(() => {
     document.addEventListener("click", function _close(e) {
       if (!popup.contains(e.target) && e.target !== anchorEl) {
@@ -2119,7 +2263,15 @@ async function publishImage(img, idx, params, btnEl) {
           model_label: params.model_label || (MODELS_INFO[params.model]||{}).label,
           imageSize:   params.imageSize,
           aspectRatio: params.aspectRatio,
-          temperature: params.temperature
+          temperature: params.temperature,
+          topP:        params.topP,
+          thinkingLevel: params.thinkingLevel,
+          useSearch:   params.useSearch,
+          outputMode:  params.outputMode,
+          seedMode:    params.seedMode,
+          seedValue:   params.seedValue,
+          ref_count:   params.ref_count || (Array.isArray(params.refArchive) ? params.refArchive.length : 0),
+          refArchive:  params.refArchive || []
         }
       })
     });
@@ -2163,8 +2315,14 @@ function openLightbox(img, idx, params) {
   lbCurrentParams = params;
   document.getElementById("lbImg").src = `data:${img.mime_type};base64,${img.data}`;
   const mi = MODELS_INFO[params.model];
-  document.getElementById("lbMeta").textContent =
-    `${mi ? mi.label : params.model} · ${params.imageSize} · ${params.aspectRatio} · Temp ${parseFloat(params.temperature||1).toFixed(2)}`;
+  const lbParts = [
+    mi ? mi.label : params.model,
+    params.imageSize,
+    params.aspectRatio,
+    `Temp ${parseFloat(params.temperature || 1).toFixed(2)}`
+  ].filter(Boolean);
+  if (params.seedValue != null) lbParts.push(`Seed ${params.seedValue}`);
+  document.getElementById("lbMeta").textContent = lbParts.join(" | ");
   const pubBtn = document.getElementById("lbPublishBtn");
   pubBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> Love`;
   pubBtn.disabled = false; pubBtn.classList.remove("pub-done");
@@ -2304,22 +2462,22 @@ let elSelectedMap  = {};
 let elSearchTimer  = null;
 let elCategories   = [];
 
-// ── Filtri metadati Characters ──────────────────────────────────────────────
+// Character metadata filters
 const EL_FILTER_DEFS = [
-  { group: "gender", label: "Genere", options: [
+  { group: "gender", label: "Gender", options: [
     { v: "female",      l: "♀ Female"     },
     { v: "male",        l: "♂ Male"       },
     { v: "non-binary",  l: "⊕ Non-binary" },
     { v: "androgynous", l: "◈ Androg."    },
   ]},
-  { group: "age_group", label: "Età", options: [
+  { group: "age_group", label: "Age", options: [
     { v: "teen",        l: "Teen"        },
     { v: "young_adult", l: "Young Adult" },
     { v: "adult",       l: "Adult"       },
     { v: "mature",      l: "Mature"      },
     { v: "senior",      l: "Senior"      },
   ]},
-  { group: "ethnicity", label: "Origine", options: [
+  { group: "ethnicity", label: "Ethnicity", options: [
     { v: "african",           l: "African"       },
     { v: "afro_caribbean",    l: "Afro-Carib."   },
     { v: "east_asian",        l: "East Asian"    },
@@ -2334,7 +2492,7 @@ const EL_FILTER_DEFS = [
     { v: "mixed",             l: "Mixed"         },
     { v: "other",             l: "Other"         },
   ]},
-  { group: "skin_tone", label: "Carnagione", options: [
+  { group: "skin_tone", label: "Skin Tone", options: [
     { v: "very_fair",    l: "Very Fair",   dot: "#f5ede8" },
     { v: "fair",         l: "Fair",        dot: "#f0ddd0" },
     { v: "fair_warm",    l: "Fair Warm",   dot: "#e8c9b0" },
@@ -2348,7 +2506,7 @@ const EL_FILTER_DEFS = [
     { v: "deep_brown",   l: "Deep Brown",  dot: "#4a2810" },
     { v: "deep",         l: "Deep",        dot: "#2a1508" },
   ]},
-  { group: "hair_color", label: "Capelli", options: [
+  { group: "hair_color", label: "Hair", options: [
     { v: "black",           l: "Black",        dot: "#111"    },
     { v: "dark_brown",      l: "Dark Brown",   dot: "#3b1f0a" },
     { v: "medium_brown",    l: "Brown",        dot: "#6b3a1f" },
@@ -2391,7 +2549,7 @@ const EL_FILTER_DEFS = [
     { v: "tied_back",      l: "Tied Back"    },
     { v: "fantasy_styled", l: "✦ Fantasy"    },
   ]},
-  { group: "body_type", label: "Corporatura", options: [
+  { group: "body_type", label: "Body Type", options: [
     { v: "slim",         l: "Slim"         },
     { v: "slender",      l: "Slender"      },
     { v: "athletic",     l: "Athletic"     },
@@ -2433,7 +2591,7 @@ function renderElFiltersBar() {
   const bar = document.getElementById("elFiltersBar");
   if (!bar) return;
 
-  // Mostra solo se categoria characters
+  // Show only for the characters category
   const isChars = (elCurrentCat === "characters");
   bar.style.display = isChars ? "block" : "none";
   if (!isChars) return;
@@ -2474,7 +2632,7 @@ function renderElFiltersBar() {
     bar.appendChild(row);
   });
 
-  // Pulsante "Cancella filtri"
+  // "Clear filters" button
   if (elHasFilters()) {
     const clearRow = document.createElement("div");
     clearRow.className = "el-filter-clear-row";
@@ -2522,7 +2680,7 @@ async function loadElements() {
 
   const catParam = (elCurrentCat === "all" || elCurrentCat === "favorites") ? "all" : elCurrentCat;
   let url = `/api/elements?category=${catParam}&q=${encodeURIComponent(elSearchQuery)}&page=${elCurrentPage}&per_page=${elPerPage}`;
-  // Aggiungi parametri filtro metadati (solo characters)
+  // Add metadata filter parameters (characters only)
   if (elCurrentCat === "characters") {
     ["gender","age_group","ethnicity","skin_tone","hair_color","hair_style","body_type"].forEach(k => {
       if (elFilters[k] && elFilters[k].size > 0)
@@ -2748,15 +2906,15 @@ let wizAnalyzed   = {};
 
 const WIZ_FIELDS = [
   { key: "name",        label: "Nome",          icon: "👤" },
-  { key: "gender",      label: "Genere",        icon: "⊕"  },
-  { key: "ethnicity",   label: "Origine",       icon: "🌍" },
-  { key: "age_group",   label: "Fascia età",    icon: "📅" },
-  { key: "skin_tone",   label: "Carnagione",    icon: "🎨" },
-  { key: "hair_color",  label: "Capelli",       icon: "💇" },
-  { key: "hair_style",  label: "Stile",         icon: "✂"  },
+  { key: "gender",      label: "Gender",        icon: "⊕"  },
+  { key: "ethnicity",   label: "Ethnicity",       icon: "🌍" },
+  { key: "age_group",   label: "Age Range",    icon: "📅" },
+  { key: "skin_tone",   label: "Skin Tone",    icon: "🎨" },
+  { key: "hair_color",  label: "Hair",       icon: "💇" },
+  { key: "hair_style",  label: "Style",         icon: "✂"  },
   { key: "eye_color",   label: "Occhi",         icon: "👁"  },
-  { key: "body_type",   label: "Corporatura",   icon: "📐" },
-  { key: "description", label: "Descrizione",   icon: "📝" },
+  { key: "body_type",   label: "Body Type",   icon: "📐" },
+  { key: "description", label: "Description",   icon: "📝" },
 ];
 
 let wizDetectTimers = [];
@@ -2907,7 +3065,7 @@ function wizToggleLog() {
 
 async function wizAnalyzeImage(b64, mimeType, dataUrl) {
   const b64_kb = Math.round(b64.length * 0.75 / 1024);
-  wizLog("info", `▶ Invio immagine a Gemini… (${b64_kb} KB base64, tipo: ${mimeType})`);
+  wizLog("info", `Sending image to Gemini... (${b64_kb} KB base64, type: ${mimeType})`);
   try {
     const r    = await fetch("/api/elements/analyze-image", {
       method:  "POST",
@@ -2919,9 +3077,9 @@ async function wizAnalyzeImage(b64, mimeType, dataUrl) {
     if (data.image_info) {
       const ii = data.image_info;
       if (ii.resized)
-        wizLog("warn", `🖼 Immagine ridimensionata: ${ii.orig_w}×${ii.orig_h}px → ${ii.proc_w}×${ii.proc_h}px (JPG ${ii.proc_w > 0 ? "4K" : ""} 90%)`);
+        wizLog("warn", `Image resized: ${ii.orig_w}x${ii.orig_h}px -> ${ii.proc_w}x${ii.proc_h}px (JPG ${ii.proc_w > 0 ? "4K" : ""} 90%)`);
       else
-        wizLog("info", `🖼 Immagine OK: ${ii.orig_w}×${ii.orig_h}px → convertita JPG 90%`);
+        wizLog("info", `Image OK: ${ii.orig_w}x${ii.orig_h}px -> converted to JPG 90%`);
     }
     if (data.raw_text) wizLog("info", "📄 Raw text da Gemini:", data.raw_text);
     if (data.usage)    wizLog("info", `💰 Token: ${data.usage.input_tokens} input / ${data.usage.output_tokens} output — costo $${(data.usage.cost_usd||0).toFixed(7)}`);
@@ -2934,7 +3092,7 @@ async function wizAnalyzeImage(b64, mimeType, dataUrl) {
     showError("Analysis failed: " + e.message + " — fill in fields manually.");
   }
 
-  // Mostra valori rilevati nel pannello scan, poi breve pausa di feedback
+  // Show detected values in the scan panel, then pause briefly for feedback
   wizCompleteScan(wizAnalyzed);
   await new Promise(r => setTimeout(r, 900));
 
@@ -3042,7 +3200,7 @@ async function migrateCatalog() {
     showError("✓ " + data.message, "success");
     await loadElements();
   } catch(e) {
-    showError("Migrazione fallita: " + e.message);
+    showError("Migration failed: " + e.message);
   } finally {
     btn.disabled = false;
     btn.textContent = "⚙ Migrate catalog";
@@ -3087,49 +3245,13 @@ async function loadGenerations() {
 // ============================================================
 // Init
 // ============================================================
-function applyLovedReuse() {
+async function applyLovedReuse() {
   try {
     const raw = sessionStorage.getItem("nb_reuse_params");
     if (!raw) return;
     sessionStorage.removeItem("nb_reuse_params");
     const p = JSON.parse(raw);
-    if (p.prompt) {
-      const el = document.getElementById("promptInput");
-      el.value = p.prompt;
-      autoResize(el);
-    }
-    if (p.model) {
-      document.getElementById("modelSelect").value = p.model;
-      onModelChange();
-    }
-    if (p.aspectRatio) {
-      document.getElementById("aspectSelect").value = p.aspectRatio;
-      syncArChip();
-    }
-    if (p.imageSize) {
-      document.getElementById("resSelect").value = p.imageSize;
-      syncResChip();
-    }
-    if (p.temperature != null) {
-      const el = document.getElementById("tempRange");
-      el.value = p.temperature;
-      document.getElementById("tempVal").textContent = parseFloat(p.temperature).toFixed(2);
-    }
-    if (p.topP != null) {
-      const el = document.getElementById("topPRange");
-      if (el) {
-        el.value = p.topP;
-        const lbl = document.getElementById("topPVal");
-        if (lbl) lbl.textContent = parseFloat(p.topP).toFixed(2);
-      }
-    }
-    const promptEl = document.getElementById("promptInput");
-    if (promptEl) {
-      promptEl.scrollIntoView({behavior:"smooth", block:"center"});
-      promptEl.focus();
-    }
-    scheduleDraftSave();
-    showError("Prompt and parameters loaded into the Generator", "success");
+    await applyReusableParams(p, "Prompt and parameters loaded into the Generator");
   } catch(e) {}
 }
 
@@ -3137,13 +3259,14 @@ async function initGeneratorPage() {
   initArPicker();
   initSidebarArGrid();
   bindDraftPersistence();
+  ensureSeedState();
   populateGalleryModelFilter();
   bindGalleryFilters();
   await restoreGeneratorDraft();
   onModelChange();
   syncImgCount();
   await loadGenerations();
-  applyLovedReuse();
+  await applyLovedReuse();
 }
 
 void initGeneratorPage();

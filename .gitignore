@@ -10,6 +10,8 @@ loved/*
 !loved/.gitkeep
 published/*
 !published/.gitkeep
+reference_archive/*
+!reference_archive/.gitkeep
 
 # OS/editor noise
 .DS_Store

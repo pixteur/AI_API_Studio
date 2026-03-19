@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nano Banana Studio — Pubblicati</title>
+<title>Nano Banana Studio - Published</title>
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -30,7 +30,7 @@
   <!-- Header -->
   <div class="pub-header">
     <div>
-      <h1 class="pub-title">Immagini Pubblicate</h1>
+      <h1 class="pub-title">Published Images</h1>
       <p class="pub-subtitle">Organizzate per data · cartella <code>published/</code></p>
     </div>
     <a href="/index" class="btn-new-gen">+ Nuova generazione</a>
@@ -40,8 +40,8 @@
   <!-- Empty state -->
   <div class="pub-empty">
     <div class="pub-empty-icon">📂</div>
-    <p>Nessuna immagine pubblicata ancora.</p>
-    <p class="pub-empty-sub">Genera immagini e usa il tasto <strong>⬆ Pubblica</strong> per salvarle qui.</p>
+    <p>No published images yet.</p>
+    <p class="pub-empty-sub">Generate images and use the <strong>Publish</strong> button to save them here.</p>
     <a href="/index" class="btn-new-gen" style="margin-top:16px; display:inline-block">Vai al generatore</a>
   </div>
   {% else %}
@@ -119,7 +119,7 @@
 
 </main>
 
-<!-- Lightbox pubblicati -->
+<!-- Published lightbox -->
 <div class="lightbox" id="pubLightbox" onclick="closePubLightboxOnBg(event)">
   <div class="lb-inner">
     <button class="lb-close" onclick="closePubLightbox()">✕</button>
