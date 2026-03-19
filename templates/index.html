@@ -687,14 +687,253 @@ const MODELS_INFO = {{ models | tojson }};
 let outputMode    = "images_text";
 let refImages     = [];           // [{mime_type, data, previewUrl, name}]
 let pickerSelected = new Set();   // URLs selected in picker
+const GENERATOR_DRAFT_META_KEY = "nb_generator_draft_meta";
+const GENERATOR_DRAFT_DB_NAME = "nanoBananaStudio";
+const GENERATOR_DRAFT_STORE_NAME = "generatorDrafts";
+const GENERATOR_DRAFT_RECORD_ID = "generator-main";
+let draftSaveTimer = null;
+let isRestoringDraft = false;
+let draftBindingsReady = false;
+
+function getOutputModeButton(mode) {
+  return document.getElementById(mode === "images_only" ? "tabImgOnly" : "tabImgText");
+}
+
+function applyOutputMode(mode, btn) {
+  outputMode = mode === "images_only" ? "images_only" : "images_text";
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  const activeBtn = btn || getOutputModeButton(outputMode);
+  if (activeBtn) activeBtn.classList.add("active");
+}
+
+function releaseRefPreviewUrls(items) {
+  (items || []).forEach(img => {
+    if (img && img.previewUrl && img.previewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(img.previewUrl);
+    }
+  });
+}
+
+function normalizeDraftRefImages(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter(img => img && img.mime_type && img.data)
+    .map((img, idx) => ({
+      mime_type: img.mime_type,
+      data: img.data,
+      name: img.name || `ref-${idx + 1}`,
+      previewUrl: `data:${img.mime_type};base64,${img.data}`
+    }));
+}
+
+function collectGeneratorDraft() {
+  return {
+    prompt: document.getElementById("promptInput").value || "",
+    model: document.getElementById("modelSelect").value || "",
+    aspectRatio: document.getElementById("aspectSelect").value || "",
+    imageSize: document.getElementById("resSelect").value || "",
+    temperature: parseFloat(document.getElementById("tempRange").value || "1"),
+    topP: parseFloat(document.getElementById("topPRange").value || "0.95"),
+    thinkingLevel: document.getElementById("thinkingSelect").value || "Minimal",
+    numberOfImages: parseInt(document.getElementById("numImgRange").value || "1", 10),
+    useSearch: document.getElementById("useSearchToggle").checked,
+    stopSequence: document.getElementById("stopSeq").value || "",
+    outputLength: parseInt(document.getElementById("outLenRange").value || "65536", 10),
+    outputMode,
+    refImages: refImages.map(img => ({
+      mime_type: img.mime_type,
+      data: img.data,
+      name: img.name || ""
+    }))
+  };
+}
+
+function openDraftDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("IndexedDB not available"));
+      return;
+    }
+    const req = window.indexedDB.open(GENERATOR_DRAFT_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(GENERATOR_DRAFT_STORE_NAME)) {
+        db.createObjectStore(GENERATOR_DRAFT_STORE_NAME, { keyPath: "id" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("Could not open draft database"));
+  });
+}
+
+async function readDraftFromDb() {
+  const db = await openDraftDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(GENERATOR_DRAFT_STORE_NAME, "readonly");
+    const store = tx.objectStore(GENERATOR_DRAFT_STORE_NAME);
+    const req = store.get(GENERATOR_DRAFT_RECORD_ID);
+    req.onsuccess = () => {
+      db.close();
+      resolve(req.result || null);
+    };
+    req.onerror = () => {
+      db.close();
+      reject(req.error || new Error("Could not read draft"));
+    };
+  });
+}
+
+async function writeDraftToDb(draft) {
+  const db = await openDraftDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(GENERATOR_DRAFT_STORE_NAME, "readwrite");
+    const store = tx.objectStore(GENERATOR_DRAFT_STORE_NAME);
+    store.put({
+      id: GENERATOR_DRAFT_RECORD_ID,
+      savedAt: new Date().toISOString(),
+      draft
+    });
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error || new Error("Could not save draft"));
+    };
+  });
+}
+
+async function persistDraftNow() {
+  if (isRestoringDraft) return;
+  const draft = collectGeneratorDraft();
+  const { refImages: _, ...meta } = draft;
+  try {
+    sessionStorage.setItem(GENERATOR_DRAFT_META_KEY, JSON.stringify(meta));
+  } catch (e) {}
+  try {
+    await writeDraftToDb(draft);
+  } catch (e) {}
+}
+
+function scheduleDraftSave() {
+  if (isRestoringDraft) return;
+  clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(() => {
+    persistDraftNow();
+  }, 180);
+}
+
+function applyDraftState(draft, options = {}) {
+  if (!draft || typeof draft !== "object") return;
+  const includeRefImages = options.includeRefImages !== false;
+  isRestoringDraft = true;
+  try {
+    if (typeof draft.prompt === "string") {
+      const promptEl = document.getElementById("promptInput");
+      promptEl.value = draft.prompt;
+      autoResize(promptEl);
+    }
+    if (draft.model) {
+      document.getElementById("modelSelect").value = draft.model;
+      onModelChange();
+    }
+    if (draft.aspectRatio) {
+      document.getElementById("aspectSelect").value = draft.aspectRatio;
+      syncArChip();
+    }
+    if (draft.imageSize) {
+      document.getElementById("resSelect").value = draft.imageSize;
+      syncResChip();
+    }
+    if (draft.temperature != null) {
+      const temp = parseFloat(draft.temperature);
+      document.getElementById("tempRange").value = temp;
+      document.getElementById("tempVal").textContent = temp.toFixed(2);
+    }
+    if (draft.topP != null) {
+      const topP = parseFloat(draft.topP);
+      document.getElementById("topPRange").value = topP;
+      document.getElementById("topPVal").textContent = topP.toFixed(2);
+    }
+    if (draft.thinkingLevel) {
+      document.getElementById("thinkingSelect").value = draft.thinkingLevel;
+    }
+    if (draft.numberOfImages != null) {
+      const count = Math.max(1, Math.min(4, parseInt(draft.numberOfImages, 10) || 1));
+      document.getElementById("numImgRange").value = count;
+      document.getElementById("numImgVal").textContent = count;
+      syncImgCount();
+    }
+    if (draft.useSearch != null) {
+      document.getElementById("useSearchToggle").checked = Boolean(draft.useSearch);
+    }
+    if (typeof draft.stopSequence === "string") {
+      document.getElementById("stopSeq").value = draft.stopSequence;
+    }
+    if (draft.outputLength != null) {
+      const outputLength = parseInt(draft.outputLength, 10) || 65536;
+      document.getElementById("outLenRange").value = outputLength;
+      document.getElementById("outLenVal").textContent = outputLength;
+    }
+    applyOutputMode(draft.outputMode || "images_text");
+    if (includeRefImages && Array.isArray(draft.refImages)) {
+      releaseRefPreviewUrls(refImages);
+      refImages = normalizeDraftRefImages(draft.refImages);
+      renderRefStrip();
+    }
+  } finally {
+    isRestoringDraft = false;
+  }
+}
+
+async function restoreGeneratorDraft() {
+  let metaDraft = null;
+  try {
+    metaDraft = JSON.parse(sessionStorage.getItem(GENERATOR_DRAFT_META_KEY) || "null");
+  } catch (e) {}
+  if (metaDraft) applyDraftState(metaDraft, { includeRefImages: false });
+  try {
+    const stored = await readDraftFromDb();
+    if (stored && stored.draft) {
+      applyDraftState(stored.draft, { includeRefImages: true });
+    }
+  } catch (e) {}
+}
+
+function bindDraftPersistence() {
+  if (draftBindingsReady) return;
+  draftBindingsReady = true;
+  [
+    "promptInput",
+    "modelSelect",
+    "aspectSelect",
+    "resSelect",
+    "tempRange",
+    "thinkingSelect",
+    "numImgRange",
+    "useSearchToggle",
+    "stopSeq",
+    "outLenRange",
+    "topPRange"
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("input", scheduleDraftSave);
+    el.addEventListener("change", scheduleDraftSave);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) persistDraftNow();
+  });
+  window.addEventListener("beforeunload", persistDraftNow);
+}
 
 // ============================================================
 // Controls sidebar
 // ============================================================
 function setOutputMode(mode, btn) {
-  outputMode = mode;
-  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-  btn.classList.add("active");
+  applyOutputMode(mode, btn);
+  scheduleDraftSave();
 }
 
 function onModelChange() {
@@ -758,6 +997,7 @@ function onModelChange() {
     renderRefStrip();
   }
   updateRefCounter();
+  scheduleDraftSave();
 }
 
 function syncResChip() {
@@ -837,6 +1077,7 @@ function pickAR(btn) {
   document.getElementById("aspectSelect").value = ar;
   syncArChip();
   closeAllPickers();
+  scheduleDraftSave();
 }
 
 function syncArChip() {
@@ -874,6 +1115,7 @@ function pickQual(row) {
   document.getElementById("resSelect").value = res;
   syncResChip();
   closeAllPickers();
+  scheduleDraftSave();
 }
 
 function initArPicker() {
@@ -988,10 +1230,12 @@ function changeNumImg(delta) {
   el.value = v;
   document.getElementById("numImgVal").textContent = v;
   syncImgCount();
+  scheduleDraftSave();
 }
 
 function syncSearchToggle(src) {
   document.getElementById("useSearchToggle").checked = src.checked;
+  scheduleDraftSave();
 }
 
 // ============================================================
@@ -1056,14 +1300,14 @@ function removeRefImage(idx) {
   }
   refImages.splice(idx, 1);
   renderRefStrip();
+  scheduleDraftSave();
 }
 
 function clearAllRefImages() {
-  refImages.forEach(img => {
-    if (img.previewUrl && img.previewUrl.startsWith("blob:")) URL.revokeObjectURL(img.previewUrl);
-  });
+  releaseRefPreviewUrls(refImages);
   refImages = [];
   renderRefStrip();
+  scheduleDraftSave();
 }
 
 async function addRefImageFromFile(file) {
@@ -1077,6 +1321,7 @@ async function addRefImageFromFile(file) {
   const preview  = URL.createObjectURL(file);
   refImages.push({ mime_type: mimeType, data: b64, previewUrl: preview, name: file.name });
   renderRefStrip();
+  scheduleDraftSave();
 }
 
 async function addRefImageFromUrl(url, label) {
@@ -1092,6 +1337,7 @@ async function addRefImageFromUrl(url, label) {
     const b64      = await blobToBase64(blob);
     refImages.push({ mime_type: mimeType, data: b64, previewUrl: url, name: label || url.split("/").pop() });
     renderRefStrip();
+    scheduleDraftSave();
     return true;
   } catch(e) {
     showError("Could not load image: " + e.message);
@@ -1288,6 +1534,8 @@ async function generate() {
     showError(`${MODELS_INFO[modelId].label} does not support reference images. Remove them or change model.`);
     return;
   }
+
+  await persistDraftNow();
 
   const payload = {
     model:          modelId,
@@ -1509,6 +1757,7 @@ function reuseParams(params) {
   // Scroll al prompt
   promptEl && promptEl.scrollIntoView({behavior:"smooth", block:"center"});
   promptEl && promptEl.focus();
+  scheduleDraftSave();
   showError("Prompt and parameters copied to form ✓", "success");
 }
 
@@ -2174,6 +2423,7 @@ async function confirmElements() {
     }
   }
   promptEl.focus();
+  scheduleDraftSave();
 }
 
 // ============================================================
@@ -2519,13 +2769,7 @@ async function loadGenerations() {
 // ============================================================
 // Init
 // ============================================================
-initArPicker();
-initSidebarArGrid();
-onModelChange();
-loadGenerations();
-
-// Restore params passed from Loved page via sessionStorage
-(function applyLovedReuse() {
+function applyLovedReuse() {
   try {
     const raw = sessionStorage.getItem("nb_reuse_params");
     if (!raw) return;
@@ -2561,15 +2805,28 @@ loadGenerations();
         if (lbl) lbl.textContent = parseFloat(p.topP).toFixed(2);
       }
     }
-    // Show confirmation
     const promptEl = document.getElementById("promptInput");
     if (promptEl) {
       promptEl.scrollIntoView({behavior:"smooth", block:"center"});
       promptEl.focus();
     }
-    showError("Prompt and parameters loaded from Loved gallery ✓", "success");
+    scheduleDraftSave();
+    showError("Prompt and parameters loaded into the Generator", "success");
   } catch(e) {}
-})();
+}
+
+async function initGeneratorPage() {
+  initArPicker();
+  initSidebarArGrid();
+  bindDraftPersistence();
+  await restoreGeneratorDraft();
+  onModelChange();
+  syncImgCount();
+  loadGenerations();
+  applyLovedReuse();
+}
+
+void initGeneratorPage();
 
 /* ── Theme toggle ─────────────────────────────────────────── */
 function toggleTheme() {

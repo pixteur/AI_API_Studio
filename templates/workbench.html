@@ -449,6 +449,7 @@ function openInGenerator() {
   if (!latestPlan) return;
   const execution = latestPlan.execution_target || {};
   sessionStorage.setItem('nb_reuse_params', JSON.stringify({
+    source: 'workbench',
     prompt: latestPlan.prompt,
     model: execution.model,
     aspectRatio: execution.aspectRatio,
