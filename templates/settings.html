@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nano Banana Studio — Settings</title>
+<title>Nano Banana Studio - Settings</title>
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -12,7 +12,7 @@
 <!-- NAV -->
 <nav class="navbar">
   <div class="nav-left">
-    <a href="/index" class="nav-logo">🍌 Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
   </div>
   <div class="nav-links">
     <a href="/index">Generator</a>
@@ -21,7 +21,7 @@
     <a href="/loved">Loved</a>
     <a href="/settings" class="active">Settings</a>
     <a href="/credits">Credits</a>
-    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">☀️</button>
+    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">Light</button>
     <a href="/logout" class="nav-logout">Logout</a>
   </div>
 </nav>
@@ -38,14 +38,14 @@
           <div class="tp-bar"></div>
           <div class="tp-content"></div>
         </div>
-        <span class="theme-card-label">🌙 Dark</span>
+        <span class="theme-card-label">Dark</span>
       </button>
       <button class="theme-card" id="themeCardLight" onclick="setTheme('light')">
         <div class="theme-preview theme-preview-light">
           <div class="tp-bar"></div>
           <div class="tp-content"></div>
         </div>
-        <span class="theme-card-label">☀️ Light + Orange</span>
+        <span class="theme-card-label">Light + Orange</span>
       </button>
     </div>
   </section>
@@ -58,8 +58,8 @@
     <div class="key-row">
       <div class="input-wrap">
         <input type="password" id="apiKeyInput" placeholder="AIza..." autocomplete="off"
-               value="{{ '•' * 20 if has_key else '' }}">
-        <button class="btn-icon" id="toggleKeyBtn" title="Show/Hide" onclick="toggleKeyVisibility()">👁</button>
+               value="{{ "*" * 20 if has_key else "" }}">
+        <button class="btn-icon" id="toggleKeyBtn" title="Show/Hide" onclick="toggleKeyVisibility()">Show</button>
       </div>
       <button class="btn-verify" id="verifyBtn" onclick="verifyKey()">
         <span id="verifyLabel">Verify</span>
@@ -84,7 +84,7 @@
     </div>
 
     <!-- Image generation -->
-    <h3 class="stats-group-label">🎨 Image Generation</h3>
+    <h3 class="stats-group-label">Image Generation</h3>
     <div class="stats-grid">
       <div class="stat-box">
         <span class="stat-value" id="totalRequests">{{ stats.total_requests }}</span>
@@ -101,7 +101,7 @@
     </div>
 
     <!-- Vision / Analysis -->
-    <h3 class="stats-group-label" style="margin-top:20px">🔍 Vision Analysis (Gemini)</h3>
+    <h3 class="stats-group-label" style="margin-top:20px">Vision Analysis (Gemini)</h3>
     <div class="stats-grid">
       <div class="stat-box">
         <span class="stat-value" id="visionCalls">{{ stats.vision_calls | default(0) }}</span>
@@ -125,7 +125,7 @@
     </div>
 
     <!-- IMAGE GENERATION LOG -->
-    <h3 class="log-title" style="margin-top:20px">Recent requests — Image Generation</h3>
+    <h3 class="log-title" style="margin-top:20px">Recent requests - Image Generation</h3>
     <div class="log-table-wrap">
       <table class="log-table" id="logTable">
         <thead>
@@ -155,7 +155,7 @@
               <td>{{ entry.size }}</td>
               <td>{{ entry.n }}</td>
               <td class="td-cost">${{ "%.4f"|format(entry.cost) }}</td>
-              <td class="td-prompt">{{ entry.prompt_preview }}{% if entry.prompt_preview|length >= 60 %}…{% endif %}</td>
+              <td class="td-prompt">{{ entry.prompt_preview }}{% if entry.prompt_preview|length >= 60 %}...{% endif %}</td>
             </tr>
             {% endfor %}
           {% else %}
@@ -166,7 +166,7 @@
     </div>
 
     <!-- VISION ANALYSIS LOG -->
-    <h3 class="log-title" style="margin-top:18px">Recent analyses — Vision / Gemini</h3>
+    <h3 class="log-title" style="margin-top:18px">Recent analyses - Vision / Gemini</h3>
     <div class="log-table-wrap">
       <table class="log-table" id="visionLogTable">
         <thead>
@@ -203,7 +203,7 @@
     <h2>Estimated Pricing (March 2026)</h2>
 
     <!-- Image generation -->
-    <h3 class="stats-group-label">🎨 Image Generation — per generated image</h3>
+    <h3 class="stats-group-label">Image Generation</h3>
     <table class="price-table">
       <thead>
         <tr><th>Model</th><th>0.5K</th><th>1K</th><th>2K</th><th>4K</th><th>Free tier</th></tr>
@@ -211,12 +211,12 @@
       <tbody>
         <tr>
           <td><span class="badge badge-nb">NB</span> Nano Banana</td>
-          <td class="td-na">—</td><td>$0.039</td><td class="td-na">—</td><td class="td-na">—</td>
+          <td class="td-na">-</td><td>$0.039</td><td class="td-na">-</td><td class="td-na">-</td>
           <td class="td-free">~500 req/day</td>
         </tr>
         <tr>
           <td><span class="badge badge-pro">Pro</span> Nano Banana Pro</td>
-          <td class="td-na">—</td><td>$0.134</td><td>$0.134</td><td>$0.240</td>
+          <td class="td-na">-</td><td>$0.134</td><td>$0.134</td><td>$0.240</td>
           <td class="td-na">None</td>
         </tr>
         <tr>
@@ -228,7 +228,7 @@
     </table>
 
     <!-- Vision / Analysis -->
-    <h3 class="stats-group-label" style="margin-top:20px">🔍 Vision Analysis — per 1 million tokens</h3>
+    <h3 class="stats-group-label" style="margin-top:20px">Vision Analysis - per 1 million tokens</h3>
     <table class="price-table">
       <thead>
         <tr><th>Model</th><th>Input / 1M tok</th><th>Output / 1M tok</th><th>~Cost per analysis</th><th>Free tier</th></tr>
@@ -238,7 +238,7 @@
         <tr {% if model_id == analysis_model %}class="price-row-active"{% endif %}>
           <td>
             <span class="badge badge-vis">Vis</span> {{ info.label }}
-            {% if model_id == analysis_model %}<span class="badge-current">● active</span>{% endif %}
+            {% if model_id == analysis_model %}<span class="badge-current">active</span>{% endif %}
           </td>
           <td>${{ "%.3f"|format(info.input_per_1m) }}</td>
           <td>${{ "%.3f"|format(info.output_per_1m) }}</td>
@@ -253,7 +253,7 @@
 </main>
 
 <script>
-/* ── Theme toggle ─────────────────────────────────────────── */
+/* â”€â”€ Theme toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function toggleTheme() {
   const html = document.documentElement;
   const isLight = html.getAttribute('data-theme') === 'light';
@@ -271,7 +271,7 @@ function updateThemeBtn() {
   const btn = document.getElementById('themeToggleBtn');
   if (!btn) return;
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-  btn.textContent = isLight ? '🌙' : '☀️';
+  btn.textContent = isLight ? 'Dark' : 'Light';
   btn.title = isLight ? 'Switch to Dark mode' : 'Switch to Light mode';
 }
 function updateThemeCards() {
@@ -293,7 +293,7 @@ function toggleKeyVisibility() {
 async function verifyKey() {
   const inp = document.getElementById("apiKeyInput");
   const key = inp.value.trim();
-  if (!key || key.startsWith("•")) {
+  if (!key || key.startsWith("â€¢")) {
     showKeyStatus("Please enter the new key to verify first", "error");
     return;
   }
@@ -310,9 +310,9 @@ async function verifyKey() {
     });
     const d = await r.json();
     if (d.ok) {
-      showKeyStatus("✓ " + (d.message || "Valid key!"), "success");
+      showKeyStatus("OK: " + (d.message || "Valid key!"), "success");
     } else {
-      showKeyStatus("✗ " + (d.error || "Invalid key"), "error");
+      showKeyStatus("Error: " + (d.error || "Invalid key"), "error");
     }
   } catch(e) {
     showKeyStatus("Network error: " + e.message, "error");
@@ -324,7 +324,7 @@ async function verifyKey() {
 async function saveKey() {
   const inp = document.getElementById("apiKeyInput");
   const key = inp.value.trim();
-  if (!key || key.startsWith("•")) {
+  if (!key || key.startsWith("â€¢")) {
     showKeyStatus("Please enter the new key before saving", "error");
     return;
   }
@@ -337,7 +337,7 @@ async function saveKey() {
   if (d.ok) {
     showKeyStatus("Key saved successfully", "success");
     inp.type = "password";
-    inp.value = "•".repeat(20);
+    inp.value = "*".repeat(20);
     setTimeout(() => location.reload(), 1000);
   }
 }
@@ -358,3 +358,5 @@ async function resetStats() {
 </script>
 </body>
 </html>
+
+

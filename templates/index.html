@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -6,6 +6,71 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nano Banana Studio</title>
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
+<script>
+(function () {
+  function syncThemeToggleLabel() {
+    const btn = document.getElementById('themeToggleBtn');
+    if (!btn) return;
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    btn.textContent = isLight ? 'Dark' : 'Light';
+    btn.title = isLight ? 'Switch to Dark mode' : 'Switch to Light mode';
+  }
+
+  window.toggleTheme = function () {
+    const html = document.documentElement;
+    const isLight = html.getAttribute('data-theme') === 'light';
+    if (isLight) {
+      html.removeAttribute('data-theme');
+      localStorage.setItem('nb-theme', 'dark');
+    } else {
+      html.setAttribute('data-theme', 'light');
+      localStorage.setItem('nb-theme', 'light');
+    }
+    syncThemeToggleLabel();
+  };
+
+  window.toggleSidebar = function () {
+    const sidebar = document.querySelector('.sidebar');
+    if (!sidebar) return;
+    const overlay = document.getElementById('sidebarOverlay');
+    const isOpen = sidebar.classList.toggle('sidebar-open');
+    if (overlay) overlay.classList.toggle('sidebar-overlay-visible', isOpen);
+    document.body.classList.toggle('sidebar-no-scroll', isOpen);
+  };
+
+  window.toggleDesktopSidebar = function () {
+    const layout = document.querySelector('.app-layout');
+    if (!layout) return;
+    const collapsed = layout.classList.toggle('sidebar-collapsed');
+    try {
+      localStorage.setItem('nb_sidebar_collapsed', collapsed ? '1' : '0');
+    } catch (e) {}
+  };
+
+  function initShellChrome() {
+    syncThemeToggleLabel();
+    const layout = document.querySelector('.app-layout');
+    try {
+      if (layout && localStorage.getItem('nb_sidebar_collapsed') === '1') {
+        layout.classList.add('sidebar-collapsed');
+      }
+    } catch (e) {}
+    const overlay = document.getElementById('sidebarOverlay');
+    if (overlay && !overlay.dataset.nbBound) {
+      overlay.addEventListener('click', window.toggleSidebar);
+      overlay.dataset.nbBound = '1';
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initShellChrome, { once: true });
+  } else {
+    initShellChrome();
+  }
+
+  window.addEventListener('pageshow', syncThemeToggleLabel);
+})();
+</script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -16,7 +81,7 @@
     <button class="nav-hamburger" id="navHamburger" onclick="toggleSidebar()" title="Toggle sidebar" aria-label="Toggle sidebar">
       <span></span><span></span><span></span>
     </button>
-    <a href="/index" class="nav-logo">🍌 Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
   </div>
   <div class="nav-links">
     <a href="/index" class="active">Generator</a>
@@ -25,14 +90,14 @@
     <a href="/loved">Loved</a>
     <a href="/settings">Settings</a>
     <a href="/credits">Credits</a>
-    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">☀️</button>
+    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">Light</button>
     <a href="/logout" class="nav-logout">Logout</a>
   </div>
 </nav>
 
 {% if not has_key %}
 <div class="banner-warn">
-  API key non configurata — <a href="/settings">vai in Impostazioni</a> per inserirla.
+  API key not configured - <a href="/settings">go to Settings</a> to add it.
 </div>
 {% endif %}
 
@@ -59,12 +124,8 @@
     <div class="ctrl-group">
       <div class="ctrl-label">Output Format</div>
       <div class="toggle-tabs">
-        <button class="tab-btn active" id="tabImgText" onclick="setOutputMode('images_text', this)">
-          <span>▦</span> Images &amp; text
-        </button>
-        <button class="tab-btn" id="tabImgOnly" onclick="setOutputMode('images_only', this)">
-          <span>⬜</span> Images only
-        </button>
+        <button class="tab-btn active" id="tabImgText" onclick="setOutputMode('images_text', this)">Images &amp; text</button>
+        <button class="tab-btn" id="tabImgOnly" onclick="setOutputMode('images_only', this)">Images only</button>
       </div>
     </div>
 
@@ -259,6 +320,29 @@
         <div class="gallery-empty-title">No generations match these filters</div>
         <div class="gallery-empty-sub">Try a different date, model, size, or clear the filters.</div>
       </div>
+      <div class="gallery-viewer" id="galleryViewer" style="display:none">
+        <div class="gallery-feature-column">
+          <div class="gallery-feature-stage" id="galleryFeatureStage"></div>
+          <div class="gallery-feature-text" id="galleryFeatureText" style="display:none"></div>
+        </div>
+        <aside class="gallery-rail">
+          <div class="gallery-rail-header">
+            <div class="gallery-rail-heading">
+              <div class="gallery-rail-title">Previous Images</div>
+              
+            </div>
+            <div class="gallery-rail-controls">
+              <label class="gallery-rail-size-control" for="galleryDensityRange">
+                
+                <span class="gallery-rail-size-label" id="galleryDensityLabel">Medium</span>
+                <input type="range" id="galleryDensityRange" min="1" max="3" step="1" value="2">
+              </label>
+            </div>
+          </div>
+          <div class="gallery-rail-empty" id="galleryRailEmpty" style="display:none">Previous images will appear here.</div>
+          <div class="gallery-grid gallery-rail-grid" id="galleryGrid"></div>
+        </aside>
+      </div>
     </div>
 
     <div class="gen-status" id="genStatus" style="display:none">
@@ -276,7 +360,7 @@
         <div class="ref-strip-inner" id="refStripInner"></div>
         <div class="ref-strip-meta">
           <span id="refCounter" class="ref-counter">0/14</span>
-          <button class="ref-clear-all" onclick="clearAllRefImages()" title="Remove all">✕ All</button>
+          <button class="ref-clear-all" onclick="clearAllRefImages()" title="Remove all">Clear All</button>
         </div>
       </div>
 
@@ -286,7 +370,7 @@
            ondragleave="onDragLeave(event)"
            ondrop="onDrop(event)">
         <div class="drag-overlay" id="dragOverlay">
-          <span>📎 Drop images here</span>
+          <span>Drop images here</span>
         </div>
         <textarea id="promptInput" placeholder="Describe the scene you imagine..." rows="1"
                   onkeydown="handlePromptKey(event)"
@@ -297,144 +381,126 @@
       <div class="prompt-meta">
         <div class="meta-left">
 
-          <!-- ── Model chip + picker ── -->
           <div class="chip-wrap" id="modelChipWrap">
             <div class="model-chip" onclick="togglePicker('modelPickerPanel','modelChipWrap',event)">
               <span class="chip-g-icon">G</span>
               <span id="modelChipLabel">Nano Banana 2</span>
-              <span class="chip-caret">▾</span>
+              <span class="chip-caret">&#9662;</span>
             </div>
             <div class="picker-panel" id="modelPickerPanel">
               <button class="picker-model-row" data-model="gemini-3.1-flash-image-preview" onclick="pickModel(this)">
-                <span class="pm-icon pm-nb2">✦</span>
+                <span class="pm-icon pm-nb2">NB2</span>
                 <span class="pm-info">
                   <span class="pm-name">Nano Banana 2</span>
-                  <span class="pm-sub">Top quality · 14 ref images</span>
+                  <span class="pm-sub">Top quality - 14 ref images</span>
                 </span>
-                <span class="pm-check" id="pmChk-gemini-3.1-flash-image-preview">✓</span>
+                <span class="pm-check" id="pmChk-gemini-3.1-flash-image-preview">OK</span>
               </button>
               <button class="picker-model-row" data-model="gemini-3-pro-image-preview" onclick="pickModel(this)">
-                <span class="pm-icon pm-pro">◆</span>
+                <span class="pm-icon pm-pro">PRO</span>
                 <span class="pm-info">
                   <span class="pm-name">Nano Banana Pro</span>
-                  <span class="pm-sub">Pro quality · 8 ref images</span>
+                  <span class="pm-sub">Pro quality - 8 ref images</span>
                 </span>
-                <span class="pm-check" id="pmChk-gemini-3-pro-image-preview">✓</span>
+                <span class="pm-check" id="pmChk-gemini-3-pro-image-preview">OK</span>
               </button>
               <button class="picker-model-row" data-model="gemini-2.5-flash-image" onclick="pickModel(this)">
-                <span class="pm-icon pm-nb">○</span>
+                <span class="pm-icon pm-nb">NB</span>
                 <span class="pm-info">
                   <span class="pm-name">Nano Banana</span>
-                  <span class="pm-sub">Basic · No ref images</span>
+                  <span class="pm-sub">Basic - No ref images</span>
                 </span>
-                <span class="pm-check" id="pmChk-gemini-2.5-flash-image">✓</span>
+                <span class="pm-check" id="pmChk-gemini-2.5-flash-image">OK</span>
               </button>
             </div>
           </div>
 
-          <!-- ── Aspect ratio chip + picker ── -->
           <div class="chip-wrap" id="arChipWrap">
             <div class="ar-chip" onclick="togglePicker('arPickerPanel','arChipWrap',event)">
               <svg class="ar-chip-icon" id="arChipSvg" width="14" height="14" viewBox="0 0 14 14"></svg>
               <span id="arChipLabel">16:9</span>
-              <span class="chip-caret">▾</span>
+              <span class="chip-caret">&#9662;</span>
             </div>
             <div class="picker-panel picker-ar" id="arPickerPanel">
               <div class="picker-ar-grid" id="arPickerGrid"></div>
             </div>
           </div>
 
-          <!-- ── Quality chip + picker ── -->
           <div class="chip-wrap" id="qualChipWrap">
             <div class="res-chip" id="resChip" onclick="togglePicker('qualPickerPanel','qualChipWrap',event)">
               <span id="qualChipLabel">1K</span>
-              <span class="chip-caret">▾</span>
+              <span class="chip-caret">&#9662;</span>
             </div>
             <div class="picker-panel picker-qual" id="qualPickerPanel">
               <button class="picker-qual-row" data-res="0.5K" id="qualRow-0_5K" onclick="pickQual(this)">
                 <span class="pq-name">0.5K</span>
-                <span class="pq-desc">512 px · NB2 only</span>
-                <span class="pq-check" id="pqChk-0_5K">✓</span>
+                <span class="pq-desc">512 px - NB2 only</span>
+                <span class="pq-check" id="pqChk-0_5K">OK</span>
               </button>
               <button class="picker-qual-row" data-res="1K" id="qualRow-1K" onclick="pickQual(this)">
                 <span class="pq-name">1K</span>
-                <span class="pq-desc">1024 px — default</span>
-                <span class="pq-check" id="pqChk-1K">✓</span>
+                <span class="pq-desc">1024 px - default</span>
+                <span class="pq-check" id="pqChk-1K">OK</span>
               </button>
               <button class="picker-qual-row" data-res="2K" id="qualRow-2K" onclick="pickQual(this)">
                 <span class="pq-name">2K</span>
-                <span class="pq-desc">2048 px · Pro / NB2</span>
-                <span class="pq-check" id="pqChk-2K">✓</span>
+                <span class="pq-desc">2048 px - Pro / NB2</span>
+                <span class="pq-check" id="pqChk-2K">OK</span>
               </button>
               <button class="picker-qual-row" data-res="4K" id="qualRow-4K" onclick="pickQual(this)">
                 <span class="pq-name">4K <span class="pm-badge pm-premium" style="font-size:9px;vertical-align:middle">PREMIUM</span></span>
                 <span class="pq-desc">4096 px</span>
-                <span class="pq-check" id="pqChk-4K">✓</span>
+                <span class="pq-check" id="pqChk-4K">OK</span>
               </button>
             </div>
           </div>
 
-          <!-- Output image counter -->
           <div class="img-count-ctrl">
-            <button onclick="changeNumImg(-1)">−</button>
+            <button onclick="changeNumImg(-1)">-</button>
             <span id="imgCountDisplay">1/4</span>
             <button onclick="changeNumImg(1)">+</button>
           </div>
-          <!-- Search toggle mini -->
           <label class="search-toggle-mini" title="Grounding Google Search">
             <span>G</span>
             <input type="checkbox" id="searchMini" onchange="syncSearchToggle(this)">
           </label>
 
-          <!-- Separatore -->
           <div class="meta-sep"></div>
 
-          <!-- Reference image add buttons -->
           <div class="ref-actions" id="refActions">
-            <!-- Upload da file -->
-            <button class="ref-action-btn" id="refUploadBtn"
-                    onclick="triggerFileInput()" title="Upload reference image">
+            <button class="ref-action-btn" id="refUploadBtn" onclick="triggerFileInput()" title="Upload reference image">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
                 <polyline points="21 15 16 10 5 21"/>
               </svg>
             </button>
-            <!-- Browse Loved images -->
-            <button class="ref-action-btn" id="refPublishedBtn"
-                    onclick="openLovedPicker()" title="Choose from loved images">
+            <button class="ref-action-btn" id="refPublishedBtn" onclick="openLovedPicker()" title="Choose from loved images">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
                 <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
               </svg>
             </button>
-            <!-- Elements (@) -->
-            <button class="ref-action-btn ref-action-at" id="refElementsBtn"
-                    onclick="openElements()" title="Elements — asset library (@)">
-              @
-            </button>
-            <input type="file" id="refFileInput" accept="image/*" multiple style="display:none"
-                   onchange="onFileInputChange(event)">
+            <button class="ref-action-btn ref-action-at" id="refElementsBtn" onclick="openElements()" title="Elements - asset library (@)">@</button>
+            <input type="file" id="refFileInput" accept="image/*" multiple style="display:none" onchange="onFileInputChange(event)">
           </div>
-
+        </div>
+        <div class="meta-seed">
+          <div class="seed-control-group">
+            <span class="seed-control-label">Seed</span>
+            <select id="seedModeSelect" class="seed-mode-select" onchange="syncSeedControls()">
+              <option value="random" selected>Random</option>
+              <option value="fixed">Fixed</option>
+              <option value="incremental">Incremental</option>
+            </select>
+            <input id="seedValueInput" class="seed-value-input" type="number" min="1" max="2147483647" step="1" inputmode="numeric" placeholder="Seed value" oninput="syncSeedControls({persist:false})" onchange="syncSeedControls()">
+          </div>
+          <div class="seed-hint" id="seedModeHint" style="display:none"></div>
         </div>
         <div class="meta-right">
           <button class="btn-generate" id="generateBtn" onclick="generate()">
-            Generate <span class="gen-icon">✦</span> <span id="imgCountBadge">1</span>
+            Generate <span class="gen-icon">*</span> <span id="imgCountBadge">1</span>
           </button>
         </div>
-      </div>
-
-      <div class="prompt-bottom-row">
-        <div class="seed-control-group">
-          <span class="seed-control-label">Seed</span>
-          <select id="seedModeSelect" class="seed-mode-select" onchange="syncSeedControls()">
-            <option value="random" selected>Random</option>
-            <option value="fixed">Fixed</option>
-            <option value="incremental">Incremental</option>
-          </select>
-          <input id="seedValueInput" class="seed-value-input" type="number" min="1" max="2147483647" step="1" inputmode="numeric" placeholder="Seed value" oninput="syncSeedControls({persist:false})" onchange="syncSeedControls()">
-        </div>
-        <div class="seed-hint" id="seedModeHint">Random stores a new seed value each time you generate.</div>
       </div>
     </div>
 
@@ -464,7 +530,7 @@
 </div>
 
 <!-- ================================================================
-     MODAL — Loved image picker
+     MODAL Ã¢â‚¬â€ Loved image picker
 ================================================================ -->
 <div class="modal-overlay" id="pubPickerOverlay" onclick="closeLovedPickerOnBg(event)">
   <div class="modal-box pub-picker-box">
@@ -481,8 +547,8 @@
       </div>
       <div class="pub-picker-grid" id="pubPickerGrid" style="display:none"></div>
       <div class="pub-picker-empty" id="pubPickerEmpty" style="display:none">
-        🤍 No loved images yet.<br>
-        <a href="/loved">Go to Loved gallery →</a>
+        Ã°Å¸Â¤Â No loved images yet.<br>
+        <a href="/loved">Go to Loved gallery Ã¢â€ â€™</a>
       </div>
     </div>
     <div class="modal-footer">
@@ -498,7 +564,7 @@
 </div>
 
 <!-- ================================================================
-     MODAL — Elements (asset library)
+     MODAL Ã¢â‚¬â€ Elements (asset library)
 ================================================================ -->
 <div class="modal-overlay elements-overlay" id="elementsOverlay" onclick="closeElementsOnBg(event)">
   <div class="modal-box elements-box">
@@ -525,10 +591,10 @@
       <!-- Sidebar categorie -->
       <nav class="elements-sidebar">
         <button class="el-cat-btn active" data-cat="all" onclick="filterElementsCat('all', this)">
-          <span class="el-cat-icon">⊞</span> All
+          <span class="el-cat-icon">Ã¢Å Å¾</span> All
         </button>
         <button class="el-cat-btn" data-cat="favorites" onclick="filterElementsCat('favorites', this)">
-          <span class="el-cat-icon">⭐</span> Pinned
+          <span class="el-cat-icon">Ã¢Â­Â</span> Pinned
         </button>
         <div class="el-cat-separator"></div>
         <div id="elDynamicCats">
@@ -549,9 +615,9 @@
         </div>
         <!-- Paginazione -->
         <div class="elements-pagination" id="elementsPagination" style="display:none">
-          <button id="elPrevBtn" onclick="elementsChangePage(-1)">← Precedenti</button>
+          <button id="elPrevBtn" onclick="elementsChangePage(-1)">Ã¢â€ Â Precedenti</button>
           <span id="elPageInfo">1 / 1</span>
-          <button id="elNextBtn" onclick="elementsChangePage(1)">Successivi →</button>
+          <button id="elNextBtn" onclick="elementsChangePage(1)">Successivi Ã¢â€ â€™</button>
         </div>
       </div>
 
@@ -580,7 +646,7 @@
 
     <!-- Header -->
     <div class="modal-header">
-      <h3>✦ New Talent</h3>
+      <h3>Ã¢Å“Â¦ New Talent</h3>
       <div class="modal-header-right">
         <span class="wizard-step-label" id="wizStepLabel">Upload image</span>
         <button class="modal-close-btn" onclick="closeWizard()" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -592,9 +658,9 @@
       <div class="wizard-dropzone" id="wizDropzone"
            ondragover="wizDragOver(event)" ondragleave="wizDragLeave(event)" ondrop="wizDrop(event)"
            onclick="wizTriggerFile()">
-        <div class="wizard-drop-icon">⬆</div>
+        <div class="wizard-drop-icon">Ã¢Â¬â€ </div>
         <div class="wizard-drop-title">Drag an image here</div>
-        <div class="wizard-drop-sub">or click to browse — JPG, PNG, WEBP</div>
+        <div class="wizard-drop-sub">or click to browse Ã¢â‚¬â€ JPG, PNG, WEBP</div>
       </div>
       <input type="file" id="wizFileInput" accept="image/*" style="display:none"
              onchange="wizOnFileChange(event)">
@@ -715,8 +781,8 @@
     <!-- Debug log panel -->
     <div id="wizDebugWrap" style="display:none">
       <div class="wiz-debug-bar">
-        <span class="wiz-debug-title">🔍 Gemini Debug Log</span>
-        <button class="wiz-debug-clear" onclick="wizClearLog()">✕ Clear</button>
+        <span class="wiz-debug-title">Ã°Å¸â€Â Gemini Debug Log</span>
+        <button class="wiz-debug-clear" onclick="wizClearLog()">Ã¢Å“â€¢ Clear</button>
       </div>
       <div class="wiz-debug-body" id="wizDebugBody"></div>
     </div>
@@ -726,18 +792,18 @@
       <div id="wizFooterLeft">
         <button class="btn-wiz-migrate" id="wizMigrateBtn" onclick="migrateCatalog()"
                 title="Migrate catalog.json into individual talent JSON files">
-          ⚙ Migrate catalog
+          Ã¢Å¡â„¢ Migrate catalog
         </button>
         <button class="btn-wiz-migrate" id="wizLogBtn" onclick="wizToggleLog()"
                 title="Show/hide Gemini debug log">
-          🔍 Log
+          Ã°Å¸â€Â Log
         </button>
       </div>
       <div class="modal-footer-btns">
         <button class="btn-modal-cancel" onclick="closeWizard()">Cancel</button>
         <button class="btn-modal-confirm" id="wizSaveBtn"
                 onclick="saveTalent()" style="display:none">
-          Save Talent ✦
+          Save Talent Ã¢Å“Â¦
         </button>
       </div>
     </div>
@@ -748,7 +814,7 @@
 <!-- Publication toast -->
 <div class="pub-toast" id="pubToast">
   <span id="pubToastText">Image loved!</span>
-  <a href="/loved" id="pubToastLink">View gallery →</a>
+  <a href="/loved" id="pubToastLink">View gallery Ã¢â€ â€™</a>
 </div>
 
 <script>
@@ -795,9 +861,9 @@ function syncSeedControls(options = {}) {
   valueEl.value = normalizeSeedValue(valueEl.value || generateRandomSeedValue());
 
   const hints = {
-    fixed: "Fixed keeps the same saved seed value for every run.",
-    random: "Random stores a new seed value each time you generate.",
-    incremental: "Incremental uses the current seed, then advances it by 1 after a successful run.",
+    fixed: "",
+    random: "",
+    incremental: "",
   };
   hintEl.textContent = hints[mode] || hints.random;
 
@@ -1265,20 +1331,20 @@ function pickQual(row) {
 
 function initArPicker() {
   const arOptions = [
-    {v:"1:1",   label:"1:1 — Square"},
-    {v:"16:9",  label:"16:9 — Landscape"},
-    {v:"9:16",  label:"9:16 — Portrait"},
-    {v:"4:3",   label:"4:3 — Standard"},
-    {v:"3:4",   label:"3:4 — Standard Portrait"},
-    {v:"3:2",   label:"3:2 — Photo"},
-    {v:"2:3",   label:"2:3 — Photo Portrait"},
-    {v:"21:9",  label:"21:9 — Ultrawide"},
-    {v:"5:4",   label:"5:4 — Large Format"},
-    {v:"4:5",   label:"4:5 — Social Portrait"},
-    {v:"4:1",   label:"4:1 — Panoramic", nb2:true},
-    {v:"1:4",   label:"1:4 — Tall Banner", nb2:true},
-    {v:"8:1",   label:"8:1 — Super Wide", nb2:true},
-    {v:"1:8",   label:"1:8 — Super Tall", nb2:true},
+    {v:"1:1",   label:"1:1 Ã¢â‚¬â€ Square"},
+    {v:"16:9",  label:"16:9 Ã¢â‚¬â€ Landscape"},
+    {v:"9:16",  label:"9:16 Ã¢â‚¬â€ Portrait"},
+    {v:"4:3",   label:"4:3 Ã¢â‚¬â€ Standard"},
+    {v:"3:4",   label:"3:4 Ã¢â‚¬â€ Standard Portrait"},
+    {v:"3:2",   label:"3:2 Ã¢â‚¬â€ Photo"},
+    {v:"2:3",   label:"2:3 Ã¢â‚¬â€ Photo Portrait"},
+    {v:"21:9",  label:"21:9 Ã¢â‚¬â€ Ultrawide"},
+    {v:"5:4",   label:"5:4 Ã¢â‚¬â€ Large Format"},
+    {v:"4:5",   label:"4:5 Ã¢â‚¬â€ Social Portrait"},
+    {v:"4:1",   label:"4:1 Ã¢â‚¬â€ Panoramic", nb2:true},
+    {v:"1:4",   label:"1:4 Ã¢â‚¬â€ Tall Banner", nb2:true},
+    {v:"8:1",   label:"8:1 Ã¢â‚¬â€ Super Wide", nb2:true},
+    {v:"1:8",   label:"1:8 Ã¢â‚¬â€ Super Tall", nb2:true},
   ];
   const grid = document.getElementById("arPickerGrid");
   const S = 18;
@@ -1299,7 +1365,7 @@ function initArPicker() {
         <rect x="${x}" y="${y}" width="${rw}" height="${rh}" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
       </svg>
       <span class="ar-row-label">${opt.label}</span>
-      <span class="ar-row-check" id="arChk-${opt.v.replace(':','_')}">✓</span>`;
+      <span class="ar-row-check" id="arChk-${opt.v.replace(':','_')}">Ã¢Å“â€œ</span>`;
     btn.onclick = () => pickAR(btn);
     grid.appendChild(btn);
   });
@@ -1601,7 +1667,7 @@ async function openLovedPicker() {
 
         const check = document.createElement("div");
         check.className = "picker-check";
-        check.innerHTML = "✓";
+        check.innerHTML = "Ã¢Å“â€œ";
 
         const caption = document.createElement("div");
         caption.className = "picker-caption";
@@ -1761,6 +1827,10 @@ function autoResize(el) {
 // Gallery - masonry grid with filters
 // ============================================================
 let _galleryGrid = null;
+let _galleryViewer = null;
+let _galleryFeatureStage = null;
+let _galleryFeatureText = null;
+let _galleryRailEmpty = null;
 let _infoPopup   = null;
 let galleryEntries = [];
 let galleryEntrySequence = 0;
@@ -1772,18 +1842,78 @@ const GALLERY_FILTER_DEFAULTS = {
   model: "all",
 };
 let galleryFilters = Object.assign({}, GALLERY_FILTER_DEFAULTS);
+const GALLERY_DENSITY_DEFAULT = 2;
+const GALLERY_DENSITY_MIN = 1;
+const GALLERY_DENSITY_MAX = 3;
+
+function clampGalleryDensity(value) {
+  const parsed = parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return GALLERY_DENSITY_DEFAULT;
+  return Math.min(GALLERY_DENSITY_MAX, Math.max(GALLERY_DENSITY_MIN, parsed));
+}
+
+function describeGalleryDensity(level) {
+  if (level === 1) return "Large";
+  if (level === 3) return "Small";
+  return "Medium";
+}
+
+function applyGalleryDensity(level, persist = true) {
+  const safeLevel = clampGalleryDensity(level);
+  document.documentElement.style.setProperty("--gallery-rail-columns", String(safeLevel));
+  const slider = document.getElementById("galleryDensityRange");
+  const label = document.getElementById("galleryDensityLabel");
+  if (slider) slider.value = safeLevel;
+  if (label) label.textContent = describeGalleryDensity(safeLevel);
+  if (persist) {
+    try { localStorage.setItem("nb_gallery_density", String(safeLevel)); } catch (e) {}
+  }
+  return safeLevel;
+}
+
+function bindGalleryViewerControls() {
+  const densitySlider = document.getElementById("galleryDensityRange");
+  if (densitySlider && densitySlider.dataset.bound !== "1") {
+    densitySlider.dataset.bound = "1";
+    const updateDensity = () => applyGalleryDensity(densitySlider.value);
+    densitySlider.addEventListener("input", updateDensity);
+    densitySlider.addEventListener("change", updateDensity);
+  }
+
+  let restoredDensity = GALLERY_DENSITY_DEFAULT;
+  try {
+    restoredDensity = clampGalleryDensity(localStorage.getItem("nb_gallery_density") || GALLERY_DENSITY_DEFAULT);
+  } catch (e) {}
+  applyGalleryDensity(restoredDensity, false);
+}
+
+function ensureGalleryViewerRefs() {
+  if (!_galleryViewer || !_galleryViewer.isConnected) {
+    _galleryViewer = document.getElementById("galleryViewer");
+  }
+  if (!_galleryFeatureStage || !_galleryFeatureStage.isConnected) {
+    _galleryFeatureStage = document.getElementById("galleryFeatureStage");
+  }
+  if (!_galleryFeatureText || !_galleryFeatureText.isConnected) {
+    _galleryFeatureText = document.getElementById("galleryFeatureText");
+  }
+  if (!_galleryGrid || !_galleryGrid.isConnected) {
+    _galleryGrid = document.getElementById("galleryGrid");
+  }
+  if (!_galleryRailEmpty || !_galleryRailEmpty.isConnected) {
+    _galleryRailEmpty = document.getElementById("galleryRailEmpty");
+  }
+  return {
+    viewer: _galleryViewer,
+    featureStage: _galleryFeatureStage,
+    featureText: _galleryFeatureText,
+    grid: _galleryGrid,
+    railEmpty: _galleryRailEmpty,
+  };
+}
 
 function getGalleryGrid() {
-  if (_galleryGrid && _galleryGrid.isConnected) return _galleryGrid;
-  const gallery = document.getElementById("gallery");
-  let g = gallery.querySelector(".gallery-grid");
-  if (!g) {
-    g = document.createElement("div");
-    g.className = "gallery-grid";
-    gallery.appendChild(g);
-  }
-  _galleryGrid = g;
-  return g;
+  return ensureGalleryViewerRefs().grid;
 }
 
 function nextGallerySequence() {
@@ -1876,12 +2006,12 @@ function getGalleryFilteredEntries() {
   return filtered;
 }
 
-function buildTextCard(entry) {
+function buildTextCard(entry, options = {}) {
   const wrap = document.createElement("div");
-  wrap.className = "text-card-wrapper";
+  wrap.className = options.featured ? "text-card-wrapper text-card-wrapper-featured" : "text-card-wrapper";
 
   const card = document.createElement("div");
-  card.className = "text-card";
+  card.className = options.featured ? "text-card text-card-featured" : "text-card";
 
   const meta = document.createElement("div");
   meta.className = "text-card-meta";
@@ -1899,18 +2029,20 @@ function buildTextCard(entry) {
 }
 
 function renderGalleryEntries() {
-  const grid = getGalleryGrid();
+  const { viewer, featureStage, featureText, grid, railEmpty } = ensureGalleryViewerRefs();
   const placeholder = document.getElementById("galleryPlaceholder");
   const emptyState = document.getElementById("galleryEmptyState");
   const entries = getGalleryFilteredEntries();
 
+  featureStage.innerHTML = "";
+  featureText.innerHTML = "";
   grid.innerHTML = "";
   updateGalleryFilterCount(entries.length, galleryEntries.length);
 
   if (galleryEntries.length === 0) {
     placeholder.style.display = "flex";
     emptyState.style.display = "none";
-    grid.style.display = "none";
+    viewer.style.display = "none";
     return;
   }
 
@@ -1918,18 +2050,55 @@ function renderGalleryEntries() {
 
   if (entries.length === 0) {
     emptyState.style.display = "flex";
-    grid.style.display = "none";
+    viewer.style.display = "none";
     return;
   }
 
   emptyState.style.display = "none";
-  grid.style.display = "grid";
+  viewer.style.display = "grid";
 
-  entries.forEach(entry => {
-    if (entry.type === "text") {
-      grid.appendChild(buildTextCard(entry));
-      return;
-    }
+  const imageEntries = entries.filter(entry => entry.type === "image");
+  const textEntries = entries.filter(entry => entry.type === "text");
+  const featuredImageEntry = imageEntries[0] || null;
+  const featuredTextEntry = !featuredImageEntry && textEntries.length ? textEntries[0] : null;
+  const featureColumnTextEntries = featuredImageEntry ? textEntries : textEntries.slice(1);
+  const railImageEntries = featuredImageEntry ? imageEntries.slice(1) : imageEntries;
+
+  if (featuredImageEntry) {
+    featureStage.appendChild(
+      buildImgCard(
+        featuredImageEntry.image,
+        featuredImageEntry.idx || 0,
+        featuredImageEntry.params || {},
+        featuredImageEntry.badgeLabel || "NB",
+        { featured: true }
+      )
+    );
+  } else if (featuredTextEntry) {
+    featureStage.appendChild(buildTextCard(featuredTextEntry, { featured: true }));
+  }
+
+  if (featureColumnTextEntries.length > 0) {
+    featureText.style.display = "grid";
+    featureColumnTextEntries.forEach(entry => {
+      featureText.appendChild(buildTextCard(entry, { featured: true }));
+    });
+  } else {
+    featureText.style.display = "none";
+  }
+
+  if (railImageEntries.length === 0) {
+    railEmpty.textContent = featuredImageEntry
+      ? "No previous images yet."
+      : "No image cards are available for this filtered view.";
+    railEmpty.style.display = "flex";
+    grid.style.display = "none";
+    return;
+  }
+
+  railEmpty.style.display = "none";
+  grid.style.display = "flex";
+  railImageEntries.forEach(entry => {
     grid.appendChild(buildImgCard(entry.image, entry.idx || 0, entry.params || {}, entry.badgeLabel || "NB"));
   });
 }
@@ -2009,22 +2178,23 @@ function renderGallery(images, text, params) {
   renderGalleryEntries();
 }
 
-function buildImgCard(img, idx, params, badgeLabel) {
+function buildImgCard(img, idx, params, badgeLabel, options = {}) {
   const card = document.createElement("div");
-  card.className = "img-card";
+  card.className = options.featured ? "img-card img-card-featured" : "img-card";
 
   // Image - natural height
   const image   = document.createElement("img");
+  image.className = options.featured ? "img-card-image img-card-image-featured" : "img-card-image";
   image.src     = `data:${img.mime_type};base64,${img.data}`;
   image.alt     = `Generated ${idx+1}`;
-  image.loading = "lazy";
+  image.loading = options.featured ? "eager" : "lazy";
   image.onclick = () => openLightbox(img, idx, params);
 
-  // ── Icone hover (colonna top-right) — SVG icons ─────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Icone hover (colonna top-right) Ã¢â‚¬â€ SVG icons Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const actions = document.createElement("div");
   actions.className = "img-actions";
 
-  // ♡ Love (favorite)
+  // Ã¢â„¢Â¡ Love (favorite)
   const favBtn = makeActionBtn(SVG_HEART_EMPTY, "Love this image");
   favBtn.onclick = (e) => {
     e.stopPropagation();
@@ -2032,7 +2202,7 @@ function buildImgCard(img, idx, params, badgeLabel) {
     publishImage(img, idx, params, favBtn);
   };
 
-  // ↓ Download
+  // Ã¢â€ â€œ Download
   const dlBtn = makeActionBtn(SVG_DOWNLOAD, "Download");
   dlBtn.onclick = (e) => { e.stopPropagation(); downloadImage(img, idx); };
 
@@ -2044,13 +2214,13 @@ function buildImgCard(img, idx, params, badgeLabel) {
   const infoBtn = makeActionBtn(SVG_INFO, "Info prompt");
   infoBtn.onclick = (e) => { e.stopPropagation(); toggleInfoPopup(params, infoBtn); };
 
-  // 🗑 Delete generation from disk
+  // Ã°Å¸â€”â€˜ Delete generation from disk
   const delBtn = makeActionBtn(SVG_TRASH, "Delete");
   delBtn.onclick = (e) => { e.stopPropagation(); deleteGeneration(params.gen_date, params.gen_filename); };
 
   actions.append(favBtn, dlBtn, copyBtn, infoBtn, delBtn);
 
-  // ── Badge modello bottom-left ────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Badge modello bottom-left Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const badge = document.createElement("div");
   badge.className = "img-card-badge";
   badge.textContent = badgeLabel.toUpperCase();
@@ -2059,7 +2229,7 @@ function buildImgCard(img, idx, params, badgeLabel) {
   return card;
 }
 
-/* ── SVG Icon Library (Lucide-style, 15×15) ─────────────────── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ SVG Icon Library (Lucide-style, 15Ãƒâ€”15) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
 const SVG_HEART_EMPTY = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`;
 const SVG_HEART_FULL  = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`;
 const SVG_DOWNLOAD    = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
@@ -2302,7 +2472,7 @@ async function publishImage(img, idx, params, btnEl) {
 async function publishFromLightbox() {
   if (!lbCurrentImg) return;
   const btn = document.getElementById("lbPublishBtn");
-  btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9" stroke-dasharray="28 56" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.7s" repeatCount="indefinite"/></circle></svg> Saving…`;
+  btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9" stroke-dasharray="28 56" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.7s" repeatCount="indefinite"/></circle></svg> SavingÃ¢â‚¬Â¦`;
   btn.disabled  = true;
   await publishImage(lbCurrentImg, 0, lbCurrentParams, null);
 }
@@ -2346,13 +2516,22 @@ function toggleSidebar() {
 }
 
 function toggleDesktopSidebar() {
-  document.querySelector(".app-layout").classList.toggle("sidebar-collapsed");
+  const layout = document.querySelector(".app-layout");
+  if (!layout) return;
+  const collapsed = layout.classList.toggle("sidebar-collapsed");
+  try { localStorage.setItem("nb_sidebar_collapsed", collapsed ? "1" : "0"); } catch (e) {}
 }
 
 // Close sidebar when clicking overlay
 document.addEventListener("DOMContentLoaded", () => {
   const overlay = document.getElementById("sidebarOverlay");
   if (overlay) overlay.addEventListener("click", toggleSidebar);
+  const layout = document.querySelector(".app-layout");
+  try {
+    if (layout && localStorage.getItem("nb_sidebar_collapsed") === "1") {
+      layout.classList.add("sidebar-collapsed");
+    }
+  } catch (e) {}
 });
 
 // ============================================================
@@ -2411,7 +2590,7 @@ function hideError() {
 function showCostToast(cost, label) {
   const t = document.createElement("div");
   t.className   = "cost-toast";
-  t.textContent = `${label} · $${cost.toFixed(4)}`;
+  t.textContent = `${label} Ã‚Â· $${cost.toFixed(4)}`;
   document.body.appendChild(t);
   setTimeout(() => t.classList.add("show"), 50);
   setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 300); }, 3000);
@@ -2449,7 +2628,7 @@ function blobToBase64(blob) {
 }
 
 // ============================================================
-// ELEMENTS — asset library
+// ELEMENTS Ã¢â‚¬â€ asset library
 // ============================================================
 let elCurrentCat   = "all";
 let elCurrentPage  = 1;
@@ -2465,10 +2644,10 @@ let elCategories   = [];
 // Character metadata filters
 const EL_FILTER_DEFS = [
   { group: "gender", label: "Gender", options: [
-    { v: "female",      l: "♀ Female"     },
-    { v: "male",        l: "♂ Male"       },
-    { v: "non-binary",  l: "⊕ Non-binary" },
-    { v: "androgynous", l: "◈ Androg."    },
+    { v: "female",      l: "Ã¢â„¢â‚¬ Female"     },
+    { v: "male",        l: "Ã¢â„¢â€š Male"       },
+    { v: "non-binary",  l: "Ã¢Å â€¢ Non-binary" },
+    { v: "androgynous", l: "Ã¢â€”Ë† Androg."    },
   ]},
   { group: "age_group", label: "Age", options: [
     { v: "teen",        l: "Teen"        },
@@ -2522,7 +2701,7 @@ const EL_FILTER_DEFS = [
     { v: "silver",          l: "Silver",       dot: "#ccc"    },
     { v: "white",           l: "White",        dot: "#f0f0f0" },
     { v: "bald",            l: "Bald",         dot: "#e0c8b0" },
-    { v: "colored",         l: "✦ Colored",    dot: "linear-gradient(135deg,#f0f,#0ff)" },
+    { v: "colored",         l: "Ã¢Å“Â¦ Colored",    dot: "linear-gradient(135deg,#f0f,#0ff)" },
   ]},
   { group: "hair_style", label: "Acconciatura", options: [
     { v: "bald",           l: "Bald/Shaved"  },
@@ -2547,7 +2726,7 @@ const EL_FILTER_DEFS = [
     { v: "ponytail",       l: "Ponytail"     },
     { v: "updo",           l: "Updo"         },
     { v: "tied_back",      l: "Tied Back"    },
-    { v: "fantasy_styled", l: "✦ Fantasy"    },
+    { v: "fantasy_styled", l: "Ã¢Å“Â¦ Fantasy"    },
   ]},
   { group: "body_type", label: "Body Type", options: [
     { v: "slim",         l: "Slim"         },
@@ -2638,7 +2817,7 @@ function renderElFiltersBar() {
     clearRow.className = "el-filter-clear-row";
     const clearBtn = document.createElement("button");
     clearBtn.className = "el-filter-clear-btn";
-    clearBtn.textContent = "× Cancella filtri";
+    clearBtn.textContent = "Ãƒâ€” Cancella filtri";
     clearBtn.onclick = elClearFilters;
     clearRow.appendChild(clearBtn);
     bar.appendChild(clearRow);
@@ -2763,12 +2942,12 @@ function renderElementsGrid(items) {
     // Overlay check
     const check = document.createElement("div");
     check.className = "el-card-check";
-    check.innerHTML = "✓";
+    check.innerHTML = "Ã¢Å“â€œ";
 
     // Star favorito
     const star = document.createElement("button");
     star.className = "el-card-star" + (asset.is_favorite ? " starred" : "");
-    star.innerHTML  = "★";
+    star.innerHTML  = "Ã¢Ëœâ€¦";
     star.title      = asset.is_favorite ? "Remove from favorites" : "Add to favorites";
     star.onclick = async (e) => {
       e.stopPropagation();
@@ -2905,23 +3084,23 @@ let wizMimeType   = "image/jpeg";
 let wizAnalyzed   = {};
 
 const WIZ_FIELDS = [
-  { key: "name",        label: "Nome",          icon: "👤" },
-  { key: "gender",      label: "Gender",        icon: "⊕"  },
-  { key: "ethnicity",   label: "Ethnicity",       icon: "🌍" },
-  { key: "age_group",   label: "Age Range",    icon: "📅" },
-  { key: "skin_tone",   label: "Skin Tone",    icon: "🎨" },
-  { key: "hair_color",  label: "Hair",       icon: "💇" },
-  { key: "hair_style",  label: "Style",         icon: "✂"  },
-  { key: "eye_color",   label: "Occhi",         icon: "👁"  },
-  { key: "body_type",   label: "Body Type",   icon: "📐" },
-  { key: "description", label: "Description",   icon: "📝" },
+  { key: "name",        label: "Nome",          icon: "Ã°Å¸â€˜Â¤" },
+  { key: "gender",      label: "Gender",        icon: "Ã¢Å â€¢"  },
+  { key: "ethnicity",   label: "Ethnicity",       icon: "Ã°Å¸Å’Â" },
+  { key: "age_group",   label: "Age Range",    icon: "Ã°Å¸â€œâ€¦" },
+  { key: "skin_tone",   label: "Skin Tone",    icon: "Ã°Å¸Å½Â¨" },
+  { key: "hair_color",  label: "Hair",       icon: "Ã°Å¸â€™â€¡" },
+  { key: "hair_style",  label: "Style",         icon: "Ã¢Å“â€š"  },
+  { key: "eye_color",   label: "Occhi",         icon: "Ã°Å¸â€˜Â"  },
+  { key: "body_type",   label: "Body Type",   icon: "Ã°Å¸â€œÂ" },
+  { key: "description", label: "Description",   icon: "Ã°Å¸â€œÂ" },
 ];
 
 let wizDetectTimers = [];
 
 function wizStartScan() {
   wizClearLog();
-  wizLog("info", "🔄 Nuova scansione avviata");
+  wizLog("info", "Ã°Å¸â€â€ž Nuova scansione avviata");
   const container = document.getElementById("wizDetectFields");
   if (!container) return;
   // Clear old timers
@@ -2936,8 +3115,8 @@ function wizStartScan() {
     row.innerHTML = `
       <span class="wdr-icon">${f.icon}</span>
       <span class="wdr-label">${f.label}</span>
-      <span class="wdr-value">—</span>
-      <span class="wdr-check">✓</span>`;
+      <span class="wdr-value">Ã¢â‚¬â€</span>
+      <span class="wdr-check">Ã¢Å“â€œ</span>`;
     container.appendChild(row);
 
     // Stagger activation
@@ -2957,7 +3136,7 @@ function wizCompleteScan(meta) {
       ? (Array.isArray(meta.tags) ? meta.tags.join(", ") : (meta.tags || ""))
       : (meta[f.key] || "");
     const valEl = row.querySelector(".wdr-value");
-    if (valEl) valEl.textContent = val || "—";
+    if (valEl) valEl.textContent = val || "Ã¢â‚¬â€";
     row.classList.remove("scanning");
     if (val) row.classList.add("done");
   });
@@ -3020,7 +3199,7 @@ function wizProcessFile(file) {
     document.getElementById("wizStep1").style.display = "none";
     document.getElementById("wizStep2").style.display = "";
     document.getElementById("wizPreviewImg").src = dataUrl;
-    document.getElementById("wizStepLabel").textContent = "Analyzing…";
+    document.getElementById("wizStepLabel").textContent = "AnalyzingÃ¢â‚¬Â¦";
     wizStartScan();
 
     // Call analyze
@@ -3073,7 +3252,7 @@ async function wizAnalyzeImage(b64, mimeType, dataUrl) {
       body:    JSON.stringify({data: b64, mime_type: mimeType})
     });
     const data = await r.json();
-    wizLog("info", "◀ Risposta HTTP ricevuta", {ok: data.ok, has_metadata: !!data.metadata, error: data.error || null});
+    wizLog("info", "Ã¢â€”â‚¬ Risposta HTTP ricevuta", {ok: data.ok, has_metadata: !!data.metadata, error: data.error || null});
     if (data.image_info) {
       const ii = data.image_info;
       if (ii.resized)
@@ -3081,15 +3260,15 @@ async function wizAnalyzeImage(b64, mimeType, dataUrl) {
       else
         wizLog("info", `Image OK: ${ii.orig_w}x${ii.orig_h}px -> converted to JPG 90%`);
     }
-    if (data.raw_text) wizLog("info", "📄 Raw text da Gemini:", data.raw_text);
-    if (data.usage)    wizLog("info", `💰 Token: ${data.usage.input_tokens} input / ${data.usage.output_tokens} output — costo $${(data.usage.cost_usd||0).toFixed(7)}`);
+    if (data.raw_text) wizLog("info", "Ã°Å¸â€œâ€ž Raw text da Gemini:", data.raw_text);
+    if (data.usage)    wizLog("info", `Ã°Å¸â€™Â° Token: ${data.usage.input_tokens} input / ${data.usage.output_tokens} output Ã¢â‚¬â€ costo $${(data.usage.cost_usd||0).toFixed(7)}`);
     if (!data.ok) throw new Error(data.error || "Analysis error");
     wizAnalyzed = data.metadata;
-    wizLog("success", "✔ Metadata parsati da Gemini", wizAnalyzed);
+    wizLog("success", "Ã¢Å“â€ Metadata parsati da Gemini", wizAnalyzed);
   } catch(e) {
     wizAnalyzed = {};
-    wizLog("error", "✘ Analysis error: " + e.message);
-    showError("Analysis failed: " + e.message + " — fill in fields manually.");
+    wizLog("error", "Ã¢Å“Ëœ Analysis error: " + e.message);
+    showError("Analysis failed: " + e.message + " Ã¢â‚¬â€ fill in fields manually.");
   }
 
   // Show detected values in the scan panel, then pause briefly for feedback
@@ -3106,14 +3285,14 @@ async function wizAnalyzeImage(b64, mimeType, dataUrl) {
 }
 
 function wizFillForm(meta) {
-  wizLog("info", "📝 Compilazione form con metadata…");
+  wizLog("info", "Ã°Å¸â€œÂ Compilazione form con metadataÃ¢â‚¬Â¦");
   const set = (id, val) => {
     const el = document.getElementById(id);
     if (el) {
       el.value = val || "";
-      wizLog("info", `  → #${id} = "${val || ""}"`);
+      wizLog("info", `  Ã¢â€ â€™ #${id} = "${val || ""}"`);
     } else {
-      wizLog("warn", `  ⚠ element #${id} not found in DOM`);
+      wizLog("warn", `  Ã¢Å¡Â  element #${id} not found in DOM`);
     }
   };
   set("wfName",        meta.name        || "");
@@ -3128,7 +3307,7 @@ function wizFillForm(meta) {
   set("wfDescription", meta.description || "");
   const tagsVal = Array.isArray(meta.tags) ? meta.tags.join(", ") : (meta.tags || "");
   set("wfTags", tagsVal);
-  wizLog("success", "✔ Form compilato");
+  wizLog("success", "Ã¢Å“â€ Form compilato");
 }
 
 function wizReadForm() {
@@ -3153,10 +3332,10 @@ async function saveTalent() {
   if (!wizImageB64) return;
   const btn  = document.getElementById("wizSaveBtn");
   btn.disabled = true;
-  btn.textContent = "Saving…";
+  btn.textContent = "SavingÃ¢â‚¬Â¦";
 
   const metadata = wizReadForm();
-  if (!metadata.name) { showError("Please enter a name for the talent."); btn.disabled = false; btn.textContent = "Save Talent ✦"; return; }
+  if (!metadata.name) { showError("Please enter a name for the talent."); btn.disabled = false; btn.textContent = "Save Talent Ã¢Å“Â¦"; return; }
 
   try {
     const r    = await fetch("/api/elements/save-talent", {
@@ -3176,19 +3355,19 @@ async function saveTalent() {
     // Reload elements grid
     elCurrentPage = 1;
     await loadElements();
-    showError(`✦ Talent "${metadata.name}" saved successfully!`, "success");
+    showError(`Ã¢Å“Â¦ Talent "${metadata.name}" saved successfully!`, "success");
   } catch(e) {
     showError("Save failed: " + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Save Talent ✦";
+    btn.textContent = "Save Talent Ã¢Å“Â¦";
   }
 }
 
 async function migrateCatalog() {
   const btn = document.getElementById("wizMigrateBtn");
   btn.disabled = true;
-  btn.textContent = "⚙ Migrating…";
+  btn.textContent = "Ã¢Å¡â„¢ MigratingÃ¢â‚¬Â¦";
   try {
     const r    = await fetch("/api/elements/migrate-catalog", {
       method:  "POST",
@@ -3197,13 +3376,13 @@ async function migrateCatalog() {
     });
     const data = await r.json();
     if (!data.ok) throw new Error(data.error);
-    showError("✓ " + data.message, "success");
+    showError("Ã¢Å“â€œ " + data.message, "success");
     await loadElements();
   } catch(e) {
     showError("Migration failed: " + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "⚙ Migrate catalog";
+    btn.textContent = "Ã¢Å¡â„¢ Migrate catalog";
   }
 }
 
@@ -3262,6 +3441,7 @@ async function initGeneratorPage() {
   ensureSeedState();
   populateGalleryModelFilter();
   bindGalleryFilters();
+  bindGalleryViewerControls();
   await restoreGeneratorDraft();
   onModelChange();
   syncImgCount();
@@ -3271,7 +3451,7 @@ async function initGeneratorPage() {
 
 void initGeneratorPage();
 
-/* ── Theme toggle ─────────────────────────────────────────── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Theme toggle Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
 function toggleTheme() {
   const html = document.documentElement;
   const isLight = html.getAttribute('data-theme') === 'light';
@@ -3283,10 +3463,19 @@ function updateThemeBtn() {
   const btn = document.getElementById('themeToggleBtn');
   if (!btn) return;
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-  btn.textContent = isLight ? '🌙' : '☀️';
+  btn.textContent = isLight ? 'Dark' : 'Light';
   btn.title = isLight ? 'Switch to Dark mode' : 'Switch to Light mode';
 }
 updateThemeBtn();
 </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+

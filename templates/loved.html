@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nano Banana Studio — Loved</title>
+<title>Nano Banana Studio - Loved</title>
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -13,7 +13,7 @@
 <!-- NAV -->
 <nav class="navbar">
   <div class="nav-left">
-    <a href="/index" class="nav-logo">🍌 Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
   </div>
   <div class="nav-links">
     <a href="/index">Generator</a>
@@ -22,7 +22,7 @@
     <a href="/loved" class="active">Loved</a>
     <a href="/settings">Settings</a>
     <a href="/credits">Credits</a>
-    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">☀️</button>
+    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">Light</button>
     <a href="/logout" class="nav-logout">Logout</a>
   </div>
 </nav>
@@ -32,8 +32,8 @@
   <!-- Header -->
   <div class="pub-header">
     <div>
-      <h1 class="pub-title">❤️ Loved Images</h1>
-      <p class="pub-subtitle">Manually saved as references · folder <code>loved/</code></p>
+      <h1 class="pub-title">Loved Images</h1>
+      <p class="pub-subtitle">Manually saved as references - folder <code>loved/</code></p>
     </div>
     <a href="/index" class="btn-new-gen">+ New Generation</a>
   </div>
@@ -41,9 +41,9 @@
   {% if not days %}
   <!-- Empty state -->
   <div class="pub-empty">
-    <div class="pub-empty-icon">🤍</div>
+    <div class="pub-empty-icon">Love</div>
     <p>No loved images yet.</p>
-    <p class="pub-empty-sub">Generate images and press the <strong>❤️</strong> button to save them here.</p>
+    <p class="pub-empty-sub">Generate images and press the heart button to save them here.</p>
     <a href="/index" class="btn-new-gen" style="margin-top:16px; display:inline-block">Go to Generator</a>
   </div>
   {% else %}
@@ -71,7 +71,7 @@
           <span class="pub-day-count">{{ day.entries|length }} images</span>
         </div>
 
-        <!-- Masonry grid — mirrors home gallery layout -->
+        <!-- Masonry grid â€” mirrors home gallery layout -->
         <div class="loved-masonry">
           {% for item in day.entries %}
           {% set m = item.meta %}
@@ -132,18 +132,18 @@ const ALL_LOVED = [
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
   </button>
 
-  <!-- Navigation arrows — SVG chevrons -->
-  <button class="lb-arrow lb-arrow-prev" id="lbPrev" onclick="lbNavigate(-1); event.stopPropagation()" title="Previous (←)">
+  <!-- Navigation arrows â€” SVG chevrons -->
+  <button class="lb-arrow lb-arrow-prev" id="lbPrev" onclick="lbNavigate(-1); event.stopPropagation()" title="Previous">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
   </button>
-  <button class="lb-arrow lb-arrow-next" id="lbNext" onclick="lbNavigate(1);  event.stopPropagation()" title="Next (→)">
+  <button class="lb-arrow lb-arrow-next" id="lbNext" onclick="lbNavigate(1);  event.stopPropagation()" title="Next">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
   </button>
 
   <div class="lb-inner">
     <img id="pubLbImg" src="" alt="" onclick="event.stopPropagation()">
 
-    <!-- Action bar — SVG icons -->
+    <!-- Action bar â€” SVG icons -->
     <div class="lb-actions">
       <button class="img-action-btn fav-active" title="Already in Loved" disabled style="cursor:default">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
@@ -202,7 +202,7 @@ function lbNavigate(delta) {
   openLightbox(item.date, item.filename, item.meta);
 }
 
-// Safe entry point from HTML — looks up meta from the pre-rendered ALL_LOVED array
+// Safe entry point from HTML â€” looks up meta from the pre-rendered ALL_LOVED array
 // (avoids passing JSON in HTML onclick attributes which breaks on double-quotes)
 function openLightboxById(date, filename) {
   if (typeof ALL_LOVED === "undefined") return;
@@ -324,14 +324,14 @@ async function deleteLoved(date, filename, cardBtn) {
       }
     }
 
-    // Check if all sections gone — show empty state
+    // Check if all sections gone â€” show empty state
     if (document.querySelectorAll(".pub-card").length === 0) {
       document.querySelector(".pub-layout").style.display = "none";
       const empty = document.createElement("div");
       empty.className = "pub-empty";
-      empty.innerHTML = '<div class="pub-empty-icon">🤍</div>' +
+    <div class="pub-empty-icon">Love</div>
         '<p>No loved images yet.</p>' +
-        '<p class="pub-empty-sub">Generate images and press the <strong>❤️</strong> button to save them here.</p>' +
+    <p class="pub-empty-sub">Generate images and press the heart button to save them here.</p>
         '<a href="/index" class="btn-new-gen" style="margin-top:16px;display:inline-block">Go to Generator</a>';
       document.querySelector("main.pub-main").appendChild(empty);
     }
@@ -396,7 +396,7 @@ const observer = new IntersectionObserver(entries => {
 
 document.querySelectorAll(".pub-day").forEach(s => observer.observe(s));
 
-/* ── Theme toggle ─────────────────────────────────────────── */
+/* â”€â”€ Theme toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function toggleTheme() {
   const html = document.documentElement;
   const isLight = html.getAttribute('data-theme') === 'light';
@@ -408,10 +408,11 @@ function updateThemeBtn() {
   const btn = document.getElementById('themeToggleBtn');
   if (!btn) return;
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-  btn.textContent = isLight ? '🌙' : '☀️';
+  btn.textContent = isLight ? 'Dark' : 'Light';
   btn.title = isLight ? 'Switch to Dark mode' : 'Switch to Light mode';
 }
 updateThemeBtn();
 </script>
 </body>
 </html>
+

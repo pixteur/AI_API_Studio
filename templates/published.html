@@ -1,5 +1,5 @@
-<!DOCTYPE html>
-<html lang="it">
+﻿<!DOCTYPE html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
@@ -13,14 +13,14 @@
 <!-- NAV -->
 <nav class="navbar">
   <div class="nav-left">
-    <a href="/index" class="nav-logo">🍌 Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
   </div>
   <div class="nav-links">
     <a href="/index">Generator</a>
     <a href="/published" class="active">Published</a>
     <a href="/settings">Settings</a>
     <a href="/credits">Credits</a>
-    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">☀️</button>
+    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">Light</button>
     <a href="/logout" class="nav-logout">Logout</a>
   </div>
 </nav>
@@ -31,15 +31,15 @@
   <div class="pub-header">
     <div>
       <h1 class="pub-title">Published Images</h1>
-      <p class="pub-subtitle">Organizzate per data · cartella <code>published/</code></p>
+      <p class="pub-subtitle">Organizzate per data Â· cartella <code>published/</code></p>
     </div>
-    <a href="/index" class="btn-new-gen">+ Nuova generazione</a>
+    <a href="/index" class="btn-new-gen">+ New Generation</a>
   </div>
 
   {% if not days %}
   <!-- Empty state -->
   <div class="pub-empty">
-    <div class="pub-empty-icon">📂</div>
+    <div class="pub-empty-icon">ðŸ“‚</div>
     <p>No published images yet.</p>
     <p class="pub-empty-sub">Generate images and use the <strong>Publish</strong> button to save them here.</p>
     <a href="/index" class="btn-new-gen" style="margin-top:16px; display:inline-block">Vai al generatore</a>
@@ -103,7 +103,7 @@
             <!-- Overlay azioni -->
             <div class="pub-card-actions">
               <a href="/published/{{ day.date }}/{{ item.filename }}" download="{{ item.filename }}"
-                 onclick="event.stopPropagation()" class="pub-action-btn" title="Download">⬇</a>
+                 onclick="event.stopPropagation()" class="pub-action-btn" title="Download">â¬‡</a>
             </div>
 
           </div>
@@ -122,11 +122,11 @@
 <!-- Published lightbox -->
 <div class="lightbox" id="pubLightbox" onclick="closePubLightboxOnBg(event)">
   <div class="lb-inner">
-    <button class="lb-close" onclick="closePubLightbox()">✕</button>
+    <button class="lb-close" onclick="closePubLightbox()">âœ•</button>
     <img id="pubLbImg" src="" alt="">
     <div class="lb-footer">
       <div class="lb-meta" id="pubLbMeta"></div>
-      <a id="pubLbDownload" href="#" download class="btn-publish-lb">⬇ Download</a>
+      <a id="pubLbDownload" href="#" download class="btn-publish-lb">â¬‡ Download</a>
     </div>
   </div>
 </div>
@@ -146,7 +146,7 @@ function openLightbox(date, filename, meta) {
   const label = modelLabels[meta.model] || meta.model_label || meta.model || "";
   const parts = [label, meta.imageSize, meta.aspectRatio].filter(Boolean);
   if (meta.temperature != null) parts.push(`t=${parseFloat(meta.temperature).toFixed(2)}`);
-  document.getElementById("pubLbMeta").textContent = parts.join(" · ");
+  document.getElementById("pubLbMeta").textContent = parts.join(" Â· ");
 
   const dl = document.getElementById("pubLbDownload");
   dl.href = imgUrl;
@@ -190,7 +190,7 @@ const observer = new IntersectionObserver(entries => {
 
 document.querySelectorAll(".pub-day").forEach(s => observer.observe(s));
 
-/* ── Theme toggle ─────────────────────────────────────────── */
+/* â”€â”€ Theme toggle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function toggleTheme() {
   const html = document.documentElement;
   const isLight = html.getAttribute('data-theme') === 'light';
@@ -202,10 +202,11 @@ function updateThemeBtn() {
   const btn = document.getElementById('themeToggleBtn');
   if (!btn) return;
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-  btn.textContent = isLight ? '🌙' : '☀️';
+  btn.textContent = isLight ? 'Dark' : 'Light';
   btn.title = isLight ? 'Switch to Dark mode' : 'Switch to Light mode';
 }
 updateThemeBtn();
 </script>
 </body>
 </html>
+
