@@ -1,0 +1,51 @@
+{
+  "id": "model_107",
+  "name": "Rin Takahashi",
+  "gender": "female",
+  "ethnicity": "east_asian",
+  "age_group": "young_adult",
+  "skin_tone": "light",
+  "hair_color": "platinum_blonde",
+  "hair_style": "long_straight",
+  "eye_color": "brown",
+  "body_type": "slim",
+  "description": "Asian female model with long platinum blonde hair featuring straight bangs, light beige skin, and brown eyes. She has a labret piercing that adds a bold, alternative touch to her clean and minimal aesthetic, suitable for both fashion-forward and editorial projects.",
+  "tags": [
+    "editorial",
+    "beauty"
+  ],
+  "profile": {
+    "height": "approx. 168–175 cm (visual estimate; portrait only)",
+    "hair": "platinum blonde, long, straight with fringe",
+    "eyes": "brown, almond-shaped",
+    "size": "not visible",
+    "measurements": "not visible",
+    "overall_look": "modern and edgy with minimalist presentation",
+    "skills": [
+      "editorial modeling",
+      "alternative fashion",
+      "beauty and jewelry campaigns",
+      "commercial print"
+    ],
+    "languages": [],
+    "personality": "confident, contemporary, and poised",
+    "recommended_usage": [
+      "modern fashion editorials",
+      "alternative and avant-garde campaigns",
+      "beauty and haircare promotions",
+      "commercial and lifestyle shoots"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_107.jpg",
+      "path": "images/model_107.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:16.523250"
+}

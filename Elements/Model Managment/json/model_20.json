@@ -1,0 +1,53 @@
+{
+  "id": "model_20",
+  "name": "Aya Lin",
+  "gender": "female",
+  "ethnicity": "middle_eastern",
+  "age_group": "young_adult",
+  "skin_tone": "light",
+  "hair_color": "dark_brown",
+  "hair_style": "ponytail",
+  "eye_color": "brown",
+  "body_type": "slim",
+  "description": "Striking model with light beige skin, sharp eyeliner styling, and sleek dark hair. Her defined features and modern, cinematic presence suit beauty, fashion film, and editorial campaigns.",
+  "tags": [
+    "beauty",
+    "editorial",
+    "advertising",
+    "fashion film"
+  ],
+  "profile": {
+    "height": "approx. 172–178 cm (visual estimate; portrait only)",
+    "hair": "dark brown, sleek ponytail",
+    "eyes": "brown, almond-shaped with bold makeup",
+    "size": "not visible",
+    "measurements": "not visible",
+    "overall_look": "modern, graphic, strong editorial aesthetic",
+    "skills": [
+      "beauty posing",
+      "editorial precision",
+      "advertising adaptability"
+    ],
+    "languages": [],
+    "personality": "focused, creative, adaptable",
+    "recommended_usage": [
+      "beauty and cosmetics campaigns",
+      "editorial fashion shoots",
+      "advertising visuals",
+      "fashion films",
+      "luxury product promotions"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_20.jpg",
+      "path": "images/model_20.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:17.785104"
+}

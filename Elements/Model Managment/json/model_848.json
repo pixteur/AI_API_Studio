@@ -1,0 +1,43 @@
+{
+  "id": "model_848",
+  "name": "Aurora Curley",
+  "gender": "female",
+  "ethnicity": "caucasian",
+  "age_group": "young_adult",
+  "skin_tone": "medium_warm",
+  "hair_color": "medium_brown",
+  "hair_style": "medium_curly",
+  "eye_color": "green",
+  "body_type": "slim",
+  "description": "A striking young woman with voluminous medium-brown curls framing her face, captivating green eyes that draw immediate attention. Her natural look includes subtle freckles across cheeks and nose, enhancing authenticity while maintaining elegance. Styled in minimalist white tank top against neutral backdrop, she exudes effortless confidence perfect for modern editorial campaigns.",
+  "tags": [
+    "editorial",
+    "beauty",
+    "high fashion"
+  ],
+  "profile": {
+    "height": "5'6\"",
+    "hair": "Medium brown curly texture with soft volume around face",
+    "eyes": "Bright green irises with defined lashes and minimal makeup accentuating clarity",
+    "size": "not_visible",
+    "measurements": "not_visible",
+    "overall_look": "Elegant contemporary aesthetic blending natural charm with refined studio lighting",
+    "skills": [
+      "Expressive gaze delivery",
+      "Neutral pose versatility",
+      "High-resolution headshot capability"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_848.jpg",
+      "path": "images/model_848.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:26.617429"
+}

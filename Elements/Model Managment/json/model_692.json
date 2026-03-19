@@ -1,0 +1,43 @@
+{
+  "id": "model_692",
+  "name": "Aurora Braid",
+  "gender": "female",
+  "ethnicity": "caucasian",
+  "age_group": "young_adult",
+  "skin_tone": "fair",
+  "hair_color": "blonde",
+  "hair_style": "braids",
+  "eye_color": "blue",
+  "body_type": "slim",
+  "description": "A striking young woman with ethereal blue eyes and fair, freckled complexion gazes directly at the viewer. Her platinum blonde hair is intricately braided into multiple elegant updos that frame her face, exuding both modern sophistication and natural charm. The minimalist white top enhances clean lines and highlights her refined features against a neutral backdrop.",
+  "tags": [
+    "editorial",
+    "high fashion",
+    "beauty"
+  ],
+  "profile": {
+    "height": "5'8\"",
+    "hair": "Platinum blonde, elaborately braided in intricate updo styles",
+    "eyes": "Crisp, piercing blue",
+    "size": "not_visible",
+    "measurements": "not_visible",
+    "overall_look": "Minimalist elegance meets avant-garde styling",
+    "skills": [
+      "High-resolution headshot posing",
+      "Natural lighting photography",
+      "Styling versatility across genres"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_692.jpg",
+      "path": "images/model_692.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:24.379766"
+}

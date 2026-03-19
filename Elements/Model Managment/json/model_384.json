@@ -1,0 +1,53 @@
+{
+  "id": "model_384",
+  "name": "Scarlett Hallow",
+  "gender": "female",
+  "ethnicity": "caucasian",
+  "age_group": "young_adult",
+  "skin_tone": "light",
+  "hair_color": "red",
+  "hair_style": "bun",
+  "eye_color": "light_blue",
+  "body_type": "slim",
+  "description": "Caucasian female model with porcelain skin, vibrant red hair in a sleek high bun, and light blue eyes. Her refined features and high-fashion presence make her ideal for editorial, beauty, and cosmetic campaigns.",
+  "tags": [
+    "editorial",
+    "high fashion"
+  ],
+  "profile": {
+    "height": "approx. 170–176 cm (visual estimate)",
+    "hair": "bright red, styled in a polished high bun",
+    "eyes": "light blue",
+    "size": "not visible",
+    "measurements": "not visible",
+    "overall_look": "minimalistic yet high-impact with a strong editorial aesthetic",
+    "skills": [
+      "editorial fashion",
+      "beauty modeling",
+      "runway",
+      "cosmetics advertising",
+      "portrait modeling"
+    ],
+    "languages": [],
+    "personality": "poised, elegant, confident",
+    "recommended_usage": [
+      "high fashion editorials",
+      "makeup and beauty campaigns",
+      "luxury branding",
+      "hair color and styling promotions",
+      "fine art portraiture"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_384.jpg",
+      "path": "images/model_384.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:20.010816"
+}

@@ -1,0 +1,53 @@
+{
+  "id": "model_532",
+  "name": "Elise Hartmann",
+  "gender": "female",
+  "ethnicity": "caucasian",
+  "age_group": "young_adult",
+  "skin_tone": "fair",
+  "hair_color": "platinum_blonde",
+  "hair_style": "short_bob",
+  "eye_color": "light_blue",
+  "body_type": "slim",
+  "description": "Elise Hartmann embodies a striking editorial presence with her platinum-blonde blunt bob, soft fair complexion, and sharp facial symmetry. Her vivid red lipstick elevates the beauty impact, making her ideal for luxury cosmetics campaigns, high-fashion portraits, and refined modern editorial work.",
+  "tags": [
+    "beauty",
+    "editorial",
+    "cosmetics",
+    "high fashion"
+  ],
+  "profile": {
+    "height": "168–173 cm (visual estimate)",
+    "hair": "platinum blonde, blunt bob with straight bangs",
+    "eyes": "light blue",
+    "size": "XS-S (estimated)",
+    "measurements": "not provided",
+    "overall_look": "clean, modern, high-fashion beauty",
+    "skills": [
+      "editorial beauty work",
+      "cosmetics advertising",
+      "fashion portraiture",
+      "luxury brand campaigns"
+    ],
+    "languages": [],
+    "personality": "minimalist, elegant, polished",
+    "recommended_usage": [
+      "lipstick and makeup brand campaigns",
+      "editorial covers and beauty stories",
+      "high-fashion lookbooks",
+      "luxury product advertising"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_532.jpg",
+      "path": "images/model_532.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:22.075375"
+}

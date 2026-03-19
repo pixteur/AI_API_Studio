@@ -1,0 +1,43 @@
+{
+  "id": "model_827",
+  "name": "Elena Voss",
+  "gender": "female",
+  "ethnicity": "caucasian",
+  "age_group": "young_adult",
+  "skin_tone": "fair_warm",
+  "hair_color": "dark_brown",
+  "hair_style": "short_crop",
+  "eye_color": "brown",
+  "body_type": "slim",
+  "description": "A poised young woman with striking dark brown eyes and naturally tousled short bob haircut exudes effortless elegance against a minimalist backdrop. Her fair complexion adorned with delicate freckles complements her refined features while subtle gold leaf earrings add sophistication. Ideal for luxury editorial campaigns emphasizing natural beauty and contemporary styling.",
+  "tags": [
+    "editorial",
+    "high fashion",
+    "beauty"
+  ],
+  "profile": {
+    "height": "5'6\" - 5'8\"",
+    "hair": "dark brown short bob",
+    "eyes": "warm hazel-brown",
+    "size": "not_visible",
+    "measurements": "not_visible",
+    "overall_look": "Minimalist chic with earthy tones and understated glamour",
+    "skills": [
+      "Natural lighting posing",
+      "Styling versatility",
+      "Neutral expression control"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_827.jpg",
+      "path": "images/model_827.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:26.314380"
+}

@@ -1,0 +1,57 @@
+{
+  "id": "model_01",
+  "name": "Zuri Aden",
+  "gender": "female",
+  "ethnicity": "african",
+  "age_group": "young_adult",
+  "skin_tone": "deep",
+  "hair_color": "black",
+  "hair_style": "braids",
+  "eye_color": "hazel",
+  "body_type": "slim",
+  "description": "Striking young model with long box braids, luminous deep skin tone, and calm, intense gaze. Strong symmetry and refined bone structure suit close-up beauty and fashion-forward concepts.",
+  "tags": [
+    "editorial",
+    "beauty",
+    "runway",
+    "advertising"
+  ],
+  "profile": {
+    "height": "approx. 170–177 cm (visual estimate; portrait only)",
+    "hair": "black, long box braids",
+    "eyes": "light hazel",
+    "size": "not visible",
+    "measurements": "not visible",
+    "overall_look": "minimal styling, clean background, strong presence",
+    "skills": [
+      "beauty close-up",
+      "expressive eye contact",
+      "poised stillness"
+    ],
+    "languages": [],
+    "personality": "professional, composed, focused on set",
+    "recommended_usage": [
+      "editorial photography",
+      "beauty close-up",
+      "runway/show packages",
+      "advertising campaigns",
+      "fashion film",
+      "e-commerce beauty/haircare",
+      "skincare",
+      "haircare",
+      "cosmetics"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_01.jpg",
+      "path": "images/model_01.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:16.310480"
+}

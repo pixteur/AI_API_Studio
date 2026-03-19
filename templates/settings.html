@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nano Banana Studio — Settings</title>
+<script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<!-- NAV -->
+<nav class="navbar">
+  <div class="nav-left">
+    <a href="/index" class="nav-logo">🍌 Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+  </div>
+  <div class="nav-links">
+    <a href="/index">Generator</a>
+    <a href="/workbench">Workbench</a>
+    <a href="/reports">Reports</a>
+    <a href="/loved">Loved</a>
+    <a href="/settings" class="active">Settings</a>
+    <a href="/credits">Credits</a>
+    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">☀️</button>
+    <a href="/logout" class="nav-logout">Logout</a>
+  </div>
+</nav>
+
+<main class="settings-main">
+
+  <!-- APPEARANCE -->
+  <section class="settings-card">
+    <h2>Appearance</h2>
+    <p class="settings-desc">Choose your preferred color theme. Dark uses the classic lime-green accent; Light uses a clean white layout with saturated orange accents.</p>
+    <div class="theme-selector">
+      <button class="theme-card" id="themeCardDark" onclick="setTheme('dark')">
+        <div class="theme-preview theme-preview-dark">
+          <div class="tp-bar"></div>
+          <div class="tp-content"></div>
+        </div>
+        <span class="theme-card-label">🌙 Dark</span>
+      </button>
+      <button class="theme-card" id="themeCardLight" onclick="setTheme('light')">
+        <div class="theme-preview theme-preview-light">
+          <div class="tp-bar"></div>
+          <div class="tp-content"></div>
+        </div>
+        <span class="theme-card-label">☀️ Light + Orange</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- API KEY -->
+  <section class="settings-card">
+    <h2>Google Gemini API Key</h2>
+    <p class="settings-desc">Enter your API key from <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a>. Make sure billing is active on your Google Cloud project.</p>
+
+    <div class="key-row">
+      <div class="input-wrap">
+        <input type="password" id="apiKeyInput" placeholder="AIza..." autocomplete="off"
+               value="{{ '•' * 20 if has_key else '' }}">
+        <button class="btn-icon" id="toggleKeyBtn" title="Show/Hide" onclick="toggleKeyVisibility()">👁</button>
+      </div>
+      <button class="btn-verify" id="verifyBtn" onclick="verifyKey()">
+        <span id="verifyLabel">Verify</span>
+      </button>
+      <button class="btn-save" id="saveBtn" onclick="saveKey()">Save</button>
+    </div>
+
+    <div id="keyStatus" class="key-status"></div>
+
+    {% if has_key %}
+    <div class="key-current">
+      Current key: <code>{{ masked_key }}</code>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- STATISTICS -->
+  <section class="settings-card">
+    <div class="stats-header">
+      <h2>API Usage Statistics</h2>
+      <button class="btn-reset" onclick="resetStats()">Reset</button>
+    </div>
+
+    <!-- Image generation -->
+    <h3 class="stats-group-label">🎨 Image Generation</h3>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <span class="stat-value" id="totalRequests">{{ stats.total_requests }}</span>
+        <span class="stat-label">Total Requests</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-value" id="totalImages">{{ stats.total_images }}</span>
+        <span class="stat-label">Images Generated</span>
+      </div>
+      <div class="stat-box accent">
+        <span class="stat-value" id="totalCost">${{ "%.4f"|format(stats.total_cost_usd) }}</span>
+        <span class="stat-label">Estimated Spend (USD)</span>
+      </div>
+    </div>
+
+    <!-- Vision / Analysis -->
+    <h3 class="stats-group-label" style="margin-top:20px">🔍 Vision Analysis (Gemini)</h3>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <span class="stat-value" id="visionCalls">{{ stats.vision_calls | default(0) }}</span>
+        <span class="stat-label">Talent Analyses</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-value stat-value-sm" id="visionModel">{{ analysis_model }}</span>
+        <span class="stat-label">Active Model</span>
+      </div>
+      <div class="stat-box accent">
+        <span class="stat-value" id="visionCost">${{ "%.6f"|format(stats.vision_cost_usd | default(0)) }}</span>
+        <span class="stat-label">Vision Spend (USD)</span>
+      </div>
+    </div>
+
+    <!-- Combined total -->
+    {% set grand_total = stats.total_cost_usd + (stats.vision_cost_usd | default(0)) %}
+    <div class="stats-grand-total">
+      <span>Total combined spend:</span>
+      <span class="grand-value">${{ "%.4f"|format(grand_total) }}</span>
+    </div>
+
+    <!-- IMAGE GENERATION LOG -->
+    <h3 class="log-title" style="margin-top:20px">Recent requests — Image Generation</h3>
+    <div class="log-table-wrap">
+      <table class="log-table" id="logTable">
+        <thead>
+          <tr>
+            <th>Date/Time</th>
+            <th>Model</th>
+            <th>Resolution</th>
+            <th>Images</th>
+            <th>Cost</th>
+            <th>Prompt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if stats.requests_log %}
+            {% for entry in stats.requests_log %}
+            <tr>
+              <td class="td-time">{{ entry.ts[:16].replace('T',' ') }}</td>
+              <td>
+                {% if entry.model == 'gemini-2.5-flash-image' %}
+                  <span class="badge badge-nb">NB</span>
+                {% elif entry.model == 'gemini-3-pro-image-preview' %}
+                  <span class="badge badge-pro">Pro</span>
+                {% else %}
+                  <span class="badge badge-nb2">NB2</span>
+                {% endif %}
+              </td>
+              <td>{{ entry.size }}</td>
+              <td>{{ entry.n }}</td>
+              <td class="td-cost">${{ "%.4f"|format(entry.cost) }}</td>
+              <td class="td-prompt">{{ entry.prompt_preview }}{% if entry.prompt_preview|length >= 60 %}…{% endif %}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="6" class="td-empty">No requests yet</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- VISION ANALYSIS LOG -->
+    <h3 class="log-title" style="margin-top:18px">Recent analyses — Vision / Gemini</h3>
+    <div class="log-table-wrap">
+      <table class="log-table" id="visionLogTable">
+        <thead>
+          <tr>
+            <th>Date/Time</th>
+            <th>Model</th>
+            <th>Input tokens</th>
+            <th>Output tokens</th>
+            <th>Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set vlog = stats.vision_log | default([]) %}
+          {% if vlog %}
+            {% for entry in vlog %}
+            <tr>
+              <td class="td-time">{{ entry.ts[:16].replace('T',' ') }}</td>
+              <td><span class="badge badge-vis">Vis</span> {{ entry.model }}</td>
+              <td>{{ entry.input_tok }}</td>
+              <td>{{ entry.output_tok }}</td>
+              <td class="td-cost">${{ "%.6f"|format(entry.cost) }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="5" class="td-empty">No analyses yet</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- PRICING INFO -->
+  <section class="settings-card">
+    <h2>Estimated Pricing (March 2026)</h2>
+
+    <!-- Image generation -->
+    <h3 class="stats-group-label">🎨 Image Generation — per generated image</h3>
+    <table class="price-table">
+      <thead>
+        <tr><th>Model</th><th>0.5K</th><th>1K</th><th>2K</th><th>4K</th><th>Free tier</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="badge badge-nb">NB</span> Nano Banana</td>
+          <td class="td-na">—</td><td>$0.039</td><td class="td-na">—</td><td class="td-na">—</td>
+          <td class="td-free">~500 req/day</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-pro">Pro</span> Nano Banana Pro</td>
+          <td class="td-na">—</td><td>$0.134</td><td>$0.134</td><td>$0.240</td>
+          <td class="td-na">None</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-nb2">NB2</span> Nano Banana 2</td>
+          <td>$0.045</td><td>$0.067</td><td>$0.101</td><td>$0.151</td>
+          <td class="td-free">~500 req/day (1K)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Vision / Analysis -->
+    <h3 class="stats-group-label" style="margin-top:20px">🔍 Vision Analysis — per 1 million tokens</h3>
+    <table class="price-table">
+      <thead>
+        <tr><th>Model</th><th>Input / 1M tok</th><th>Output / 1M tok</th><th>~Cost per analysis</th><th>Free tier</th></tr>
+      </thead>
+      <tbody>
+        {% for model_id, info in vision_models.items() %}
+        <tr {% if model_id == analysis_model %}class="price-row-active"{% endif %}>
+          <td>
+            <span class="badge badge-vis">Vis</span> {{ info.label }}
+            {% if model_id == analysis_model %}<span class="badge-current">● active</span>{% endif %}
+          </td>
+          <td>${{ "%.3f"|format(info.input_per_1m) }}</td>
+          <td>${{ "%.3f"|format(info.output_per_1m) }}</td>
+          <td class="td-free">~$0.0001</td>
+          <td class="td-free">{{ info.free_tier }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="price-note">* Vision rates estimated based on Google AI pricing March 2026. Cost per single talent analysis is typically &lt;$0.001. Check updated prices at <a href="https://ai.google.dev/pricing" target="_blank">ai.google.dev/pricing</a>.</p>
+  </section>
+</main>
+
+<script>
+/* ── Theme toggle ─────────────────────────────────────────── */
+function toggleTheme() {
+  const html = document.documentElement;
+  const isLight = html.getAttribute('data-theme') === 'light';
+  setTheme(isLight ? 'dark' : 'light');
+}
+function setTheme(theme) {
+  const html = document.documentElement;
+  if (theme === 'light') html.setAttribute('data-theme','light');
+  else html.removeAttribute('data-theme');
+  localStorage.setItem('nb-theme', theme);
+  updateThemeBtn();
+  updateThemeCards();
+}
+function updateThemeBtn() {
+  const btn = document.getElementById('themeToggleBtn');
+  if (!btn) return;
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  btn.textContent = isLight ? '🌙' : '☀️';
+  btn.title = isLight ? 'Switch to Dark mode' : 'Switch to Light mode';
+}
+function updateThemeCards() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const darkCard = document.getElementById('themeCardDark');
+  const lightCard = document.getElementById('themeCardLight');
+  if (darkCard) darkCard.classList.toggle('active', current === 'dark');
+  if (lightCard) lightCard.classList.toggle('active', current === 'light');
+}
+document.addEventListener('DOMContentLoaded', () => { updateThemeBtn(); updateThemeCards(); });
+
+let rawKey = "";
+
+function toggleKeyVisibility() {
+  const inp = document.getElementById("apiKeyInput");
+  inp.type = inp.type === "password" ? "text" : "password";
+}
+
+async function verifyKey() {
+  const inp = document.getElementById("apiKeyInput");
+  const key = inp.value.trim();
+  if (!key || key.startsWith("•")) {
+    showKeyStatus("Please enter the new key to verify first", "error");
+    return;
+  }
+  rawKey = key;
+  const btn = document.getElementById("verifyBtn");
+  const label = document.getElementById("verifyLabel");
+  label.textContent = "Verifying...";
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/verify-key", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({api_key: key})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showKeyStatus("✓ " + (d.message || "Valid key!"), "success");
+    } else {
+      showKeyStatus("✗ " + (d.error || "Invalid key"), "error");
+    }
+  } catch(e) {
+    showKeyStatus("Network error: " + e.message, "error");
+  }
+  label.textContent = "Verify";
+  btn.disabled = false;
+}
+
+async function saveKey() {
+  const inp = document.getElementById("apiKeyInput");
+  const key = inp.value.trim();
+  if (!key || key.startsWith("•")) {
+    showKeyStatus("Please enter the new key before saving", "error");
+    return;
+  }
+  const r = await fetch("/api/save-config", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({api_key: key})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showKeyStatus("Key saved successfully", "success");
+    inp.type = "password";
+    inp.value = "•".repeat(20);
+    setTimeout(() => location.reload(), 1000);
+  }
+}
+
+function showKeyStatus(msg, type) {
+  const el = document.getElementById("keyStatus");
+  el.textContent = msg;
+  el.className = "key-status " + type;
+  el.style.display = "block";
+}
+
+async function resetStats() {
+  if (!confirm("Are you sure you want to reset all statistics (images + Vision analyses)?")) return;
+  const r = await fetch("/api/reset-stats", {method:"POST"});
+  const d = await r.json();
+  if (d.ok) location.reload();
+}
+</script>
+</body>
+</html>

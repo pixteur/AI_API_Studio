@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nano Banana Studio - Workbench</title>
+<script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .wb-main { max-width: 1280px; margin: 0 auto; padding: 84px 24px 56px; }
+  .wb-hero { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-bottom:24px; }
+  .wb-eyebrow { display:inline-flex; gap:8px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin-bottom:10px; }
+  .wb-title { font-size:34px; line-height:1.05; letter-spacing:-.04em; margin:0 0 10px; }
+  .wb-subtitle { max-width:760px; color:var(--text-dim); font-size:15px; line-height:1.7; margin:0; }
+  .wb-hero-meta { min-width:260px; background:linear-gradient(160deg, rgba(200,255,0,.14), rgba(200,255,0,.04)); border:1px solid rgba(200,255,0,.16); border-radius:14px; padding:16px 18px; }
+  .meta-label { font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; }
+  .meta-value { font-size:22px; font-weight:700; color:var(--text); }
+  .wb-grid { display:grid; grid-template-columns:1.05fr .95fr; gap:18px; align-items:start; }
+  .wb-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px; box-shadow:0 12px 36px rgba(0,0,0,.14); }
+  .wb-card h2 { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin:0 0 16px; }
+  .wb-form-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; }
+  .wb-field { display:flex; flex-direction:column; gap:7px; }
+  .wb-field.wb-span-2 { grid-column:span 2; }
+  .wb-label { font-size:12px; color:var(--text); font-weight:600; }
+  .wb-input, .wb-textarea, .wb-select { width:100%; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:10px; padding:12px 13px; font-size:14px; outline:none; }
+  .wb-input:focus, .wb-textarea:focus, .wb-select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(200,255,0,.08); }
+  .wb-textarea { min-height:104px; resize:vertical; line-height:1.6; }
+  .wb-helper, .wb-note { font-size:12px; line-height:1.6; color:var(--text-dim); background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:12px 13px; }
+  .wb-channel-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
+  .wb-check { display:flex; align-items:center; gap:10px; background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; cursor:pointer; }
+  .wb-check input { accent-color:var(--accent); }
+  .wb-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
+  .wb-inline-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:14px 0 16px; }
+  .wb-btn { appearance:none; border:0; border-radius:10px; padding:11px 16px; font-size:13px; font-weight:700; cursor:pointer; transition:transform .15s, opacity .15s, background .15s; }
+  .wb-btn:hover { transform:translateY(-1px); }
+  .wb-btn-primary { background:var(--accent); color:var(--acc-fg, #0d0d0d); }
+  .wb-btn-secondary { background:var(--surface3); color:var(--text); border:1px solid var(--border2); }
+  .wb-btn-tertiary { background:transparent; color:var(--text-dim); border:1px solid var(--border2); }
+  .wb-btn[disabled] { opacity:.5; cursor:not-allowed; transform:none; }
+  .wb-status { margin-top:12px; min-height:20px; color:var(--text-dim); font-size:12px; }
+  .wb-status.error { color:#ff9b9b; }
+  .wb-status.success { color:#8ee0a5; }
+  .wb-plan-empty, .wb-results-empty { border:1px dashed var(--border2); border-radius:14px; padding:28px; text-align:center; color:var(--text-dim); background:linear-gradient(180deg, rgba(255,255,255,.015), rgba(255,255,255,.01)); }
+  .wb-chip-row { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+  .wb-chip { display:inline-flex; align-items:center; gap:6px; background:var(--surface2); border:1px solid var(--border); border-radius:999px; padding:6px 10px; font-size:12px; color:var(--text); }
+  .wb-plan-title { font-size:24px; line-height:1.15; letter-spacing:-.03em; margin:0 0 10px; }
+  .wb-plan-copy { color:var(--text-dim); line-height:1.7; margin:0 0 14px; }
+  .wb-list { display:grid; gap:10px; margin:16px 0; }
+  .wb-list-item { background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:12px 13px; color:var(--text-dim); line-height:1.6; }
+  .wb-prompt { background:#0f0f0f; border:1px solid var(--border); border-radius:14px; padding:16px; color:#e6e6e6; white-space:pre-wrap; line-height:1.7; font-size:13px; max-height:320px; overflow:auto; }
+  .wb-run-controls { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; margin-top:16px; }
+  .wb-run-stat { background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:12px 13px; }
+  .wb-run-stat strong { display:block; color:var(--text); font-size:17px; margin-top:4px; }
+  .wb-metrics { display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:12px; margin-top:18px; }
+  .wb-metric { background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:14px; }
+  .wb-metric-label { color:var(--text-dim); font-size:11px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:8px; }
+  .wb-metric-value { font-size:20px; font-weight:700; color:var(--text); }
+  .wb-breakdowns { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; margin-top:16px; }
+  .wb-breakdown { background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:14px; }
+  .wb-breakdown h3 { font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--text); margin:0 0 12px; }
+  .wb-breakdown-row { display:flex; justify-content:space-between; gap:12px; color:var(--text-dim); padding:8px 0; border-top:1px solid var(--border); }
+  .wb-breakdown-row:first-child { border-top:0; padding-top:0; }
+  .wb-table-wrap { margin-top:16px; overflow:auto; border:1px solid var(--border); border-radius:12px; }
+  .wb-table { width:100%; border-collapse:collapse; min-width:860px; }
+  .wb-table th, .wb-table td { padding:12px 14px; border-bottom:1px solid var(--border); text-align:left; font-size:13px; }
+  .wb-table th { background:var(--surface2); color:var(--text); text-transform:uppercase; letter-spacing:.06em; font-size:11px; }
+  .wb-table td { color:var(--text-dim); }
+  .wb-results-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; margin-top:16px; }
+  .wb-result-card { background:var(--surface2); border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+  .wb-result-card img { width:100%; display:block; background:#111; }
+  .wb-result-meta { padding:12px; display:flex; justify-content:space-between; gap:10px; align-items:center; }
+  .wb-result-meta span { color:var(--text-dim); font-size:12px; }
+  .wb-result-text { background:var(--surface2); border:1px solid var(--border); border-radius:14px; padding:14px; white-space:pre-wrap; color:var(--text-dim); line-height:1.7; margin-top:14px; }
+  .wb-result-topline { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px; }
+  .wb-result-topline strong { color:var(--text); font-size:16px; }
+  .wb-link-row { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:14px; }
+  .wb-link-row a { font-size:12px; }
+  @media (max-width: 1100px) {
+    .wb-grid, .wb-breakdowns { grid-template-columns:1fr; }
+    .wb-metrics { grid-template-columns:repeat(3, minmax(0,1fr)); }
+    .wb-results-grid { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  }
+  @media (max-width: 760px) {
+    .wb-main { padding:76px 16px 42px; }
+    .wb-hero { flex-direction:column; align-items:stretch; }
+    .wb-form-grid, .wb-channel-grid, .wb-run-controls, .wb-results-grid, .wb-metrics { grid-template-columns:1fr; }
+    .wb-field.wb-span-2 { grid-column:span 1; }
+  }
+</style>
+</head>
+<body>
+<nav class="navbar">
+  <div class="nav-left">
+    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+  </div>
+  <div class="nav-links">
+    <a href="/index">Generator</a>
+    <a href="/workbench" class="active">Workbench</a>
+    <a href="/reports">Reports</a>
+    <a href="/loved">Loved</a>
+    <a href="/settings">Settings</a>
+    <a href="/credits">Credits</a>
+    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">Light</button>
+    <a href="/logout" class="nav-logout">Logout</a>
+  </div>
+</nav>
+
+<main class="wb-main">
+  <section class="wb-hero">
+    <div>
+      <div class="wb-eyebrow">Task Workbench</div>
+      <h1 class="wb-title">Plan the brief, route the task, and run it without leaving the page.</h1>
+      <p class="wb-subtitle">This slice now covers structured task intake, prompt automation, direct execution, and live task-run reporting on the same SQLite-backed history.</p>
+    </div>
+    <div class="wb-hero-meta">
+      <div class="meta-label">Completed Runs</div>
+      <div class="meta-value" id="heroRunCount">{{ report.summary.completed_runs }}</div>
+    </div>
+  </section>
+
+  <section class="wb-grid">
+    <div class="wb-card">
+      <h2>Structured Brief</h2>
+      <div class="wb-form-grid">
+        <div class="wb-field">
+          <label class="wb-label" for="clientName">Client</label>
+          <input class="wb-input" id="clientName" type="text" placeholder="Acme, editorial team, internal brand...">
+        </div>
+        <div class="wb-field">
+          <label class="wb-label" for="projectName">Project</label>
+          <input class="wb-input" id="projectName" type="text" placeholder="Spring launch, Q2 ads, capsule drop...">
+        </div>
+        <div class="wb-field wb-span-2">
+          <label class="wb-label" for="taskSlug">Task Template</label>
+          <select class="wb-select" id="taskSlug" onchange="updateTaskHelper()">
+            {% for template in task_templates %}
+            <option value="{{ template.slug }}">{{ template.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="wb-helper" id="taskHelper"></div>
+        </div>
+        <div class="wb-field wb-span-2">
+          <label class="wb-label" for="objective">Objective</label>
+          <textarea class="wb-textarea" id="objective" placeholder="What outcome does the client want? Example: generate 4 paid social launch visuals for a premium sneaker drop with a bold studio look."></textarea>
+        </div>
+        <div class="wb-field wb-span-2">
+          <label class="wb-label" for="subjectSummary">Subject, product, talent, or reference context</label>
+          <textarea class="wb-textarea" id="subjectSummary" placeholder="Describe the product, talent, environment, references, or any assets the workflow should anchor on."></textarea>
+        </div>
+        <div class="wb-field wb-span-2">
+          <label class="wb-label">Channels</label>
+          <div class="wb-channel-grid">
+            {% for key, label in channel_labels.items() %}
+            <label class="wb-check"><input type="checkbox" name="channels" value="{{ key }}" {% if loop.index <= 2 %}checked{% endif %}> <span>{{ label }}</span></label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="wb-field">
+          <label class="wb-label" for="automationLevel">Automation Level</label>
+          <select class="wb-select" id="automationLevel">
+            <option value="assisted">Assisted</option>
+            <option value="balanced" selected>Balanced</option>
+            <option value="aggressive">Aggressive</option>
+          </select>
+        </div>
+        <div class="wb-field">
+          <label class="wb-label" for="vibe">Creative Direction / Vibe</label>
+          <input class="wb-input" id="vibe" type="text" placeholder="Luxury, kinetic, soft daylight, technical, editorial...">
+        </div>
+        <div class="wb-field wb-span-2">
+          <label class="wb-label" for="constraintsSummary">Constraints</label>
+          <textarea class="wb-textarea" id="constraintsSummary" placeholder="Budget, must-keep brand rules, legal/commercial limits, no-go elements, composition constraints..."></textarea>
+        </div>
+      </div>
+      <div class="wb-actions">
+        <button class="wb-btn wb-btn-primary" id="buildPlanBtn" onclick="buildPlan()">Build Prompt Plan</button>
+        <button class="wb-btn wb-btn-secondary" onclick="clearBrief()">Reset Brief</button>
+      </div>
+      <div class="wb-status" id="statusLine"></div>
+    </div>
+
+    <div class="wb-card">
+      <h2>Generated Plan</h2>
+      <div id="planPanel" class="wb-plan-empty">Choose a task, describe the brief, and build a routed prompt plan.</div>
+    </div>
+  </section>
+
+  <section class="wb-card" style="margin-top:18px">
+    <div class="wb-result-topline">
+      <h2 style="margin:0">Run Results</h2>
+      <div class="wb-note" id="lastRunMeta">No direct Workbench run yet.</div>
+    </div>
+    <div id="resultsPanel" class="wb-results-empty">Build a plan, then run it here to generate images without jumping to the Generator page.</div>
+  </section>
+
+  <section class="wb-card" style="margin-top:18px">
+    <div class="wb-link-row">
+      <h2 style="margin:0">Workbench Snapshot</h2>
+      <a href="/reports">Open full Reports page</a>
+    </div>
+    <div class="wb-metrics" id="reportMetrics"></div>
+    <div class="wb-breakdowns">
+      <div class="wb-breakdown"><h3>Tasks</h3><div id="taskBreakdown"></div></div>
+      <div class="wb-breakdown"><h3>Providers</h3><div id="providerBreakdown"></div></div>
+      <div class="wb-breakdown"><h3>Clients</h3><div id="clientBreakdown"></div></div>
+      <div class="wb-breakdown"><h3>Workflows</h3><div id="workflowBreakdown"></div></div>
+    </div>
+    <div class="wb-table-wrap">
+      <table class="wb-table">
+        <thead>
+          <tr>
+            <th>Created</th>
+            <th>Client</th>
+            <th>Project</th>
+            <th>Task</th>
+            <th>Status</th>
+            <th>Runs</th>
+            <th>Actual</th>
+            <th>Estimated</th>
+          </tr>
+        </thead>
+        <tbody id="recentRunsBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+const TASK_TEMPLATES = {{ task_templates | tojson }};
+let reportData = {{ report | tojson }};
+let latestPlan = null;
+let latestResult = null;
+
+function byId(id) { return document.getElementById(id); }
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function selectedChannels() {
+  return Array.from(document.querySelectorAll('input[name="channels"]:checked')).map(el => el.value);
+}
+function setStatus(msg, tone) {
+  const el = byId('statusLine');
+  el.textContent = msg || '';
+  el.className = 'wb-status' + (tone ? ' ' + tone : '');
+}
+function updateTaskHelper() {
+  const slug = byId('taskSlug').value;
+  const template = TASK_TEMPLATES.find(item => item.slug === slug);
+  if (!template) return;
+  byId('taskHelper').innerHTML = `<strong>${escapeHtml(template.name)}</strong><br>${escapeHtml(template.description)}<br><br>${escapeHtml(template.prompt_scaffold)}`;
+}
+function clearBrief() {
+  ['clientName','projectName','objective','subjectSummary','vibe','constraintsSummary'].forEach(id => byId(id).value = '');
+  byId('automationLevel').value = 'balanced';
+  document.querySelectorAll('input[name="channels"]').forEach((el, idx) => { el.checked = idx < 2; });
+  latestPlan = null;
+  latestResult = null;
+  byId('planPanel').className = 'wb-plan-empty';
+  byId('planPanel').textContent = 'Choose a task, describe the brief, and build a routed prompt plan.';
+  byId('resultsPanel').className = 'wb-results-empty';
+  byId('resultsPanel').textContent = 'Build a plan, then run it here to generate images without jumping to the Generator page.';
+  byId('lastRunMeta').textContent = 'No direct Workbench run yet.';
+  setStatus('Brief cleared.', 'success');
+}
+function renderPlan(plan) {
+  latestPlan = plan;
+  const chips = [
+    `Task: ${escapeHtml(plan.task_name)}`,
+    `Route: ${escapeHtml(plan.recommended_provider)}`,
+    `Model: ${escapeHtml(plan.execution_target.model_label)}`,
+    `Aspect: ${escapeHtml(plan.execution_target.aspectRatio)}`,
+    `Size: ${escapeHtml(plan.execution_target.imageSize)}`,
+    `Run ID: ${escapeHtml((plan.run_uuid || '').slice(0, 8))}`,
+    `Est. Cost: $${Number(plan.estimated_cost_range_usd.low).toFixed(4)}-$${Number(plan.estimated_cost_range_usd.high).toFixed(4)}`
+  ];
+  const reasoning = (plan.reasoning || []).map(item => `<div class="wb-list-item">${escapeHtml(item)}</div>`).join('');
+  byId('planPanel').className = '';
+  byId('planPanel').innerHTML = `
+    <div class="wb-chip-row">${chips.map(chip => `<span class="wb-chip">${chip}</span>`).join('')}</div>
+    <h3 class="wb-plan-title">${escapeHtml(plan.task_name)}</h3>
+    <p class="wb-plan-copy">${escapeHtml(plan.description)}</p>
+    <div class="wb-list">${reasoning}</div>
+    <div class="wb-run-controls">
+      <div class="wb-run-stat"><span>Direct run count</span><strong>${escapeHtml(plan.estimated_outputs)}</strong></div>
+      <div class="wb-field">
+        <label class="wb-label" for="runCountSelect">Run now</label>
+        <select class="wb-select" id="runCountSelect"><option value="1">1 image</option><option value="2">2 images</option><option value="3">3 images</option><option value="4">4 images</option></select>
+      </div>
+      <div class="wb-field">
+        <label class="wb-label" for="runUseSearch">Grounding</label>
+        <label class="wb-check"><input type="checkbox" id="runUseSearch"> <span>Use Google Search grounding</span></label>
+      </div>
+    </div>
+    <div class="wb-inline-actions">
+      <button class="wb-btn wb-btn-primary" id="runPlanBtn" onclick="runPlanDirect()">Run from Workbench</button>
+      <button class="wb-btn wb-btn-secondary" onclick="openInGenerator()">Open in Generator</button>
+      <button class="wb-btn wb-btn-tertiary" onclick="copyPrompt()">Copy Prompt</button>
+    </div>
+    <div class="wb-prompt" id="promptPreview">${escapeHtml(plan.prompt)}</div>
+  `;
+}
+function renderBreakdown(elId, rows, labelKey, emptyLabel='No data yet') {
+  const el = byId(elId);
+  if (!rows || !rows.length) {
+    el.innerHTML = `<div class="wb-breakdown-row"><span>${emptyLabel}</span><span>0</span></div>`;
+    return;
+  }
+  el.innerHTML = rows.map(row => `<div class="wb-breakdown-row"><span>${escapeHtml(row[labelKey])}</span><strong>${escapeHtml(row.runs)}</strong></div>`).join('');
+}
+function renderRecentRuns(rows) {
+  const body = byId('recentRunsBody');
+  if (!rows || !rows.length) {
+    body.innerHTML = '<tr><td colspan="8">No task runs yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(row => `
+    <tr>
+      <td>${escapeHtml(row.created_at_label || '')}</td>
+      <td>${escapeHtml(row.client_name || '—')}</td>
+      <td>${escapeHtml(row.project_name || '—')}</td>
+      <td>${escapeHtml(row.task_name || '')}</td>
+      <td>${escapeHtml(row.status || 'planned')}</td>
+      <td>${escapeHtml(row.run_count || 0)}</td>
+      <td>${escapeHtml(row.actual_images || 0)} images / $${Number(row.actual_cost_usd || 0).toFixed(4)}</td>
+      <td>$${Number(row.estimated_cost_low || 0).toFixed(4)}-$${Number(row.estimated_cost_high || 0).toFixed(4)}</td>
+    </tr>
+  `).join('');
+}
+function renderReport(report) {
+  reportData = report;
+  const summary = report.summary || {};
+  byId('heroRunCount').textContent = summary.completed_runs || 0;
+  byId('reportMetrics').innerHTML = `
+    <div class="wb-metric"><div class="wb-metric-label">Planned Runs</div><div class="wb-metric-value">${summary.total_runs || 0}</div></div>
+    <div class="wb-metric"><div class="wb-metric-label">Executed</div><div class="wb-metric-value">${summary.executed_runs || 0}</div></div>
+    <div class="wb-metric"><div class="wb-metric-label">Completed</div><div class="wb-metric-value">${summary.completed_runs || 0}</div></div>
+    <div class="wb-metric"><div class="wb-metric-label">Actual Images</div><div class="wb-metric-value">${summary.actual_images || 0}</div></div>
+    <div class="wb-metric"><div class="wb-metric-label">Actual Cost</div><div class="wb-metric-value">$${Number(summary.actual_cost_usd || 0).toFixed(2)}</div></div>
+  `;
+  renderBreakdown('taskBreakdown', report.task_breakdown || [], 'task_name');
+  renderBreakdown('providerBreakdown', report.provider_breakdown || [], 'provider');
+  renderBreakdown('clientBreakdown', report.client_breakdown || [], 'client_name');
+  renderBreakdown('workflowBreakdown', report.workflow_breakdown || [], 'recommended_workflow');
+  renderRecentRuns(report.recent_runs || []);
+}
+function downloadGeneratedImage(img, idx) {
+  const a = document.createElement('a');
+  a.href = `data:${img.mime_type};base64,${img.data}`;
+  const ext = (img.mime_type || 'image/png').split('/')[1] || 'png';
+  a.download = `workbench-${Date.now()}-${idx + 1}.${ext}`;
+  a.click();
+}
+function renderResults(result, taskRun) {
+  latestResult = result;
+  const images = result.images || [];
+  const cards = images.map((img, idx) => `
+    <div class="wb-result-card">
+      <img src="data:${img.mime_type};base64,${img.data}" alt="Generated result ${idx + 1}">
+      <div class="wb-result-meta">
+        <span>${escapeHtml((result.params || {}).model_label || result.model_label || 'Result')}</span>
+        <button class="wb-btn wb-btn-tertiary" onclick="downloadGeneratedImage(latestResult.images[${idx}], ${idx})">Download</button>
+      </div>
+    </div>
+  `).join('');
+  const textBlock = result.text ? `<div class="wb-result-text">${escapeHtml(result.text)}</div>` : '';
+  const lastRunLabel = taskRun && taskRun.last_run_at_label ? taskRun.last_run_at_label : 'just now';
+  byId('lastRunMeta').textContent = `${images.length} images generated • $${Number(result.cost || 0).toFixed(4)} • ${lastRunLabel}`;
+  byId('resultsPanel').className = '';
+  byId('resultsPanel').innerHTML = `
+    <div class="wb-result-topline"><strong>${images.length} images generated</strong><span>${escapeHtml((result.params || {}).aspectRatio || '')} • ${escapeHtml((result.params || {}).imageSize || '')}</span></div>
+    <div class="wb-results-grid">${cards || ''}</div>
+    ${textBlock}
+  `;
+}
+async function buildPlan() {
+  const objective = byId('objective').value.trim();
+  if (!objective) {
+    setStatus('Add an objective before building the plan.', 'error');
+    return;
+  }
+  const payload = {
+    client_name: byId('clientName').value.trim(),
+    project_name: byId('projectName').value.trim(),
+    task_slug: byId('taskSlug').value,
+    objective,
+    subject_summary: byId('subjectSummary').value.trim(),
+    channels: selectedChannels(),
+    automation_level: byId('automationLevel').value,
+    vibe: byId('vibe').value.trim(),
+    constraints_summary: byId('constraintsSummary').value.trim()
+  };
+  const btn = byId('buildPlanBtn');
+  btn.disabled = true;
+  setStatus('Building prompt plan...', '');
+  try {
+    const resp = await fetch('/api/workbench/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Plan build failed');
+    renderPlan(data.plan);
+    renderReport(data.report);
+    setStatus('Prompt plan created and logged.', 'success');
+  } catch (err) {
+    setStatus(err.message || 'Plan build failed.', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function runPlanDirect() {
+  if (!latestPlan || !latestPlan.run_uuid) {
+    setStatus('Build a plan before running it.', 'error');
+    return;
+  }
+  const btn = byId('runPlanBtn');
+  if (btn) btn.disabled = true;
+  setStatus('Running the task directly from Workbench...', '');
+  byId('resultsPanel').className = 'wb-results-empty';
+  byId('resultsPanel').textContent = 'Generating images...';
+  try {
+    const resp = await fetch('/api/workbench/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        run_uuid: latestPlan.run_uuid,
+        numberOfImages: parseInt(byId('runCountSelect').value, 10) || 1,
+        useSearch: byId('runUseSearch').checked,
+        outputMode: 'images_text'
+      })
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Direct run failed');
+    if (data.task_run && data.task_run.plan) latestPlan = data.task_run.plan;
+    renderResults(data.result || {}, data.task_run || {});
+    renderReport(data.report || reportData);
+    setStatus('Direct Workbench run completed.', 'success');
+  } catch (err) {
+    byId('resultsPanel').className = 'wb-results-empty';
+    byId('resultsPanel').textContent = err.message || 'Run failed.';
+    setStatus(err.message || 'Run failed.', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+function openInGenerator() {
+  if (!latestPlan) return;
+  const execution = latestPlan.execution_target || {};
+  sessionStorage.setItem('nb_reuse_params', JSON.stringify({
+    prompt: latestPlan.prompt,
+    model: execution.model,
+    aspectRatio: execution.aspectRatio,
+    imageSize: execution.imageSize,
+    temperature: execution.temperature,
+    topP: execution.topP
+  }));
+  window.location.href = '/index';
+}
+async function copyPrompt() {
+  if (!latestPlan || !latestPlan.prompt) return;
+  try {
+    await navigator.clipboard.writeText(latestPlan.prompt);
+    setStatus('Prompt copied to clipboard.', 'success');
+  } catch (err) {
+    setStatus('Could not copy the prompt from the browser.', 'error');
+  }
+}
+function toggleTheme() {
+  const html = document.documentElement;
+  const isLight = html.getAttribute('data-theme') === 'light';
+  if (isLight) { html.removeAttribute('data-theme'); localStorage.setItem('nb-theme','dark'); }
+  else { html.setAttribute('data-theme','light'); localStorage.setItem('nb-theme','light'); }
+  updateThemeBtn();
+}
+function updateThemeBtn() {
+  const btn = byId('themeToggleBtn');
+  if (!btn) return;
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  btn.textContent = isLight ? 'Dark' : 'Light';
+  btn.title = isLight ? 'Switch to Dark mode' : 'Switch to Light mode';
+}
+updateTaskHelper();
+renderReport(reportData);
+updateThemeBtn();
+</script>
+</body>
+</html>

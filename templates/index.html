@@ -1,0 +1,2592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nano Banana Studio</title>
+<script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="navbar">
+  <div class="nav-left">
+    <button class="nav-hamburger" id="navHamburger" onclick="toggleSidebar()" title="Toggle sidebar" aria-label="Toggle sidebar">
+      <span></span><span></span><span></span>
+    </button>
+    <a href="/index" class="nav-logo">🍌 Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+  </div>
+  <div class="nav-links">
+    <a href="/index" class="active">Generator</a>
+    <a href="/workbench">Workbench</a>
+    <a href="/reports">Reports</a>
+    <a href="/loved">Loved</a>
+    <a href="/settings">Settings</a>
+    <a href="/credits">Credits</a>
+    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">☀️</button>
+    <a href="/logout" class="nav-logout">Logout</a>
+  </div>
+</nav>
+
+{% if not has_key %}
+<div class="banner-warn">
+  API key non configurata — <a href="/settings">vai in Impostazioni</a> per inserirla.
+</div>
+{% endif %}
+
+<div class="app-layout">
+
+  <!-- ================================================================
+       SIDEBAR SINISTRA
+  ================================================================ -->
+  <aside class="sidebar">
+
+    <!-- Desktop collapse button -->
+    <div class="sidebar-top-bar">
+      <button class="sidebar-toggle-desktop" onclick="toggleDesktopSidebar()" title="Collapse sidebar">
+        <svg width="16" height="13" viewBox="0 0 16 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="0.75" y="0.75" width="14.5" height="11.5" rx="1.75" stroke="currentColor" stroke-width="1.5"/>
+          <line x1="5" y1="0.75" x2="5" y2="12.25" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Mobile close button -->
+    <button class="sidebar-close-btn" id="sidebarCloseBtn" onclick="toggleSidebar()"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Close</button>
+
+    <div class="ctrl-group">
+      <div class="ctrl-label">Output Format</div>
+      <div class="toggle-tabs">
+        <button class="tab-btn active" id="tabImgText" onclick="setOutputMode('images_text', this)">
+          <span>▦</span> Images &amp; text
+        </button>
+        <button class="tab-btn" id="tabImgOnly" onclick="setOutputMode('images_only', this)">
+          <span>⬜</span> Images only
+        </button>
+      </div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-label">Model</div>
+      <select id="modelSelect" onchange="onModelChange()">
+        <option value="gemini-3.1-flash-image-preview">Nano Banana 2</option>
+        <option value="gemini-3-pro-image-preview">Nano Banana Pro</option>
+        <option value="gemini-2.5-flash-image">Nano Banana</option>
+      </select>
+      <!-- Ref images note per modello -->
+      <div class="ref-note" id="refNote">Up to 14 reference images</div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-label-row">
+        <span class="ctrl-label">Temperature</span>
+        <span class="ctrl-val" id="tempVal">1</span>
+      </div>
+      <input type="range" id="tempRange" min="0" max="2" step="0.05" value="1"
+             oninput="document.getElementById('tempVal').textContent = parseFloat(this.value).toFixed(2)">
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-label">Aspect Ratio</div>
+      <select id="aspectSelect" style="display:none">
+        <option value="1:1">1:1</option>
+        <option value="16:9" selected>16:9</option>
+        <option value="9:16">9:16</option>
+        <option value="4:3">4:3</option>
+        <option value="3:4">3:4</option>
+        <option value="3:2">3:2</option>
+        <option value="2:3">2:3</option>
+        <option value="21:9">21:9</option>
+        <option value="5:4">5:4</option>
+        <option value="4:5">4:5</option>
+        <option value="4:1" class="nb2-only" disabled>4:1</option>
+        <option value="1:4" class="nb2-only" disabled>1:4</option>
+        <option value="8:1" class="nb2-only" disabled>8:1</option>
+        <option value="1:8" class="nb2-only" disabled>1:8</option>
+      </select>
+      <div class="ctrl-ar-sidebar" id="arSideGrid"></div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-label">Resolution</div>
+      <select id="resSelect" style="display:none" onchange="syncResChip()">
+        <option value="0.5K" class="nb2-only" disabled>0.5K</option>
+        <option value="1K" selected>1K</option>
+        <option value="2K">2K</option>
+        <option value="4K">4K</option>
+      </select>
+      <div class="ctrl-btn-group">
+        <button class="ctrl-option-btn" data-res="0.5K" id="sideRes-0_5K" onclick="pickQual(this)" disabled>
+          <span class="cob-name">0.5K</span><span class="cob-sub">512px</span>
+        </button>
+        <button class="ctrl-option-btn active" data-res="1K" id="sideRes-1K" onclick="pickQual(this)">
+          <span class="cob-name">1K</span><span class="cob-sub">1024px</span>
+        </button>
+        <button class="ctrl-option-btn" data-res="2K" id="sideRes-2K" onclick="pickQual(this)">
+          <span class="cob-name">2K</span><span class="cob-sub">2048px</span>
+        </button>
+        <button class="ctrl-option-btn" data-res="4K" id="sideRes-4K" onclick="pickQual(this)">
+          <span class="cob-name">4K</span><span class="cob-sub">4096px</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="ctrl-group" id="thinkingGroup" style="display:none">
+      <div class="ctrl-label">Thinking Level</div>
+      <select id="thinkingSelect">
+        <option value="Minimal" selected>Minimal</option>
+        <option value="High">High</option>
+        <option value="Dynamic">Dynamic</option>
+      </select>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-label-row">
+        <span class="ctrl-label">Number of Images</span>
+        <span class="ctrl-val" id="numImgVal">1</span>
+      </div>
+      <input type="range" id="numImgRange" min="1" max="4" step="1" value="1"
+             oninput="document.getElementById('numImgVal').textContent = this.value; syncImgCount()">
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-label">Tools &amp; Search</div>
+      <div class="toggle-row">
+        <div class="toggle-item">
+          <span class="toggle-icon">G</span>
+          <span>Grounding con Google Search</span>
+          <label class="switch">
+            <input type="checkbox" id="useSearchToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <details class="ctrl-group adv-group">
+      <summary class="ctrl-label adv-summary">Advanced Settings</summary>
+      <div class="adv-body">
+        <div class="ctrl-label-row" style="margin-top:12px">
+          <span class="ctrl-label-sm">Stop sequence</span>
+        </div>
+        <input type="text" id="stopSeq" placeholder="Add stop sequence..." class="adv-input">
+        <div class="ctrl-label-row">
+          <span class="ctrl-label-sm">Output length</span>
+          <span class="ctrl-val" id="outLenVal">65536</span>
+        </div>
+        <input type="range" id="outLenRange" min="256" max="65536" step="256" value="65536"
+               oninput="document.getElementById('outLenVal').textContent = this.value">
+        <div class="ctrl-label-row">
+          <span class="ctrl-label-sm">Top P</span>
+          <span class="ctrl-val" id="topPVal">0.95</span>
+        </div>
+        <input type="range" id="topPRange" min="0" max="1" step="0.01" value="0.95"
+               oninput="document.getElementById('topPVal').textContent = parseFloat(this.value).toFixed(2)">
+      </div>
+    </details>
+
+  </aside>
+
+  <!-- ================================================================
+       AREA CENTRALE
+  ================================================================ -->
+  <section class="main-area">
+
+    <div class="gallery" id="gallery">
+      <div class="gallery-placeholder" id="galleryPlaceholder">
+        <div class="placeholder-icon">🍌</div>
+        <p>Generated images will appear here</p>
+        <p class="placeholder-sub">Write a prompt and press Generate</p>
+      </div>
+    </div>
+
+    <div class="gen-status" id="genStatus" style="display:none">
+      <div class="spinner"></div>
+      <span id="genStatusText">Generating...</span>
+    </div>
+
+    <div class="error-banner" id="errorBanner" style="display:none"></div>
+
+    <!-- PROMPT BAR -->
+    <div class="prompt-bar" id="promptBar">
+
+      <!-- Strip immagini di riferimento (visibile solo se ci sono immagini) -->
+      <div class="ref-strip" id="refStrip" style="display:none">
+        <div class="ref-strip-inner" id="refStripInner"></div>
+        <div class="ref-strip-meta">
+          <span id="refCounter" class="ref-counter">0/14</span>
+          <button class="ref-clear-all" onclick="clearAllRefImages()" title="Remove all">✕ All</button>
+        </div>
+      </div>
+
+      <!-- Zona testo + drag&drop -->
+      <div class="prompt-wrap" id="promptWrap"
+           ondragover="onDragOver(event)"
+           ondragleave="onDragLeave(event)"
+           ondrop="onDrop(event)">
+        <div class="drag-overlay" id="dragOverlay">
+          <span>📎 Drop images here</span>
+        </div>
+        <textarea id="promptInput" placeholder="Describe the scene you imagine..." rows="1"
+                  onkeydown="handlePromptKey(event)"
+                  oninput="autoResize(this)"></textarea>
+      </div>
+
+      <!-- Barra inferiore -->
+      <div class="prompt-meta">
+        <div class="meta-left">
+
+          <!-- ── Model chip + picker ── -->
+          <div class="chip-wrap" id="modelChipWrap">
+            <div class="model-chip" onclick="togglePicker('modelPickerPanel','modelChipWrap',event)">
+              <span class="chip-g-icon">G</span>
+              <span id="modelChipLabel">Nano Banana 2</span>
+              <span class="chip-caret">▾</span>
+            </div>
+            <div class="picker-panel" id="modelPickerPanel">
+              <button class="picker-model-row" data-model="gemini-3.1-flash-image-preview" onclick="pickModel(this)">
+                <span class="pm-icon pm-nb2">✦</span>
+                <span class="pm-info">
+                  <span class="pm-name">Nano Banana 2</span>
+                  <span class="pm-sub">Top quality · 14 ref images</span>
+                </span>
+                <span class="pm-check" id="pmChk-gemini-3.1-flash-image-preview">✓</span>
+              </button>
+              <button class="picker-model-row" data-model="gemini-3-pro-image-preview" onclick="pickModel(this)">
+                <span class="pm-icon pm-pro">◆</span>
+                <span class="pm-info">
+                  <span class="pm-name">Nano Banana Pro</span>
+                  <span class="pm-sub">Pro quality · 8 ref images</span>
+                </span>
+                <span class="pm-check" id="pmChk-gemini-3-pro-image-preview">✓</span>
+              </button>
+              <button class="picker-model-row" data-model="gemini-2.5-flash-image" onclick="pickModel(this)">
+                <span class="pm-icon pm-nb">○</span>
+                <span class="pm-info">
+                  <span class="pm-name">Nano Banana</span>
+                  <span class="pm-sub">Basic · No ref images</span>
+                </span>
+                <span class="pm-check" id="pmChk-gemini-2.5-flash-image">✓</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- ── Aspect ratio chip + picker ── -->
+          <div class="chip-wrap" id="arChipWrap">
+            <div class="ar-chip" onclick="togglePicker('arPickerPanel','arChipWrap',event)">
+              <svg class="ar-chip-icon" id="arChipSvg" width="14" height="14" viewBox="0 0 14 14"></svg>
+              <span id="arChipLabel">16:9</span>
+              <span class="chip-caret">▾</span>
+            </div>
+            <div class="picker-panel picker-ar" id="arPickerPanel">
+              <div class="picker-ar-grid" id="arPickerGrid"></div>
+            </div>
+          </div>
+
+          <!-- ── Quality chip + picker ── -->
+          <div class="chip-wrap" id="qualChipWrap">
+            <div class="res-chip" id="resChip" onclick="togglePicker('qualPickerPanel','qualChipWrap',event)">
+              <span id="qualChipLabel">1K</span>
+              <span class="chip-caret">▾</span>
+            </div>
+            <div class="picker-panel picker-qual" id="qualPickerPanel">
+              <button class="picker-qual-row" data-res="0.5K" id="qualRow-0_5K" onclick="pickQual(this)">
+                <span class="pq-name">0.5K</span>
+                <span class="pq-desc">512 px · NB2 only</span>
+                <span class="pq-check" id="pqChk-0_5K">✓</span>
+              </button>
+              <button class="picker-qual-row" data-res="1K" id="qualRow-1K" onclick="pickQual(this)">
+                <span class="pq-name">1K</span>
+                <span class="pq-desc">1024 px — default</span>
+                <span class="pq-check" id="pqChk-1K">✓</span>
+              </button>
+              <button class="picker-qual-row" data-res="2K" id="qualRow-2K" onclick="pickQual(this)">
+                <span class="pq-name">2K</span>
+                <span class="pq-desc">2048 px · Pro / NB2</span>
+                <span class="pq-check" id="pqChk-2K">✓</span>
+              </button>
+              <button class="picker-qual-row" data-res="4K" id="qualRow-4K" onclick="pickQual(this)">
+                <span class="pq-name">4K <span class="pm-badge pm-premium" style="font-size:9px;vertical-align:middle">PREMIUM</span></span>
+                <span class="pq-desc">4096 px</span>
+                <span class="pq-check" id="pqChk-4K">✓</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Contatore immagini output -->
+          <div class="img-count-ctrl">
+            <button onclick="changeNumImg(-1)">−</button>
+            <span id="imgCountDisplay">1/4</span>
+            <button onclick="changeNumImg(1)">+</button>
+          </div>
+          <!-- Search toggle mini -->
+          <label class="search-toggle-mini" title="Grounding Google Search">
+            <span>G</span>
+            <input type="checkbox" id="searchMini" onchange="syncSearchToggle(this)">
+          </label>
+
+          <!-- Separatore -->
+          <div class="meta-sep"></div>
+
+          <!-- Bottoni aggiunta immagini di riferimento -->
+          <div class="ref-actions" id="refActions">
+            <!-- Upload da file -->
+            <button class="ref-action-btn" id="refUploadBtn"
+                    onclick="triggerFileInput()" title="Upload reference image">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+            </button>
+            <!-- Browse Loved images -->
+            <button class="ref-action-btn" id="refPublishedBtn"
+                    onclick="openLovedPicker()" title="Choose from loved images">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+              </svg>
+            </button>
+            <!-- Elements (@) -->
+            <button class="ref-action-btn ref-action-at" id="refElementsBtn"
+                    onclick="openElements()" title="Elements — asset library (@)">
+              @
+            </button>
+            <input type="file" id="refFileInput" accept="image/*" multiple style="display:none"
+                   onchange="onFileInputChange(event)">
+          </div>
+
+        </div>
+        <div class="meta-right">
+          <button class="btn-generate" id="generateBtn" onclick="generate()">
+            Generate <span class="gen-icon">✦</span> <span id="imgCountBadge">1</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </section>
+</div>
+
+<!-- Overlay mobile sidebar -->
+<div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+<!-- ================================================================
+     LIGHTBOX (generated image)
+================================================================ -->
+<div class="lightbox" id="lightbox" onclick="closeLightboxOnBg(event)">
+  <div class="lb-inner">
+    <button class="lb-close" onclick="closeLightbox()" title="Close (Esc)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <img id="lbImg" src="" alt="">
+    <div class="lb-footer">
+      <div class="lb-meta" id="lbMeta"></div>
+      <button class="btn-publish-lb" id="lbPublishBtn" onclick="publishFromLightbox()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        Love
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     MODAL — Loved image picker
+================================================================ -->
+<div class="modal-overlay" id="pubPickerOverlay" onclick="closeLovedPickerOnBg(event)">
+  <div class="modal-box pub-picker-box">
+    <div class="modal-header">
+      <h3>Choose reference images</h3>
+      <div class="modal-header-right">
+        <span class="modal-sel-count" id="pickerSelCount">0 selected</span>
+        <button class="modal-close-btn" onclick="closeLovedPicker()" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+    </div>
+    <div class="pub-picker-body" id="pubPickerBody">
+      <div class="pub-picker-loading" id="pubPickerLoading">
+        <div class="spinner"></div> Loading...
+      </div>
+      <div class="pub-picker-grid" id="pubPickerGrid" style="display:none"></div>
+      <div class="pub-picker-empty" id="pubPickerEmpty" style="display:none">
+        🤍 No loved images yet.<br>
+        <a href="/loved">Go to Loved gallery →</a>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <span class="modal-limit-note" id="modalLimitNote"></span>
+      <div class="modal-footer-btns">
+        <button class="btn-modal-cancel" onclick="closeLovedPicker()">Cancel</button>
+        <button class="btn-modal-confirm" id="pickerConfirmBtn" onclick="confirmLovedPicker()">
+          Add selected
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     MODAL — Elements (asset library)
+================================================================ -->
+<div class="modal-overlay elements-overlay" id="elementsOverlay" onclick="closeElementsOnBg(event)">
+  <div class="modal-box elements-box">
+
+    <!-- Header -->
+    <div class="elements-header">
+      <h3>Elements</h3>
+      <div class="elements-search-wrap">
+        <svg class="elements-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" id="elementsSearch" placeholder="Search..."
+               oninput="onElementsSearch(this.value)">
+      </div>
+      <div class="elements-header-right">
+        <span class="modal-sel-count" id="elementsSelCount">0 selected</span>
+        <button class="modal-close-btn" onclick="closeElements()" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Body: sidebar + grid -->
+    <div class="elements-body">
+
+      <!-- Sidebar categorie -->
+      <nav class="elements-sidebar">
+        <button class="el-cat-btn active" data-cat="all" onclick="filterElementsCat('all', this)">
+          <span class="el-cat-icon">⊞</span> All
+        </button>
+        <button class="el-cat-btn" data-cat="favorites" onclick="filterElementsCat('favorites', this)">
+          <span class="el-cat-icon">⭐</span> Pinned
+        </button>
+        <div class="el-cat-separator"></div>
+        <div id="elDynamicCats">
+          <!-- Popolato via JS -->
+        </div>
+      </nav>
+
+      <!-- Griglia asset -->
+      <div class="elements-grid-wrap">
+        <!-- Filter bar — visibile solo per Characters -->
+        <div id="elFiltersBar" class="el-filters-bar" style="display:none"></div>
+        <div class="elements-grid-loading" id="elementsLoading">
+          <div class="spinner"></div> Loading assets...
+        </div>
+        <div class="elements-grid" id="elementsGrid" style="display:none"></div>
+        <div class="elements-empty" id="elementsEmpty" style="display:none">
+          <p>No assets found</p>
+        </div>
+        <!-- Paginazione -->
+        <div class="elements-pagination" id="elementsPagination" style="display:none">
+          <button id="elPrevBtn" onclick="elementsChangePage(-1)">← Precedenti</button>
+          <span id="elPageInfo">1 / 1</span>
+          <button id="elNextBtn" onclick="elementsChangePage(1)">Successivi →</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="modal-footer">
+      <span class="modal-limit-note" id="elementsLimitNote"></span>
+      <div class="modal-footer-btns">
+        <button class="btn-modal-cancel" onclick="closeElements()">Cancel</button>
+        <button class="btn-modal-confirm" id="elementsConfirmBtn"
+                onclick="confirmElements()" disabled>
+          Add selected
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ================================================================
+     NEW TALENT WIZARD MODAL
+================================================================ -->
+<div class="modal-overlay wizard-overlay" id="newTalentOverlay" onclick="closeWizardOnBg(event)">
+  <div class="modal-box wizard-box">
+
+    <!-- Header -->
+    <div class="modal-header">
+      <h3>✦ Nuovo Talent</h3>
+      <div class="modal-header-right">
+        <span class="wizard-step-label" id="wizStepLabel">Upload image</span>
+        <button class="modal-close-btn" onclick="closeWizard()" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Step 1: Drop zone -->
+    <div class="wizard-step" id="wizStep1">
+      <div class="wizard-dropzone" id="wizDropzone"
+           ondragover="wizDragOver(event)" ondragleave="wizDragLeave(event)" ondrop="wizDrop(event)"
+           onclick="wizTriggerFile()">
+        <div class="wizard-drop-icon">⬆</div>
+        <div class="wizard-drop-title">Drag an image here</div>
+        <div class="wizard-drop-sub">or click to browse — JPG, PNG, WEBP</div>
+      </div>
+      <input type="file" id="wizFileInput" accept="image/*" style="display:none"
+             onchange="wizOnFileChange(event)">
+    </div>
+
+    <!-- Step 2: Scan animation -->
+    <div class="wizard-step wiz-step-scan" id="wizStep2" style="display:none">
+      <div class="wiz-scan-layout">
+
+        <!-- Immagine con overlay scanner -->
+        <div class="wiz-scan-wrap" id="wizScanWrap">
+          <img id="wizPreviewImg" src="" alt="" class="wiz-scan-img">
+          <!-- Linea di scansione -->
+          <div class="wiz-scan-line" id="wizScanLine"></div>
+          <!-- Glow sotto la linea -->
+          <div class="wiz-scan-glow" id="wizScanGlow"></div>
+          <!-- Angoli scanner -->
+          <div class="wiz-corner wiz-corner-tl"></div>
+          <div class="wiz-corner wiz-corner-tr"></div>
+          <div class="wiz-corner wiz-corner-bl"></div>
+          <div class="wiz-corner wiz-corner-br"></div>
+          <!-- Badge pulsante -->
+          <div class="wiz-scan-badge"><span class="wiz-scan-dot"></span>SCANNING</div>
+        </div>
+
+        <!-- Pannello rilevamento campi -->
+        <div class="wiz-detect-panel">
+          <div class="wiz-detect-header">
+            <div class="wiz-detect-spinner"></div>
+            <div>
+              <div class="wiz-detect-title">Gemini Vision</div>
+              <div class="wiz-detect-sub">Estrazione caratteristiche…</div>
+            </div>
+          </div>
+          <div class="wiz-detect-fields" id="wizDetectFields"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Step 3: Confirm and edit metadata -->
+    <div class="wizard-step" id="wizStep3" style="display:none">
+      <div class="wizard-confirm-layout">
+        <!-- Immagine preview -->
+        <div class="wizard-confirm-img-wrap">
+          <img id="wizConfirmImg" src="" alt="">
+          <div class="wizard-confirm-model-badge" id="wizModelBadge">gemini-3.1-flash-lite-preview</div>
+        </div>
+        <!-- Form metadati -->
+        <div class="wizard-form-scroll">
+          <div class="wiz-row">
+            <div class="wiz-field wiz-field-wide">
+              <label>Nome</label>
+              <input type="text" id="wfName" placeholder="Es. Sofia">
+            </div>
+            <div class="wiz-field">
+              <label>Genere</label>
+              <select id="wfGender">
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="non-binary">Non-binary</option>
+              </select>
+            </div>
+          </div>
+          <div class="wiz-row">
+            <div class="wiz-field">
+              <label>Etnia</label>
+              <input type="text" id="wfEthnicity">
+            </div>
+            <div class="wiz-field">
+              <label>Fascia età</label>
+              <select id="wfAgeGroup">
+                <option value="teen">Teen</option>
+                <option value="young_adult">Young Adult</option>
+                <option value="adult" selected>Adult</option>
+                <option value="mature">Mature</option>
+              </select>
+            </div>
+          </div>
+          <div class="wiz-row">
+            <div class="wiz-field">
+              <label>Carnagione</label>
+              <input type="text" id="wfSkinTone" placeholder="es. medium_olive">
+            </div>
+            <div class="wiz-field">
+              <label>Colore capelli</label>
+              <input type="text" id="wfHairColor" placeholder="es. dark_brown">
+            </div>
+          </div>
+          <div class="wiz-row">
+            <div class="wiz-field">
+              <label>Stile capelli</label>
+              <input type="text" id="wfHairStyle" placeholder="es. long_wavy">
+            </div>
+            <div class="wiz-field">
+              <label>Colore occhi</label>
+              <input type="text" id="wfEyeColor" placeholder="es. hazel">
+            </div>
+          </div>
+          <div class="wiz-row">
+            <div class="wiz-field wiz-field-wide">
+              <label>Corporatura</label>
+              <input type="text" id="wfBodyType" placeholder="es. athletic">
+            </div>
+            <div class="wiz-field wiz-field-wide">
+              <label>Tag (separati da virgola)</label>
+              <input type="text" id="wfTags" placeholder="es. fashion, editorial, dark_hair">
+            </div>
+          </div>
+          <div class="wiz-field" style="margin-top:4px">
+            <label>Descrizione</label>
+            <textarea id="wfDescription" rows="3" placeholder="Descrizione fisica per il prompt AI…"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Debug log panel -->
+    <div id="wizDebugWrap" style="display:none">
+      <div class="wiz-debug-bar">
+        <span class="wiz-debug-title">🔍 Gemini Debug Log</span>
+        <button class="wiz-debug-clear" onclick="wizClearLog()">✕ Clear</button>
+      </div>
+      <div class="wiz-debug-body" id="wizDebugBody"></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="modal-footer">
+      <div id="wizFooterLeft">
+        <button class="btn-wiz-migrate" id="wizMigrateBtn" onclick="migrateCatalog()"
+                title="Migra catalog.json in JSON individuali per talent">
+          ⚙ Migra catalog
+        </button>
+        <button class="btn-wiz-migrate" id="wizLogBtn" onclick="wizToggleLog()"
+                title="Show/hide Gemini debug log">
+          🔍 Log
+        </button>
+      </div>
+      <div class="modal-footer-btns">
+        <button class="btn-modal-cancel" onclick="closeWizard()">Cancel</button>
+        <button class="btn-modal-confirm" id="wizSaveBtn"
+                onclick="saveTalent()" style="display:none">
+          Save Talent ✦
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Publication toast -->
+<div class="pub-toast" id="pubToast">
+  <span id="pubToastText">Image loved!</span>
+  <a href="/loved" id="pubToastLink">View gallery →</a>
+</div>
+
+<script>
+// ============================================================
+// Stato globale
+// ============================================================
+const MODELS_INFO = {{ models | tojson }};
+let outputMode    = "images_text";
+let refImages     = [];           // [{mime_type, data, previewUrl, name}]
+let pickerSelected = new Set();   // URLs selected in picker
+
+// ============================================================
+// Controls sidebar
+// ============================================================
+function setOutputMode(mode, btn) {
+  outputMode = mode;
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+}
+
+function onModelChange() {
+  const modelId = document.getElementById("modelSelect").value;
+  const info    = MODELS_INFO[modelId];
+
+  // Thinking group
+  document.getElementById("thinkingGroup").style.display = info.thinking ? "block" : "none";
+
+  // Resoluzioni
+  const resEl = document.getElementById("resSelect");
+  Array.from(resEl.options).forEach(opt => {
+    if (opt.value === "0.5K") opt.disabled = !info.thinking;
+    else if (opt.value === "2K") opt.disabled = (modelId === "gemini-2.5-flash-image");
+    else if (opt.value === "4K") opt.disabled = (modelId === "gemini-2.5-flash-image");
+    else opt.disabled = false;
+  });
+  if (resEl.selectedOptions[0].disabled) resEl.value = "1K";
+  // Sync sidebar resolution button disabled states
+  document.querySelectorAll(".ctrl-option-btn[data-res]").forEach(btn => {
+    const r = btn.dataset.res;
+    let dis = false;
+    if (r === "0.5K") dis = !info.thinking;
+    else if (r === "2K" || r === "4K") dis = (modelId === "gemini-2.5-flash-image");
+    btn.disabled = dis;
+  });
+
+  // Aspect ratios NB2 extra
+  const arEl = document.getElementById("aspectSelect");
+  Array.from(arEl.options).forEach(opt => {
+    if (opt.classList.contains("nb2-only")) opt.disabled = !info.thinking;
+  });
+  if (arEl.selectedOptions[0].disabled) arEl.value = "16:9";
+  // Sync sidebar AR button disabled states
+  document.querySelectorAll(".ctrl-ar-btn[data-nb2]").forEach(btn => {
+    btn.disabled = !info.thinking;
+  });
+
+  // Chip modello + picker sync
+  document.getElementById("modelChipLabel").textContent = info.label;
+  syncModelPicker(modelId);
+  syncQualPicker(modelId);
+  syncResChip();
+  syncArChip();
+
+  // Ref images: nota e bottoni abilitati/disabilitati
+  const maxRef   = info.max_ref_images;
+  const noteEl   = document.getElementById("refNote");
+  const actionsEl = document.getElementById("refActions");
+  noteEl.textContent = info.ref_note;
+  noteEl.className   = "ref-note" + (maxRef === 0 ? " ref-note-disabled" : "");
+
+  const uploadBtn    = document.getElementById("refUploadBtn");
+  const publishedBtn = document.getElementById("refPublishedBtn");
+  uploadBtn.disabled    = (maxRef === 0);
+  publishedBtn.disabled = (maxRef === 0);
+
+  // Rimuovi immagini in eccesso se il nuovo modello ha limite inferiore
+  if (refImages.length > maxRef) {
+    refImages = refImages.slice(0, maxRef);
+    renderRefStrip();
+  }
+  updateRefCounter();
+}
+
+function syncResChip() {
+  const v = document.getElementById("resSelect").value;
+  const qualLabelEl = document.getElementById("qualChipLabel");
+  qualLabelEl.textContent = v;
+  const qualWrap = document.getElementById("qualChipWrap");
+  if (qualWrap) { qualWrap.classList.remove("chip-updated"); void qualWrap.offsetWidth; qualWrap.classList.add("chip-updated"); }
+  // Update quality picker checks
+  document.querySelectorAll(".pq-check").forEach(el => el.classList.remove("visible"));
+  const chkId = "pqChk-" + v.replace(".", "_");
+  const chk = document.getElementById(chkId);
+  if (chk) chk.classList.add("visible");
+  // Sync sidebar resolution buttons
+  document.querySelectorAll(".ctrl-option-btn[data-res]").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.res === v);
+  });
+}
+
+// ============================================================
+// Picker panels (model / aspect-ratio / quality)
+// ============================================================
+function positionPickerAboveChip(panel, wrapId) {
+  const wrap = document.getElementById(wrapId);
+  const rect = wrap.getBoundingClientRect();
+  const minW = 240;
+  // Allinea al bordo sinistro del chip; evita uscita destra dello schermo
+  let left = rect.left;
+  if (left + minW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - minW - 8);
+  // Posiziona appena sopra il chip (translateY -100% = si apre verso l'alto)
+  panel.style.left      = left + "px";
+  panel.style.top       = (rect.top - 10) + "px";
+  panel.style.transform = "translateY(-100%)";
+}
+
+function togglePicker(panelId, wrapId, event) {
+  event && event.stopPropagation();
+  const panel = document.getElementById(panelId);
+  const isOpen = panel.classList.contains("open");
+  closeAllPickers();
+  if (!isOpen) {
+    positionPickerAboveChip(panel, wrapId);
+    panel.classList.add("open");
+  }
+}
+
+function closeAllPickers() {
+  document.querySelectorAll(".picker-panel.open").forEach(p => p.classList.remove("open"));
+}
+
+// Riposiziona i picker se si ridimensiona la finestra
+window.addEventListener("resize", closeAllPickers);
+
+document.addEventListener("click", function(e) {
+  if (!e.target.closest(".chip-wrap")) closeAllPickers();
+});
+
+function pickModel(row) {
+  const modelId = row.dataset.model;
+  document.getElementById("modelSelect").value = modelId;
+  onModelChange();
+  closeAllPickers();
+}
+
+function syncModelPicker(modelId) {
+  document.querySelectorAll(".pm-check").forEach(el => el.classList.remove("visible"));
+  const chk = document.getElementById("pmChk-" + modelId);
+  if (chk) chk.classList.add("visible");
+  document.querySelectorAll(".picker-model-row").forEach(row => {
+    row.classList.toggle("pm-selected", row.dataset.model === modelId);
+  });
+}
+
+function pickAR(btn) {
+  if (btn.disabled) return;
+  const ar = btn.dataset.ar;
+  document.getElementById("aspectSelect").value = ar;
+  syncArChip();
+  closeAllPickers();
+}
+
+function syncArChip() {
+  const ar = document.getElementById("aspectSelect").value;
+  const arLabelEl = document.getElementById("arChipLabel");
+  arLabelEl.textContent = ar;
+  // Brief visual feedback when changed from sidebar buttons
+  const arWrap = document.getElementById("arChipWrap");
+  if (arWrap) { arWrap.classList.remove("chip-updated"); void arWrap.offsetWidth; arWrap.classList.add("chip-updated"); }
+  // Draw SVG shape
+  const parts = ar.split(":").map(Number);
+  const w = parts[0], h = parts[1];
+  const S = 14;
+  let rw, rh;
+  if (w >= h) { rw = S; rh = Math.max(3, Math.round((h / w) * S)); }
+  else        { rh = S; rw = Math.max(3, Math.round((w / h) * S)); }
+  const x = ((S - rw) / 2).toFixed(1);
+  const y = ((S - rh) / 2).toFixed(1);
+  document.getElementById("arChipSvg").innerHTML =
+    `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>`;
+  // Update AR picker checks
+  document.querySelectorAll(".ar-row-check").forEach(el => el.classList.remove("visible"));
+  const safeId = "arChk-" + ar.replace(":", "_");
+  const chk = document.getElementById(safeId);
+  if (chk) chk.classList.add("visible");
+  // Sync sidebar AR buttons
+  document.querySelectorAll(".ctrl-ar-btn[data-ar]").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.ar === ar);
+  });
+}
+
+function pickQual(row) {
+  if (row.disabled) return;
+  const res = row.dataset.res;
+  document.getElementById("resSelect").value = res;
+  syncResChip();
+  closeAllPickers();
+}
+
+function initArPicker() {
+  const arOptions = [
+    {v:"1:1",   label:"1:1 — Square"},
+    {v:"16:9",  label:"16:9 — Landscape"},
+    {v:"9:16",  label:"9:16 — Portrait"},
+    {v:"4:3",   label:"4:3 — Standard"},
+    {v:"3:4",   label:"3:4 — Standard Portrait"},
+    {v:"3:2",   label:"3:2 — Photo"},
+    {v:"2:3",   label:"2:3 — Photo Portrait"},
+    {v:"21:9",  label:"21:9 — Ultrawide"},
+    {v:"5:4",   label:"5:4 — Large Format"},
+    {v:"4:5",   label:"4:5 — Social Portrait"},
+    {v:"4:1",   label:"4:1 — Panoramic", nb2:true},
+    {v:"1:4",   label:"1:4 — Tall Banner", nb2:true},
+    {v:"8:1",   label:"8:1 — Super Wide", nb2:true},
+    {v:"1:8",   label:"1:8 — Super Tall", nb2:true},
+  ];
+  const grid = document.getElementById("arPickerGrid");
+  const S = 18;
+  arOptions.forEach(opt => {
+    const parts = opt.v.split(":").map(Number);
+    const wr = parts[0], hr = parts[1];
+    let rw, rh;
+    if (wr >= hr) { rw = S; rh = Math.max(3, Math.round((hr / wr) * S)); }
+    else          { rh = S; rw = Math.max(3, Math.round((wr / hr) * S)); }
+    const x = ((S - rw) / 2).toFixed(1);
+    const y = ((S - rh) / 2).toFixed(1);
+    const btn = document.createElement("button");
+    btn.className = "picker-ar-row" + (opt.nb2 ? " ar-nb2-only" : "");
+    btn.dataset.ar = opt.v;
+    if (opt.nb2) btn.setAttribute("data-nb2", "1");
+    btn.innerHTML = `
+      <svg width="${S}" height="${S}" viewBox="0 0 ${S} ${S}" style="flex-shrink:0">
+        <rect x="${x}" y="${y}" width="${rw}" height="${rh}" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      </svg>
+      <span class="ar-row-label">${opt.label}</span>
+      <span class="ar-row-check" id="arChk-${opt.v.replace(':','_')}">✓</span>`;
+    btn.onclick = () => pickAR(btn);
+    grid.appendChild(btn);
+  });
+}
+
+function initSidebarArGrid() {
+  const arOptions = [
+    {v:"1:1",  nb2:false},
+    {v:"16:9", nb2:false},
+    {v:"9:16", nb2:false},
+    {v:"4:3",  nb2:false},
+    {v:"3:4",  nb2:false},
+    {v:"3:2",  nb2:false},
+    {v:"2:3",  nb2:false},
+    {v:"21:9", nb2:false},
+    {v:"5:4",  nb2:false},
+    {v:"4:5",  nb2:false},
+    {v:"4:1",  nb2:true},
+    {v:"1:4",  nb2:true},
+    {v:"8:1",  nb2:true},
+    {v:"1:8",  nb2:true},
+  ];
+  const container = document.getElementById("arSideGrid");
+  if (!container) return;
+  const S = 16;
+  arOptions.forEach(opt => {
+    const parts = opt.v.split(":").map(Number);
+    const wr = parts[0], hr = parts[1];
+    let rw, rh;
+    if (wr >= hr) { rw = S; rh = Math.max(2, Math.round((hr / wr) * S)); }
+    else          { rh = S; rw = Math.max(2, Math.round((wr / hr) * S)); }
+    const x = ((S - rw) / 2).toFixed(1);
+    const y = ((S - rh) / 2).toFixed(1);
+    const btn = document.createElement("button");
+    btn.className = "ctrl-ar-btn";
+    btn.dataset.ar = opt.v;
+    if (opt.nb2) btn.dataset.nb2 = "1";
+    btn.innerHTML =
+      '<svg width="' + S + '" height="' + S + '" viewBox="0 0 ' + S + ' ' + S + '">' +
+        '<rect x="' + x + '" y="' + y + '" width="' + rw + '" height="' + rh + '" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
+      '</svg>' +
+      '<span class="ctrl-ar-label">' + opt.v + '</span>';
+    btn.onclick = () => pickAR(btn);
+    container.appendChild(btn);
+  });
+}
+
+function syncQualPicker(modelId) {
+  // Enable/disable quality rows based on model
+  const isNB = (modelId === "gemini-2.5-flash-image");
+  const isNB2 = (modelId === "gemini-3.1-flash-image-preview");
+  const row05 = document.getElementById("qualRow-0_5K");
+  const row2K = document.getElementById("qualRow-2K");
+  const row4K = document.getElementById("qualRow-4K");
+  if (row05) row05.disabled = !isNB2;
+  if (row2K) row2K.disabled = isNB;
+  if (row4K) row4K.disabled = isNB;
+  // Enable/disable NB2-only AR buttons
+  document.querySelectorAll(".picker-ar-row[data-nb2]").forEach(b => {
+    b.disabled = !isNB2;
+  });
+}
+
+function syncImgCount() {
+  const v = document.getElementById("numImgRange").value;
+  document.getElementById("imgCountDisplay").textContent = v + "/4";
+  document.getElementById("imgCountBadge").textContent   = v;
+}
+
+function changeNumImg(delta) {
+  const el = document.getElementById("numImgRange");
+  let v = Math.max(1, Math.min(4, parseInt(el.value) + delta));
+  el.value = v;
+  document.getElementById("numImgVal").textContent = v;
+  syncImgCount();
+}
+
+function syncSearchToggle(src) {
+  document.getElementById("useSearchToggle").checked = src.checked;
+}
+
+// ============================================================
+// Reference images
+// ============================================================
+function getMaxRefImages() {
+  const modelId = document.getElementById("modelSelect").value;
+  return MODELS_INFO[modelId].max_ref_images;
+}
+
+function updateRefCounter() {
+  const maxRef  = getMaxRefImages();
+  const counter = document.getElementById("refCounter");
+  counter.textContent = `${refImages.length}/${maxRef}`;
+  counter.className   = "ref-counter" + (refImages.length >= maxRef ? " ref-counter-full" : "");
+}
+
+function renderRefStrip() {
+  const strip  = document.getElementById("refStrip");
+  const inner  = document.getElementById("refStripInner");
+
+  if (refImages.length === 0) {
+    strip.style.display = "none";
+    inner.innerHTML = "";
+    return;
+  }
+
+  strip.style.display = "flex";
+  inner.innerHTML = "";
+
+  refImages.forEach((img, idx) => {
+    const item = document.createElement("div");
+    item.className = "ref-thumb";
+
+    const imgEl = document.createElement("img");
+    imgEl.src = img.previewUrl;
+    imgEl.alt = img.name || `ref-${idx+1}`;
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "ref-thumb-remove";
+    removeBtn.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    removeBtn.title = "Remove";
+    removeBtn.onclick = () => removeRefImage(idx);
+
+    const label = document.createElement("span");
+    label.className = "ref-thumb-label";
+    label.textContent = img.name ? img.name.substring(0, 10) : `img${idx+1}`;
+
+    item.appendChild(imgEl);
+    item.appendChild(removeBtn);
+    item.appendChild(label);
+    inner.appendChild(item);
+  });
+
+  updateRefCounter();
+}
+
+function removeRefImage(idx) {
+  // Revoca URL oggetto se è un blob URL
+  if (refImages[idx].previewUrl && refImages[idx].previewUrl.startsWith("blob:")) {
+    URL.revokeObjectURL(refImages[idx].previewUrl);
+  }
+  refImages.splice(idx, 1);
+  renderRefStrip();
+}
+
+function clearAllRefImages() {
+  refImages.forEach(img => {
+    if (img.previewUrl && img.previewUrl.startsWith("blob:")) URL.revokeObjectURL(img.previewUrl);
+  });
+  refImages = [];
+  renderRefStrip();
+}
+
+async function addRefImageFromFile(file) {
+  const maxRef = getMaxRefImages();
+  if (refImages.length >= maxRef) {
+    showError(`Limit reached: this model accepts at most ${maxRef} reference images.`);
+    return;
+  }
+  const b64      = await fileToBase64(file);
+  const mimeType = file.type || "image/png";
+  const preview  = URL.createObjectURL(file);
+  refImages.push({ mime_type: mimeType, data: b64, previewUrl: preview, name: file.name });
+  renderRefStrip();
+}
+
+async function addRefImageFromUrl(url, label) {
+  const maxRef = getMaxRefImages();
+  if (refImages.length >= maxRef) {
+    showError(`Limit reached: this model accepts at most ${maxRef} reference images.`);
+    return false;
+  }
+  try {
+    const resp     = await fetch(url);
+    const blob     = await resp.blob();
+    const mimeType = blob.type || "image/png";
+    const b64      = await blobToBase64(blob);
+    refImages.push({ mime_type: mimeType, data: b64, previewUrl: url, name: label || url.split("/").pop() });
+    renderRefStrip();
+    return true;
+  } catch(e) {
+    showError("Could not load image: " + e.message);
+    return false;
+  }
+}
+
+// File input
+function triggerFileInput() {
+  document.getElementById("refFileInput").click();
+}
+
+async function onFileInputChange(e) {
+  const files = Array.from(e.target.files);
+  for (const f of files) {
+    await addRefImageFromFile(f);
+  }
+  e.target.value = "";
+}
+
+// Drag & drop
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "copy";
+  document.getElementById("dragOverlay").classList.add("active");
+  document.getElementById("promptWrap").classList.add("drag-active");
+}
+
+function onDragLeave(e) {
+  if (!document.getElementById("promptWrap").contains(e.relatedTarget)) {
+    document.getElementById("dragOverlay").classList.remove("active");
+    document.getElementById("promptWrap").classList.remove("drag-active");
+  }
+}
+
+async function onDrop(e) {
+  e.preventDefault();
+  document.getElementById("dragOverlay").classList.remove("active");
+  document.getElementById("promptWrap").classList.remove("drag-active");
+
+  const maxRef = getMaxRefImages();
+  if (maxRef === 0) {
+    showError("The selected model does not support reference images.");
+    return;
+  }
+
+  const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"));
+  if (files.length === 0) return;
+  for (const f of files) {
+    await addRefImageFromFile(f);
+  }
+}
+
+// ============================================================
+// Loved image picker modal
+// ============================================================
+async function openLovedPicker() {
+  const maxRef = getMaxRefImages();
+  if (maxRef === 0) return;
+
+  pickerSelected = new Set();
+  document.getElementById("modalLimitNote").textContent =
+    `You can select up to ${maxRef - refImages.length} images (${refImages.length}/${maxRef} already added)`;
+  document.getElementById("pubPickerOverlay").style.display = "flex";
+  document.getElementById("pubPickerLoading").style.display = "flex";
+  document.getElementById("pubPickerGrid").style.display    = "none";
+  document.getElementById("pubPickerEmpty").style.display   = "none";
+  updatePickerSelCount();
+
+  try {
+    const r    = await fetch("/api/loved-list");
+    const list = await r.json();
+
+    document.getElementById("pubPickerLoading").style.display = "none";
+
+    if (!list || list.length === 0) {
+      document.getElementById("pubPickerEmpty").style.display = "block";
+      return;
+    }
+
+    const grid = document.getElementById("pubPickerGrid");
+    grid.innerHTML = "";
+    grid.style.display = "grid";
+
+    // Raggruppa per data
+    const byDate = {};
+    list.forEach(item => {
+      if (!byDate[item.date]) byDate[item.date] = [];
+      byDate[item.date].push(item);
+    });
+
+    Object.keys(byDate).sort().reverse().forEach(date => {
+      const section = document.createElement("div");
+      section.className = "picker-section";
+
+      const title = document.createElement("div");
+      title.className = "picker-section-title";
+      try {
+        const dt = new Date(date);
+        title.textContent = dt.toLocaleDateString("it-IT", {day:"numeric", month:"long", year:"numeric"});
+      } catch { title.textContent = date; }
+      section.appendChild(title);
+
+      const itemsGrid = document.createElement("div");
+      itemsGrid.className = "picker-items-grid";
+
+      byDate[date].forEach(item => {
+        const card = document.createElement("div");
+        card.className = "picker-card";
+        card.dataset.url = item.url;
+
+        const img = document.createElement("img");
+        img.src = item.url;
+        img.alt = item.prompt;
+        img.loading = "lazy";
+
+        const check = document.createElement("div");
+        check.className = "picker-check";
+        check.innerHTML = "✓";
+
+        const caption = document.createElement("div");
+        caption.className = "picker-caption";
+        caption.textContent = item.prompt || item.filename;
+
+        card.appendChild(img);
+        card.appendChild(check);
+        card.appendChild(caption);
+
+        card.onclick = () => togglePickerCard(card, item.url, item.filename, maxRef);
+        itemsGrid.appendChild(card);
+      });
+
+      section.appendChild(itemsGrid);
+      grid.appendChild(section);
+    });
+
+  } catch(e) {
+    document.getElementById("pubPickerLoading").style.display = "none";
+    document.getElementById("pubPickerEmpty").style.display   = "block";
+  }
+}
+
+function togglePickerCard(card, url, filename, maxRef) {
+  const remaining = maxRef - refImages.length;
+  if (!pickerSelected.has(url) && pickerSelected.size >= remaining) {
+    return; // Limite raggiunto
+  }
+  if (pickerSelected.has(url)) {
+    pickerSelected.delete(url);
+    card.classList.remove("selected");
+  } else {
+    pickerSelected.add(url);
+    card.classList.add("selected");
+  }
+  updatePickerSelCount();
+}
+
+function updatePickerSelCount() {
+  const n = pickerSelected.size;
+  document.getElementById("pickerSelCount").textContent =
+    n === 0 ? "None selected" : `${n} selected`;
+  document.getElementById("pickerConfirmBtn").disabled = (n === 0);
+}
+
+async function confirmLovedPicker() {
+  const urls = Array.from(pickerSelected);
+  closeLovedPicker();
+  for (const url of urls) {
+    const filename = url.split("/").pop();
+    await addRefImageFromUrl(url, filename);
+  }
+}
+
+function closeLovedPicker() {
+  document.getElementById("pubPickerOverlay").style.display = "none";
+  pickerSelected = new Set();
+}
+
+function closeLovedPickerOnBg(e) {
+  if (e.target === document.getElementById("pubPickerOverlay")) closeLovedPicker();
+}
+
+// ============================================================
+// Generate
+// ============================================================
+async function generate() {
+  const prompt = document.getElementById("promptInput").value.trim();
+  if (!prompt) { showError("Please enter a prompt before generating."); return; }
+
+  const modelId = document.getElementById("modelSelect").value;
+  const maxRef  = MODELS_INFO[modelId].max_ref_images;
+
+  if (refImages.length > 0 && maxRef === 0) {
+    showError(`${MODELS_INFO[modelId].label} does not support reference images. Remove them or change model.`);
+    return;
+  }
+
+  const payload = {
+    model:          modelId,
+    prompt:         prompt,
+    aspectRatio:    document.getElementById("aspectSelect").value,
+    imageSize:      document.getElementById("resSelect").value,
+    numberOfImages: parseInt(document.getElementById("numImgRange").value),
+    temperature:    parseFloat(document.getElementById("tempRange").value),
+    topP:           parseFloat(document.getElementById("topPRange").value),
+    thinkingLevel:  document.getElementById("thinkingSelect").value,
+    useSearch:      document.getElementById("useSearchToggle").checked,
+    outputMode:     outputMode,
+    refImages:      refImages.map(r => ({ mime_type: r.mime_type, data: r.data }))
+  };
+
+  setLoading(true);
+  hideError();
+
+  try {
+    const r    = await fetch("/api/generate", {
+      method:  "POST",
+      headers: {"Content-Type":"application/json"},
+      body:    JSON.stringify(payload)
+    });
+    const data = await r.json();
+
+    if (!data.ok) { showError(data.error || "Unknown error"); return; }
+
+    renderGallery(data.images || [], data.text, data.params || payload);
+    if (data.cost > 0) showCostToast(data.cost, data.model_label);
+  } catch(e) {
+    showError("Network error: " + e.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function handlePromptKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generate(); }
+}
+
+function autoResize(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 160) + "px";
+}
+
+// ============================================================
+// Gallery — masonry grid
+// ============================================================
+let _galleryGrid = null;   // riferimento al .gallery-grid persistente
+let _infoPopup   = null;   // popup info prompt (singleton)
+
+function getGalleryGrid() {
+  if (_galleryGrid && _galleryGrid.isConnected) return _galleryGrid;
+  const gallery = document.getElementById("gallery");
+  document.getElementById("galleryPlaceholder").style.display = "none";
+  let g = gallery.querySelector(".gallery-grid");
+  if (!g) {
+    g = document.createElement("div");
+    g.className = "gallery-grid";
+    gallery.appendChild(g);
+  }
+  _galleryGrid = g;
+  return g;
+}
+
+function renderGallery(images, text, params) {
+  const grid      = getGalleryGrid();
+  const modelInfo = MODELS_INFO[params.model];
+  const label     = modelInfo ? modelInfo.label : (params.model || "NB");
+
+  // Ogni immagine diventa una card individuale nel masonry
+  images.forEach((img, i) => {
+    // Merge per-image disk references into params for delete button
+    const cardParams = Object.assign({}, params, {
+      gen_date:     img.gen_date     || "",
+      gen_filename: img.gen_filename || "",
+    });
+    const card = buildImgCard(img, i, cardParams, label);
+    // Prepend: le nuove immagini appaiono in cima
+    grid.insertBefore(card, grid.firstChild);
+  });
+
+  // Se c'è testo Gemini, aggiungilo come text-card
+  if (text) {
+    const wrap = document.createElement("div");
+    wrap.className = "text-card-wrapper";
+    const tc = document.createElement("div");
+    tc.className = "text-card";
+    tc.innerHTML = `<pre>${escapeHtml(text)}</pre>`;
+    wrap.appendChild(tc);
+    grid.insertBefore(wrap, grid.firstChild);
+  }
+}
+
+function buildImgCard(img, idx, params, badgeLabel) {
+  const card = document.createElement("div");
+  card.className = "img-card";
+
+  // Immagine — altezza naturale
+  const image   = document.createElement("img");
+  image.src     = `data:${img.mime_type};base64,${img.data}`;
+  image.alt     = `Generated ${idx+1}`;
+  image.loading = "lazy";
+  image.onclick = () => openLightbox(img, idx, params);
+
+  // ── Icone hover (colonna top-right) — SVG icons ─────────────
+  const actions = document.createElement("div");
+  actions.className = "img-actions";
+
+  // ♡ Love (favorite)
+  const favBtn = makeActionBtn(SVG_HEART_EMPTY, "Love this image");
+  favBtn.onclick = (e) => {
+    e.stopPropagation();
+    if (favBtn.classList.contains("fav-active")) return;
+    publishImage(img, idx, params, favBtn);
+  };
+
+  // ↓ Download
+  const dlBtn = makeActionBtn(SVG_DOWNLOAD, "Download");
+  dlBtn.onclick = (e) => { e.stopPropagation(); downloadImage(img, idx); };
+
+  // ↩ Riusa — copia prompt e parametri nel form
+  const copyBtn = makeActionBtn(SVG_REUSE, "Reuse prompt & parameters");
+  copyBtn.onclick = (e) => { e.stopPropagation(); reuseParams(params); };
+
+  // ⓘ Info — mostra prompt in popup
+  const infoBtn = makeActionBtn(SVG_INFO, "Info prompt");
+  infoBtn.onclick = (e) => { e.stopPropagation(); toggleInfoPopup(params, infoBtn); };
+
+  // 🗑 Delete generation from disk
+  const delBtn = makeActionBtn(SVG_TRASH, "Delete");
+  delBtn.onclick = (e) => { e.stopPropagation(); deleteGeneration(params.gen_date, params.gen_filename, card); };
+
+  actions.append(favBtn, dlBtn, copyBtn, infoBtn, delBtn);
+
+  // ── Badge modello bottom-left ────────────────────────────────
+  const badge = document.createElement("div");
+  badge.className = "img-card-badge";
+  badge.textContent = badgeLabel.toUpperCase();
+
+  card.append(image, actions, badge);
+  return card;
+}
+
+/* ── SVG Icon Library (Lucide-style, 15×15) ─────────────────── */
+const SVG_HEART_EMPTY = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`;
+const SVG_HEART_FULL  = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`;
+const SVG_DOWNLOAD    = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+const SVG_REUSE       = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>`;
+const SVG_INFO        = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+const SVG_TRASH       = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+const SVG_X           = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+function makeActionBtn(icon, title) {
+  const btn = document.createElement("button");
+  btn.className = "img-action-btn";
+  btn.innerHTML = icon;
+  btn.title     = title;
+  return btn;
+}
+
+async function deleteGeneration(date, filename, card) {
+  // If no disk reference (shouldn't happen), just remove from DOM
+  if (!date || !filename) { card && card.remove(); return; }
+
+  try {
+    const r = await fetch(`/api/generations/${date}/${filename}`, { method: "DELETE" });
+    const d = await r.json();
+    if (d.ok || d.error === "File not found") {
+      // Animate out then remove
+      if (card) {
+        card.style.transition = "opacity 0.2s, transform 0.2s";
+        card.style.opacity = "0";
+        card.style.transform = "scale(0.92)";
+        setTimeout(() => card.remove(), 200);
+      }
+    } else {
+      showError("Could not delete: " + (d.error || "Unknown error"));
+    }
+  } catch(e) {
+    // On network error, remove from DOM anyway (best effort)
+    card && card.remove();
+  }
+}
+
+function downloadImage(img, idx) {
+  const a   = document.createElement("a");
+  a.href    = `data:${img.mime_type};base64,${img.data}`;
+  const ext = img.mime_type.split("/")[1] || "png";
+  a.download = `nb-${Date.now()}-${idx+1}.${ext}`;
+  a.click();
+}
+
+// Copia prompt e parametri nel form
+function reuseParams(params) {
+  // Prompt
+  const promptEl = document.getElementById("promptInput");
+  if (promptEl && params.prompt) {
+    promptEl.value = params.prompt;
+    autoResize(promptEl);
+  }
+  // Modello
+  const modelEl = document.getElementById("modelSelect");
+  if (modelEl && params.model) {
+    modelEl.value = params.model;
+    if (typeof onModelChange === "function") onModelChange();
+  }
+  // Aspect ratio (select sidebar)
+  const arEl = document.getElementById("aspectSelect");
+  if (arEl && params.aspectRatio) arEl.value = params.aspectRatio;
+  // Temperature
+  const tempEl = document.getElementById("tempRange");
+  if (tempEl && params.temperature != null) {
+    tempEl.value = params.temperature;
+    const lbl = document.getElementById("tempVal");
+    if (lbl) lbl.textContent = parseFloat(params.temperature).toFixed(2);
+  }
+  // Scroll al prompt
+  promptEl && promptEl.scrollIntoView({behavior:"smooth", block:"center"});
+  promptEl && promptEl.focus();
+  showError("Prompt and parameters copied to form ✓", "success");
+}
+
+// Info popup prompt (singleton flottante)
+function toggleInfoPopup(params, anchorEl) {
+  // Chiudi se già aperto sullo stesso pulsante
+  if (_infoPopup && _infoPopup._anchor === anchorEl) {
+    _infoPopup.remove();
+    _infoPopup = null;
+    return;
+  }
+  if (_infoPopup) { _infoPopup.remove(); _infoPopup = null; }
+
+  const popup = document.createElement("div");
+  popup.className = "img-info-popup";
+  popup._anchor   = anchorEl;
+
+  const modelInfo = MODELS_INFO[params.model];
+  const label     = modelInfo ? modelInfo.label : (params.model || "");
+  const prompt    = params.prompt || "";
+
+  popup.innerHTML =
+    `<strong>Prompt</strong>` +
+    `<p>${escapeHtml(prompt)}</p>` +
+    `<div class="info-meta">` +
+      `<span class="info-tag">${escapeHtml(label)}</span>` +
+      (params.imageSize   ? `<span class="info-tag">${escapeHtml(params.imageSize)}</span>` : "") +
+      (params.aspectRatio ? `<span class="info-tag">${escapeHtml(params.aspectRatio)}</span>` : "") +
+      (params.temperature != null ? `<span class="info-tag">t=${parseFloat(params.temperature).toFixed(2)}</span>` : "") +
+      (params.ref_count   ? `<span class="info-tag">📎 ${params.ref_count} ref</span>` : "") +
+    `</div>`;
+
+  document.body.appendChild(popup);
+  _infoPopup = popup;
+
+  // Posiziona vicino al pulsante, evitando uscita dal viewport
+  const r = anchorEl.getBoundingClientRect();
+  let top  = r.bottom + 6;
+  let left = r.right  - popup.offsetWidth;
+  if (left < 8)   left = 8;
+  if (top + popup.offsetHeight > window.innerHeight - 8)
+    top = r.top - popup.offsetHeight - 6;
+  popup.style.top  = top  + "px";
+  popup.style.left = left + "px";
+
+  // Chiudi cliccando fuori
+  setTimeout(() => {
+    document.addEventListener("click", function _close(e) {
+      if (!popup.contains(e.target) && e.target !== anchorEl) {
+        popup.remove(); _infoPopup = null;
+        document.removeEventListener("click", _close);
+      }
+    });
+  }, 50);
+}
+
+// ============================================================
+// Publish
+// ============================================================
+let lbCurrentImg    = null;
+let lbCurrentParams = null;
+
+async function publishImage(img, idx, params, btnEl) {
+  // Spinner while saving
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9" stroke-dasharray="28 56" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.7s" repeatCount="indefinite"/></circle></svg>`;
+  }
+  try {
+    const r = await fetch("/api/publish", {
+      method:  "POST",
+      headers: {"Content-Type":"application/json"},
+      body:    JSON.stringify({
+        data:      img.data,
+        mime_type: img.mime_type,
+        meta: {
+          prompt:      params.prompt,
+          model:       params.model,
+          model_label: params.model_label || (MODELS_INFO[params.model]||{}).label,
+          imageSize:   params.imageSize,
+          aspectRatio: params.aspectRatio,
+          temperature: params.temperature
+        }
+      })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      // Filled heart = loved
+      if (btnEl) {
+        btnEl.innerHTML = SVG_HEART_FULL;
+        btnEl.classList.add("fav-active");
+        btnEl.disabled  = false;
+        btnEl.title     = "Loved";
+      }
+      showPubToast(d.gallery);
+      const lbBtn = document.getElementById("lbPublishBtn");
+      if (lbBtn && lbCurrentImg === img) {
+        lbBtn.innerHTML = `${SVG_HEART_FULL} Loved`; lbBtn.disabled = true;
+      }
+    } else {
+      if (btnEl) { btnEl.innerHTML = SVG_HEART_EMPTY; btnEl.disabled = false; }
+      showError("Love error: " + (d.error || ""));
+    }
+  } catch(e) {
+    if (btnEl) { btnEl.innerHTML = SVG_HEART_EMPTY; btnEl.disabled = false; }
+    showError("Network error: " + e.message);
+  }
+}
+
+async function publishFromLightbox() {
+  if (!lbCurrentImg) return;
+  const btn = document.getElementById("lbPublishBtn");
+  btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9" stroke-dasharray="28 56" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.7s" repeatCount="indefinite"/></circle></svg> Saving…`;
+  btn.disabled  = true;
+  await publishImage(lbCurrentImg, 0, lbCurrentParams, null);
+}
+
+// ============================================================
+// Lightbox
+// ============================================================
+function openLightbox(img, idx, params) {
+  lbCurrentImg    = img;
+  lbCurrentParams = params;
+  document.getElementById("lbImg").src = `data:${img.mime_type};base64,${img.data}`;
+  const mi = MODELS_INFO[params.model];
+  document.getElementById("lbMeta").textContent =
+    `${mi ? mi.label : params.model} · ${params.imageSize} · ${params.aspectRatio} · Temp ${parseFloat(params.temperature||1).toFixed(2)}`;
+  const pubBtn = document.getElementById("lbPublishBtn");
+  pubBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg> Love`;
+  pubBtn.disabled = false; pubBtn.classList.remove("pub-done");
+  document.getElementById("lightbox").style.display = "flex";
+}
+
+function closeLightbox() { document.getElementById("lightbox").style.display = "none"; }
+function closeLightboxOnBg(e) { if (e.target === document.getElementById("lightbox")) closeLightbox(); }
+document.addEventListener("keydown", e => { if (e.key === "Escape") { closeLightbox(); closeLovedPicker(); } });
+
+// ============================================================
+// ============================================================
+// Sidebar mobile toggle
+// ============================================================
+function toggleSidebar() {
+  const sidebar  = document.querySelector(".sidebar");
+  const overlay  = document.getElementById("sidebarOverlay");
+  const isOpen   = sidebar.classList.toggle("sidebar-open");
+  if (overlay) overlay.classList.toggle("sidebar-overlay-visible", isOpen);
+  document.body.classList.toggle("sidebar-no-scroll", isOpen);
+}
+
+function toggleDesktopSidebar() {
+  document.querySelector(".app-layout").classList.toggle("sidebar-collapsed");
+}
+
+// Close sidebar when clicking overlay
+document.addEventListener("DOMContentLoaded", () => {
+  const overlay = document.getElementById("sidebarOverlay");
+  if (overlay) overlay.addEventListener("click", toggleSidebar);
+});
+
+// ============================================================
+// UI helpers
+// ============================================================
+function setLoading(on) {
+  document.getElementById("generateBtn").disabled     = on;
+  document.getElementById("genStatus").style.display  = on ? "flex" : "none";
+}
+
+function showError(msg, type) {
+  const el = document.getElementById("errorBanner");
+  el.textContent   = (type === "success" ? "" : "✗ ") + msg;
+  el.style.display = "block";
+  el.style.background  = type === "success" ? "rgba(76,255,145,0.08)"  : "";
+  el.style.borderColor = type === "success" ? "rgba(76,255,145,0.25)"  : "";
+  el.style.color       = type === "success" ? "var(--green)"           : "";
+  setTimeout(() => { hideError(); el.style.cssText = ""; }, 5000);
+}
+
+function hideError() { document.getElementById("errorBanner").style.display = "none"; }
+
+function showCostToast(cost, label) {
+  const t = document.createElement("div");
+  t.className   = "cost-toast";
+  t.textContent = `${label} · $${cost.toFixed(4)}`;
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add("show"), 50);
+  setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+function showPubToast(galleryUrl) {
+  const toast = document.getElementById("pubToast");
+  document.getElementById("pubToastLink").href = galleryUrl || "/loved";
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 4000);
+}
+
+function escapeHtml(s) {
+  if (!s) return "";
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// Utility base64
+function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result.split(",")[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
+function blobToBase64(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result.split(",")[1]);
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+}
+
+// ============================================================
+// ELEMENTS — asset library
+// ============================================================
+let elCurrentCat   = "all";
+let elCurrentPage  = 1;
+let elPerPage      = 60;
+let elTotalPages   = 1;
+let elSearchQuery  = "";
+let elAllItems     = [];
+let elSelectedIds  = new Set();
+let elSelectedMap  = {};
+let elSearchTimer  = null;
+let elCategories   = [];
+
+// ── Filtri metadati Characters ──────────────────────────────────────────────
+const EL_FILTER_DEFS = [
+  { group: "gender", label: "Genere", options: [
+    { v: "female",      l: "♀ Female"     },
+    { v: "male",        l: "♂ Male"       },
+    { v: "non-binary",  l: "⊕ Non-binary" },
+    { v: "androgynous", l: "◈ Androg."    },
+  ]},
+  { group: "age_group", label: "Età", options: [
+    { v: "teen",        l: "Teen"        },
+    { v: "young_adult", l: "Young Adult" },
+    { v: "adult",       l: "Adult"       },
+    { v: "mature",      l: "Mature"      },
+    { v: "senior",      l: "Senior"      },
+  ]},
+  { group: "ethnicity", label: "Origine", options: [
+    { v: "african",           l: "African"       },
+    { v: "afro_caribbean",    l: "Afro-Carib."   },
+    { v: "east_asian",        l: "East Asian"    },
+    { v: "south_asian",       l: "South Asian"   },
+    { v: "southeast_asian",   l: "SE Asian"      },
+    { v: "middle_eastern",    l: "Mid. East"     },
+    { v: "hispanic_latino",   l: "Hispanic/Latino"},
+    { v: "caucasian",         l: "Caucasian"     },
+    { v: "mediterranean",     l: "Mediter."      },
+    { v: "eastern_european",  l: "E. European"   },
+    { v: "northern_european", l: "N. European"   },
+    { v: "mixed",             l: "Mixed"         },
+    { v: "other",             l: "Other"         },
+  ]},
+  { group: "skin_tone", label: "Carnagione", options: [
+    { v: "very_fair",    l: "Very Fair",   dot: "#f5ede8" },
+    { v: "fair",         l: "Fair",        dot: "#f0ddd0" },
+    { v: "fair_warm",    l: "Fair Warm",   dot: "#e8c9b0" },
+    { v: "light",        l: "Light",       dot: "#ddbfa0" },
+    { v: "light_olive",  l: "Light Olive", dot: "#c8a882" },
+    { v: "medium",       l: "Medium",      dot: "#b8936a" },
+    { v: "medium_warm",  l: "Med. Warm",   dot: "#a8794e" },
+    { v: "medium_olive", l: "Med. Olive",  dot: "#967040" },
+    { v: "tan",          l: "Tan",         dot: "#885c30" },
+    { v: "brown",        l: "Brown",       dot: "#6b4020" },
+    { v: "deep_brown",   l: "Deep Brown",  dot: "#4a2810" },
+    { v: "deep",         l: "Deep",        dot: "#2a1508" },
+  ]},
+  { group: "hair_color", label: "Capelli", options: [
+    { v: "black",           l: "Black",        dot: "#111"    },
+    { v: "dark_brown",      l: "Dark Brown",   dot: "#3b1f0a" },
+    { v: "medium_brown",    l: "Brown",        dot: "#6b3a1f" },
+    { v: "light_brown",     l: "Light Brown",  dot: "#9b6040" },
+    { v: "auburn",          l: "Auburn",       dot: "#7b2d00" },
+    { v: "red",             l: "Red",          dot: "#b22222" },
+    { v: "copper",          l: "Copper",       dot: "#b55a30" },
+    { v: "dark_blonde",     l: "Dark Blonde",  dot: "#a8852a" },
+    { v: "blonde",          l: "Blonde",       dot: "#c8a84b" },
+    { v: "platinum_blonde", l: "Platinum",     dot: "#e8e0d0" },
+    { v: "gray",            l: "Gray",         dot: "#999"    },
+    { v: "salt_and_pepper", l: "Salt & Pepper",dot: "#bbb"    },
+    { v: "silver",          l: "Silver",       dot: "#ccc"    },
+    { v: "white",           l: "White",        dot: "#f0f0f0" },
+    { v: "bald",            l: "Bald",         dot: "#e0c8b0" },
+    { v: "colored",         l: "✦ Colored",    dot: "linear-gradient(135deg,#f0f,#0ff)" },
+  ]},
+  { group: "hair_style", label: "Acconciatura", options: [
+    { v: "bald",           l: "Bald/Shaved"  },
+    { v: "buzz_cut",       l: "Buzz Cut"     },
+    { v: "short_crop",     l: "Short Crop"   },
+    { v: "short_pixie",    l: "Pixie"        },
+    { v: "short_bob",      l: "Short Bob"    },
+    { v: "short_curly",    l: "Short Curly"  },
+    { v: "short_afro",     l: "Short Afro"   },
+    { v: "fade",           l: "Fade"         },
+    { v: "bob",            l: "Bob"          },
+    { v: "medium_straight",l: "Med. Straight"},
+    { v: "medium_wavy",    l: "Med. Wavy"    },
+    { v: "medium_curly",   l: "Med. Curly"   },
+    { v: "long_straight",  l: "Long Straight"},
+    { v: "long_wavy",      l: "Long Wavy"    },
+    { v: "long_curly",     l: "Long Curly"   },
+    { v: "braids",         l: "Braids"       },
+    { v: "cornrows",       l: "Cornrows"     },
+    { v: "afro",           l: "Afro"         },
+    { v: "bun",            l: "Bun"          },
+    { v: "ponytail",       l: "Ponytail"     },
+    { v: "updo",           l: "Updo"         },
+    { v: "tied_back",      l: "Tied Back"    },
+    { v: "fantasy_styled", l: "✦ Fantasy"    },
+  ]},
+  { group: "body_type", label: "Corporatura", options: [
+    { v: "slim",         l: "Slim"         },
+    { v: "slender",      l: "Slender"      },
+    { v: "athletic",     l: "Athletic"     },
+    { v: "lean_athletic",l: "Lean Athletic"},
+    { v: "fit",          l: "Fit"          },
+    { v: "curvy",        l: "Curvy"        },
+    { v: "average",      l: "Average"      },
+    { v: "muscular",     l: "Muscular"     },
+    { v: "full",         l: "Full"         },
+    { v: "plus_size",    l: "Plus Size"    },
+  ]},
+];
+
+let elFilters = {
+  gender: new Set(), age_group: new Set(), ethnicity: new Set(),
+  skin_tone: new Set(), hair_color: new Set(), hair_style: new Set(), body_type: new Set()
+};
+
+function elHasFilters() {
+  return Object.values(elFilters).some(s => s.size > 0);
+}
+
+function elClearFilters() {
+  Object.keys(elFilters).forEach(k => elFilters[k].clear());
+  elCurrentPage = 1;
+  renderElFiltersBar();
+  loadElements();
+}
+
+function elToggleFilter(group, value) {
+  const s = elFilters[group];
+  if (s.has(value)) s.delete(value); else s.add(value);
+  elCurrentPage = 1;
+  renderElFiltersBar();
+  loadElements();
+}
+
+function renderElFiltersBar() {
+  const bar = document.getElementById("elFiltersBar");
+  if (!bar) return;
+
+  // Mostra solo se categoria characters
+  const isChars = (elCurrentCat === "characters");
+  bar.style.display = isChars ? "block" : "none";
+  if (!isChars) return;
+
+  bar.innerHTML = "";
+
+  EL_FILTER_DEFS.forEach(def => {
+    const row = document.createElement("div");
+    row.className = "el-filter-row";
+
+    const lbl = document.createElement("span");
+    lbl.className = "el-filter-label";
+    lbl.textContent = def.label;
+    row.appendChild(lbl);
+
+    const chips = document.createElement("div");
+    chips.className = "el-filter-chips";
+
+    def.options.forEach(opt => {
+      const active = elFilters[def.group].has(opt.v);
+      const chip = document.createElement("button");
+      chip.className = "el-filter-chip" + (active ? " active" : "");
+      chip.title = opt.v;
+
+      if (opt.dot) {
+        const dot = document.createElement("span");
+        dot.className = "el-filter-dot";
+        dot.style.background = opt.dot;
+        chip.appendChild(dot);
+      }
+
+      chip.appendChild(document.createTextNode(opt.l));
+      chip.onclick = () => elToggleFilter(def.group, opt.v);
+      chips.appendChild(chip);
+    });
+
+    row.appendChild(chips);
+    bar.appendChild(row);
+  });
+
+  // Pulsante "Cancella filtri"
+  if (elHasFilters()) {
+    const clearRow = document.createElement("div");
+    clearRow.className = "el-filter-clear-row";
+    const clearBtn = document.createElement("button");
+    clearBtn.className = "el-filter-clear-btn";
+    clearBtn.textContent = "× Cancella filtri";
+    clearBtn.onclick = elClearFilters;
+    clearRow.appendChild(clearBtn);
+    bar.appendChild(clearRow);
+  }
+}
+
+async function openElements() {
+  const maxRef = getMaxRefImages();
+  if (maxRef === 0) {
+    showError("The selected model does not support reference images.");
+    return;
+  }
+  elSelectedIds  = new Set();
+  elSelectedMap  = {};
+  elCurrentPage  = 1;
+  elSearchQuery  = "";
+  Object.keys(elFilters).forEach(k => elFilters[k].clear());
+  document.getElementById("elementsSearch").value = "";
+  document.getElementById("elementsOverlay").style.display = "flex";
+  updateElementsSelCount();
+  updateElementsLimitNote();
+  renderElFiltersBar();
+  await loadElements();
+}
+
+function closeElements() {
+  document.getElementById("elementsOverlay").style.display = "none";
+}
+
+function closeElementsOnBg(e) {
+  if (e.target === document.getElementById("elementsOverlay")) closeElements();
+}
+
+async function loadElements() {
+  document.getElementById("elementsLoading").style.display = "flex";
+  document.getElementById("elementsGrid").style.display    = "none";
+  document.getElementById("elementsEmpty").style.display   = "none";
+  document.getElementById("elementsPagination").style.display = "none";
+
+  const catParam = (elCurrentCat === "all" || elCurrentCat === "favorites") ? "all" : elCurrentCat;
+  let url = `/api/elements?category=${catParam}&q=${encodeURIComponent(elSearchQuery)}&page=${elCurrentPage}&per_page=${elPerPage}`;
+  // Aggiungi parametri filtro metadati (solo characters)
+  if (elCurrentCat === "characters") {
+    ["gender","age_group","ethnicity","skin_tone","hair_color","hair_style","body_type"].forEach(k => {
+      if (elFilters[k] && elFilters[k].size > 0)
+        url += `&${k}=${[...elFilters[k]].map(encodeURIComponent).join(",")}`;
+    });
+  }
+
+  try {
+    const r    = await fetch(url);
+    const data = await r.json();
+
+    elAllItems   = data.items || [];
+    elTotalPages = data.pages || 1;
+    elCategories = data.categories || [];
+
+    // Filtra favoriti client-side se richiesto
+    let items = elAllItems;
+    if (elCurrentCat === "favorites") {
+      items = items.filter(i => i.is_favorite);
+    }
+
+    // Popola categorie dinamiche nella sidebar
+    renderElementsSidebar(elCategories);
+
+    document.getElementById("elementsLoading").style.display = "none";
+
+    if (items.length === 0) {
+      document.getElementById("elementsEmpty").style.display = "block";
+      return;
+    }
+
+    renderElementsGrid(items);
+    renderElementsPagination(data.page, elTotalPages, data.total);
+
+  } catch(e) {
+    document.getElementById("elementsLoading").style.display = "none";
+    document.getElementById("elementsEmpty").style.display   = "block";
+  }
+}
+
+function renderElementsSidebar(categories) {
+  const container = document.getElementById("elDynamicCats");
+  if (!container || categories.length === 0) return;
+  container.innerHTML = "";
+  categories.forEach(cat => {
+    const btn = document.createElement("button");
+    btn.className = "el-cat-btn" + (elCurrentCat === cat.slug ? " active" : "");
+    btn.dataset.cat = cat.slug;
+    btn.innerHTML = `<span class="el-cat-icon">${cat.icon}</span> ${cat.label}`;
+    btn.onclick = () => filterElementsCat(cat.slug, btn);
+    container.appendChild(btn);
+  });
+}
+
+function renderElementsGrid(items) {
+  const grid = document.getElementById("elementsGrid");
+  grid.innerHTML = "";
+  grid.style.display = "grid";
+
+  // Card "Create new" (prima posizione)
+  const createCard = document.createElement("div");
+  createCard.className = "el-card el-card-create";
+  createCard.innerHTML = `<div class="el-card-plus">+</div><span>Create new</span>`;
+  createCard.onclick = () => openNewTalentWizard();
+  grid.appendChild(createCard);
+
+  items.forEach(asset => {
+    const card = document.createElement("div");
+    card.className = "el-card" + (elSelectedIds.has(asset.id) ? " selected" : "");
+    card.dataset.id = asset.id;
+
+    const imgWrap = document.createElement("div");
+    imgWrap.className = "el-card-img";
+    const img = document.createElement("img");
+    img.src     = asset.img_url;
+    img.alt     = asset.name;
+    img.loading = "lazy";
+    imgWrap.appendChild(img);
+
+    // Overlay check
+    const check = document.createElement("div");
+    check.className = "el-card-check";
+    check.innerHTML = "✓";
+
+    // Star favorito
+    const star = document.createElement("button");
+    star.className = "el-card-star" + (asset.is_favorite ? " starred" : "");
+    star.innerHTML  = "★";
+    star.title      = asset.is_favorite ? "Remove from favorites" : "Add to favorites";
+    star.onclick = async (e) => {
+      e.stopPropagation();
+      const newFav = !asset.is_favorite;
+      asset.is_favorite = newFav;
+      star.className = "el-card-star" + (newFav ? " starred" : "");
+      star.title     = newFav ? "Remove from favorites" : "Add to favorites";
+      await fetch("/api/elements/toggle-favorite", {
+        method:  "POST",
+        headers: {"Content-Type":"application/json"},
+        body:    JSON.stringify({id: asset.id, folder: asset.folder, favorite: newFav})
+      });
+    };
+
+    const name = document.createElement("div");
+    name.className   = "el-card-name";
+    name.textContent = asset.name;
+
+    card.appendChild(imgWrap);
+    card.appendChild(check);
+    card.appendChild(star);
+    card.appendChild(name);
+
+    card.onclick = () => toggleElementCard(card, asset);
+    grid.appendChild(card);
+  });
+}
+
+function toggleElementCard(card, asset) {
+  const maxRef    = getMaxRefImages();
+  const remaining = maxRef - refImages.length;
+  if (!elSelectedIds.has(asset.id) && elSelectedIds.size >= remaining) {
+    showError(`You can only add ${remaining} more images (model limit: ${maxRef}).`);
+    return;
+  }
+  if (elSelectedIds.has(asset.id)) {
+    elSelectedIds.delete(asset.id);
+    delete elSelectedMap[asset.id];
+    card.classList.remove("selected");
+  } else {
+    elSelectedIds.add(asset.id);
+    elSelectedMap[asset.id] = asset;
+    card.classList.add("selected");
+  }
+  updateElementsSelCount();
+  document.getElementById("elementsConfirmBtn").disabled = (elSelectedIds.size === 0);
+}
+
+function renderElementsPagination(page, totalPages, total) {
+  const pag = document.getElementById("elementsPagination");
+  if (totalPages <= 1) { pag.style.display = "none"; return; }
+  pag.style.display = "flex";
+  document.getElementById("elPageInfo").textContent = `${page} / ${totalPages}  (${total} asset)`;
+  document.getElementById("elPrevBtn").disabled = (page <= 1);
+  document.getElementById("elNextBtn").disabled = (page >= totalPages);
+}
+
+async function elementsChangePage(delta) {
+  const newPage = elCurrentPage + delta;
+  if (newPage < 1 || newPage > elTotalPages) return;
+  elCurrentPage = newPage;
+  await loadElements();
+}
+
+function filterElementsCat(cat, btn) {
+  elCurrentCat  = cat;
+  elCurrentPage = 1;
+  Object.keys(elFilters).forEach(k => elFilters[k].clear());
+  renderElFiltersBar();
+document.querySelectorAll(".el-cat-btn").forEach(b => b.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+  loadElements();
+}
+
+function onElementsSearch(val) {
+  clearTimeout(elSearchTimer);
+  elSearchTimer = setTimeout(async () => {
+    elSearchQuery = val.trim();
+    elCurrentPage = 1;
+    await loadElements();
+  }, 300);
+}
+
+function updateElementsSelCount() {
+  const n = elSelectedIds.size;
+  document.getElementById("elementsSelCount").textContent =
+    n === 0 ? "None selected" : `${n} selected`;
+}
+
+function updateElementsLimitNote() {
+  const modelId = document.getElementById("modelSelect").value;
+  const maxRef  = MODELS_INFO[modelId].max_ref_images;
+  const free    = maxRef - refImages.length;
+  document.getElementById("elementsLimitNote").textContent =
+    `You can select up to ${free} images (${refImages.length}/${maxRef} already added)`;
+}
+
+async function confirmElements() {
+  const assets = Object.values(elSelectedMap);
+  closeElements();
+
+  const promptEl = document.getElementById("promptInput");
+
+  for (const asset of assets) {
+    const ok = await addRefImageFromUrl(asset.img_url, asset.name);
+    if (ok) {
+      // Build @mention with physical descriptor values (no keys, just values)
+      const descriptors = [
+        asset.skin_tone, asset.hair_color, asset.hair_style, asset.eye_color
+      ].filter(Boolean).join(', ');
+      const desc = (asset.description || '').trim();
+
+      let mention = `@${asset.name}`;
+      if (descriptors) mention += `, ${descriptors}`;
+      if (desc)        mention += `. ${desc}`;
+
+      const start  = promptEl.selectionStart || promptEl.value.length;
+      const before = promptEl.value.substring(0, start);
+      const after  = promptEl.value.substring(start);
+      const sep    = (before.length > 0 && !before.endsWith(" ")) ? " " : "";
+      promptEl.value = before + sep + mention + " " + after;
+      autoResize(promptEl);
+    }
+  }
+  promptEl.focus();
+}
+
+// ============================================================
+// NEW TALENT WIZARD
+// ============================================================
+let wizImageB64   = "";
+let wizMimeType   = "image/jpeg";
+let wizAnalyzed   = {};
+
+const WIZ_FIELDS = [
+  { key: "name",        label: "Nome",          icon: "👤" },
+  { key: "gender",      label: "Genere",        icon: "⊕"  },
+  { key: "ethnicity",   label: "Origine",       icon: "🌍" },
+  { key: "age_group",   label: "Fascia età",    icon: "📅" },
+  { key: "skin_tone",   label: "Carnagione",    icon: "🎨" },
+  { key: "hair_color",  label: "Capelli",       icon: "💇" },
+  { key: "hair_style",  label: "Stile",         icon: "✂"  },
+  { key: "eye_color",   label: "Occhi",         icon: "👁"  },
+  { key: "body_type",   label: "Corporatura",   icon: "📐" },
+  { key: "description", label: "Descrizione",   icon: "📝" },
+];
+
+let wizDetectTimers = [];
+
+function wizStartScan() {
+  wizClearLog();
+  wizLog("info", "🔄 Nuova scansione avviata");
+  const container = document.getElementById("wizDetectFields");
+  if (!container) return;
+  // Clear old timers
+  wizDetectTimers.forEach(t => clearTimeout(t));
+  wizDetectTimers = [];
+  container.innerHTML = "";
+
+  WIZ_FIELDS.forEach((f, i) => {
+    const row = document.createElement("div");
+    row.className = "wiz-detect-row";
+    row.id = `wdr_${f.key}`;
+    row.innerHTML = `
+      <span class="wdr-icon">${f.icon}</span>
+      <span class="wdr-label">${f.label}</span>
+      <span class="wdr-value">—</span>
+      <span class="wdr-check">✓</span>`;
+    container.appendChild(row);
+
+    // Stagger activation
+    const t = setTimeout(() => row.classList.add("scanning"), i * 230);
+    wizDetectTimers.push(t);
+  });
+}
+
+function wizCompleteScan(meta) {
+  wizDetectTimers.forEach(t => clearTimeout(t));
+  wizDetectTimers = [];
+
+  WIZ_FIELDS.forEach(f => {
+    const row = document.getElementById(`wdr_${f.key}`);
+    if (!row) return;
+    const val = f.key === "tags"
+      ? (Array.isArray(meta.tags) ? meta.tags.join(", ") : (meta.tags || ""))
+      : (meta[f.key] || "");
+    const valEl = row.querySelector(".wdr-value");
+    if (valEl) valEl.textContent = val || "—";
+    row.classList.remove("scanning");
+    if (val) row.classList.add("done");
+  });
+}
+
+function openNewTalentWizard() {
+  wizImageB64 = "";
+  wizMimeType = "image/jpeg";
+  wizAnalyzed = {};
+  document.getElementById("wizDropzone").classList.remove("wiz-drop-active");
+  document.getElementById("wizStep1").style.display = "";
+  document.getElementById("wizStep2").style.display = "none";
+  document.getElementById("wizStep3").style.display = "none";
+  document.getElementById("wizSaveBtn").style.display = "none";
+  document.getElementById("wizStepLabel").textContent = "Upload image";
+  document.getElementById("wizFileInput").value = "";
+  document.getElementById("newTalentOverlay").style.display = "flex";
+}
+
+function closeWizard() {
+  document.getElementById("newTalentOverlay").style.display = "none";
+}
+
+function closeWizardOnBg(e) {
+  if (e.target === document.getElementById("newTalentOverlay")) closeWizard();
+}
+
+function wizTriggerFile() {
+  document.getElementById("wizFileInput").click();
+}
+
+function wizDragOver(e) {
+  e.preventDefault();
+  document.getElementById("wizDropzone").classList.add("wiz-drop-active");
+}
+function wizDragLeave() {
+  document.getElementById("wizDropzone").classList.remove("wiz-drop-active");
+}
+function wizDrop(e) {
+  e.preventDefault();
+  document.getElementById("wizDropzone").classList.remove("wiz-drop-active");
+  const file = e.dataTransfer.files[0];
+  if (file) wizProcessFile(file);
+}
+function wizOnFileChange(e) {
+  const file = e.target.files[0];
+  if (file) wizProcessFile(file);
+}
+
+function wizProcessFile(file) {
+  if (!file.type.startsWith("image/")) return;
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    const dataUrl   = ev.target.result;
+    const b64       = dataUrl.split(",")[1];
+    wizImageB64     = b64;
+    wizMimeType     = file.type || "image/jpeg";
+
+    // Show step 2 with scan animation
+    document.getElementById("wizStep1").style.display = "none";
+    document.getElementById("wizStep2").style.display = "";
+    document.getElementById("wizPreviewImg").src = dataUrl;
+    document.getElementById("wizStepLabel").textContent = "Analyzing…";
+    wizStartScan();
+
+    // Call analyze
+    await wizAnalyzeImage(b64, wizMimeType, dataUrl);
+  };
+  reader.readAsDataURL(file);
+}
+
+// ============================================================
+// Debug log (wizard)
+// ============================================================
+function wizLog(type, msg, data) {
+  const body = document.getElementById("wizDebugBody");
+  if (!body) return;
+  const entry = document.createElement("div");
+  entry.className = `wiz-log-entry wiz-log-${type}`;
+  const ts = new Date().toLocaleTimeString("it-IT", {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  let html = `<span class="wiz-log-ts">${ts}</span> <span class="wiz-log-msg">${escHtml(String(msg))}</span>`;
+  if (data !== undefined) {
+    const dataStr = (typeof data === "object") ? JSON.stringify(data, null, 2) : String(data);
+    html += `<pre class="wiz-log-data">${escHtml(dataStr)}</pre>`;
+  }
+  entry.innerHTML = html;
+  body.appendChild(entry);
+  body.scrollTop = body.scrollHeight;
+}
+function escHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function wizClearLog() {
+  const body = document.getElementById("wizDebugBody");
+  if (body) body.innerHTML = "";
+}
+function wizToggleLog() {
+  const wrap = document.getElementById("wizDebugWrap");
+  if (!wrap) return;
+  const open = wrap.style.display !== "none";
+  wrap.style.display = open ? "none" : "";
+  const btn = document.getElementById("wizLogBtn");
+  if (btn) btn.classList.toggle("active", !open);
+}
+
+async function wizAnalyzeImage(b64, mimeType, dataUrl) {
+  const b64_kb = Math.round(b64.length * 0.75 / 1024);
+  wizLog("info", `▶ Invio immagine a Gemini… (${b64_kb} KB base64, tipo: ${mimeType})`);
+  try {
+    const r    = await fetch("/api/elements/analyze-image", {
+      method:  "POST",
+      headers: {"Content-Type":"application/json"},
+      body:    JSON.stringify({data: b64, mime_type: mimeType})
+    });
+    const data = await r.json();
+    wizLog("info", "◀ Risposta HTTP ricevuta", {ok: data.ok, has_metadata: !!data.metadata, error: data.error || null});
+    if (data.image_info) {
+      const ii = data.image_info;
+      if (ii.resized)
+        wizLog("warn", `🖼 Immagine ridimensionata: ${ii.orig_w}×${ii.orig_h}px → ${ii.proc_w}×${ii.proc_h}px (JPG ${ii.proc_w > 0 ? "4K" : ""} 90%)`);
+      else
+        wizLog("info", `🖼 Immagine OK: ${ii.orig_w}×${ii.orig_h}px → convertita JPG 90%`);
+    }
+    if (data.raw_text) wizLog("info", "📄 Raw text da Gemini:", data.raw_text);
+    if (data.usage)    wizLog("info", `💰 Token: ${data.usage.input_tokens} input / ${data.usage.output_tokens} output — costo $${(data.usage.cost_usd||0).toFixed(7)}`);
+    if (!data.ok) throw new Error(data.error || "Analysis error");
+    wizAnalyzed = data.metadata;
+    wizLog("success", "✔ Metadata parsati da Gemini", wizAnalyzed);
+  } catch(e) {
+    wizAnalyzed = {};
+    wizLog("error", "✘ Analysis error: " + e.message);
+    showError("Analysis failed: " + e.message + " — fill in fields manually.");
+  }
+
+  // Mostra valori rilevati nel pannello scan, poi breve pausa di feedback
+  wizCompleteScan(wizAnalyzed);
+  await new Promise(r => setTimeout(r, 900));
+
+  // Popola il form e vai allo step 3
+  wizFillForm(wizAnalyzed);
+  document.getElementById("wizStep2").style.display = "none";
+  document.getElementById("wizStep3").style.display = "";
+  document.getElementById("wizConfirmImg").src = dataUrl;
+  document.getElementById("wizSaveBtn").style.display = "";
+  document.getElementById("wizStepLabel").textContent = "Confirm metadata";
+}
+
+function wizFillForm(meta) {
+  wizLog("info", "📝 Compilazione form con metadata…");
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.value = val || "";
+      wizLog("info", `  → #${id} = "${val || ""}"`);
+    } else {
+      wizLog("warn", `  ⚠ element #${id} not found in DOM`);
+    }
+  };
+  set("wfName",        meta.name        || "");
+  set("wfGender",      meta.gender      || "female");
+  set("wfEthnicity",   meta.ethnicity   || "");
+  set("wfAgeGroup",    meta.age_group   || "adult");
+  set("wfSkinTone",    meta.skin_tone   || "");
+  set("wfHairColor",   meta.hair_color  || "");
+  set("wfHairStyle",   meta.hair_style  || "");
+  set("wfEyeColor",    meta.eye_color   || "");
+  set("wfBodyType",    meta.body_type   || "");
+  set("wfDescription", meta.description || "");
+  const tagsVal = Array.isArray(meta.tags) ? meta.tags.join(", ") : (meta.tags || "");
+  set("wfTags", tagsVal);
+  wizLog("success", "✔ Form compilato");
+}
+
+function wizReadForm() {
+  const get  = id => (document.getElementById(id)?.value || "").trim();
+  const tags = get("wfTags").split(",").map(t => t.trim()).filter(Boolean);
+  return {
+    name:        get("wfName"),
+    gender:      get("wfGender"),
+    ethnicity:   get("wfEthnicity"),
+    age_group:   get("wfAgeGroup"),
+    skin_tone:   get("wfSkinTone"),
+    hair_color:  get("wfHairColor"),
+    hair_style:  get("wfHairStyle"),
+    eye_color:   get("wfEyeColor"),
+    body_type:   get("wfBodyType"),
+    description: get("wfDescription"),
+    tags,
+  };
+}
+
+async function saveTalent() {
+  if (!wizImageB64) return;
+  const btn  = document.getElementById("wizSaveBtn");
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+
+  const metadata = wizReadForm();
+  if (!metadata.name) { showError("Please enter a name for the talent."); btn.disabled = false; btn.textContent = "Save Talent ✦"; return; }
+
+  try {
+    const r    = await fetch("/api/elements/save-talent", {
+      method:  "POST",
+      headers: {"Content-Type":"application/json"},
+      body:    JSON.stringify({
+        image_data: wizImageB64,
+        mime_type:  wizMimeType,
+        folder:     "Model Managment",
+        metadata,
+      })
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || "Save error");
+
+    closeWizard();
+    // Reload elements grid
+    elCurrentPage = 1;
+    await loadElements();
+    showError(`✦ Talent "${metadata.name}" saved successfully!`, "success");
+  } catch(e) {
+    showError("Save failed: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Save Talent ✦";
+  }
+}
+
+async function migrateCatalog() {
+  const btn = document.getElementById("wizMigrateBtn");
+  btn.disabled = true;
+  btn.textContent = "⚙ Migrating…";
+  try {
+    const r    = await fetch("/api/elements/migrate-catalog", {
+      method:  "POST",
+      headers: {"Content-Type":"application/json"},
+      body:    JSON.stringify({folder: "Model Managment"})
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error);
+    showError("✓ " + data.message, "success");
+    await loadElements();
+  } catch(e) {
+    showError("Migrazione fallita: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "⚙ Migrate catalog";
+  }
+}
+
+// ============================================================
+// Load saved generations on page start
+// ============================================================
+async function loadGenerations() {
+  try {
+    const r = await fetch("/api/generations");
+    if (!r.ok) return;
+    const items = await r.json();
+    if (!Array.isArray(items) || items.length === 0) return;
+
+    // Render oldest-first so newest ends up at top of the grid
+    const reversed = [...items].reverse();
+    for (const item of reversed) {
+      const img    = { mime_type: item.mime_type, data: item.data };
+      const base   = item.params || {};
+      const params = Object.assign({}, base, {
+        gen_date:     item.gen_date     || "",
+        gen_filename: item.gen_filename || "",
+      });
+      const modelInfo = MODELS_INFO[params.model];
+      const label     = modelInfo ? modelInfo.label : (params.model_label || "NB");
+      const grid      = getGalleryGrid();
+      const card      = buildImgCard(img, 0, params, label);
+      grid.appendChild(card);
+    }
+  } catch(e) {
+    // Silently fail — generations are a convenience, not critical
+  }
+}
+
+// ============================================================
+// Init
+// ============================================================
+initArPicker();
+initSidebarArGrid();
+onModelChange();
+loadGenerations();
+
+// Restore params passed from Loved page via sessionStorage
+(function applyLovedReuse() {
+  try {
+    const raw = sessionStorage.getItem("nb_reuse_params");
+    if (!raw) return;
+    sessionStorage.removeItem("nb_reuse_params");
+    const p = JSON.parse(raw);
+    if (p.prompt) {
+      const el = document.getElementById("promptInput");
+      el.value = p.prompt;
+      autoResize(el);
+    }
+    if (p.model) {
+      document.getElementById("modelSelect").value = p.model;
+      onModelChange();
+    }
+    if (p.aspectRatio) {
+      document.getElementById("aspectSelect").value = p.aspectRatio;
+      syncArChip();
+    }
+    if (p.imageSize) {
+      document.getElementById("resSelect").value = p.imageSize;
+      syncResChip();
+    }
+    if (p.temperature != null) {
+      const el = document.getElementById("tempRange");
+      el.value = p.temperature;
+      document.getElementById("tempVal").textContent = parseFloat(p.temperature).toFixed(2);
+    }
+    if (p.topP != null) {
+      const el = document.getElementById("topPRange");
+      if (el) {
+        el.value = p.topP;
+        const lbl = document.getElementById("topPVal");
+        if (lbl) lbl.textContent = parseFloat(p.topP).toFixed(2);
+      }
+    }
+    // Show confirmation
+    const promptEl = document.getElementById("promptInput");
+    if (promptEl) {
+      promptEl.scrollIntoView({behavior:"smooth", block:"center"});
+      promptEl.focus();
+    }
+    showError("Prompt and parameters loaded from Loved gallery ✓", "success");
+  } catch(e) {}
+})();
+
+/* ── Theme toggle ─────────────────────────────────────────── */
+function toggleTheme() {
+  const html = document.documentElement;
+  const isLight = html.getAttribute('data-theme') === 'light';
+  if (isLight) { html.removeAttribute('data-theme'); localStorage.setItem('nb-theme','dark'); }
+  else { html.setAttribute('data-theme','light'); localStorage.setItem('nb-theme','light'); }
+  updateThemeBtn();
+}
+function updateThemeBtn() {
+  const btn = document.getElementById('themeToggleBtn');
+  if (!btn) return;
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  btn.textContent = isLight ? '🌙' : '☀️';
+  btn.title = isLight ? 'Switch to Dark mode' : 'Switch to Light mode';
+}
+updateThemeBtn();
+</script>
+</body>
+</html>

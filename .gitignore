@@ -1,0 +1,16 @@
+config.json
+studio.db
+__pycache__/
+*.pyc
+
+# Generated user data
+generations/*
+!generations/.gitkeep
+loved/*
+!loved/.gitkeep
+published/*
+!published/.gitkeep
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nano Banana Studio — Pubblicati</title>
+<script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="navbar">
+  <div class="nav-left">
+    <a href="/index" class="nav-logo">🍌 Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+  </div>
+  <div class="nav-links">
+    <a href="/index">Generator</a>
+    <a href="/published" class="active">Published</a>
+    <a href="/settings">Settings</a>
+    <a href="/credits">Credits</a>
+    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">☀️</button>
+    <a href="/logout" class="nav-logout">Logout</a>
+  </div>
+</nav>
+
+<main class="pub-main">
+
+  <!-- Header -->
+  <div class="pub-header">
+    <div>
+      <h1 class="pub-title">Immagini Pubblicate</h1>
+      <p class="pub-subtitle">Organizzate per data · cartella <code>published/</code></p>
+    </div>
+    <a href="/index" class="btn-new-gen">+ Nuova generazione</a>
+  </div>
+
+  {% if not days %}
+  <!-- Empty state -->
+  <div class="pub-empty">
+    <div class="pub-empty-icon">📂</div>
+    <p>Nessuna immagine pubblicata ancora.</p>
+    <p class="pub-empty-sub">Genera immagini e usa il tasto <strong>⬆ Pubblica</strong> per salvarle qui.</p>
+    <a href="/index" class="btn-new-gen" style="margin-top:16px; display:inline-block">Vai al generatore</a>
+  </div>
+  {% else %}
+
+  <!-- Indice date (sidebar sticky) -->
+  <div class="pub-layout">
+
+    <nav class="pub-date-nav">
+      <div class="pub-date-nav-title">Navigazione</div>
+      {% for day in days %}
+      <a href="#day-{{ day.date }}" class="pub-date-link">
+        <span class="pub-date-link-label">{{ day.label }}</span>
+        <span class="pub-date-link-count">{{ day.entries|length }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+
+    <!-- Galleria per giorno -->
+    <div class="pub-days">
+      {% for day in days %}
+      <section class="pub-day" id="day-{{ day.date }}">
+
+        <div class="pub-day-header">
+          <h2 class="pub-day-title">{{ day.label }}</h2>
+          <span class="pub-day-count">{{ day.entries|length }} images</span>
+        </div>
+
+        <div class="pub-grid">
+          {% for item in day.entries %}
+          {% set m = item.meta %}
+          <div class="pub-card" onclick="openLightbox('{{ day.date }}', '{{ item.filename }}', {{ m | tojson }})">
+
+            <div class="pub-card-img-wrap">
+              <img src="/published/{{ day.date }}/{{ item.filename }}"
+                   alt="{{ m.prompt|default('')|truncate(60) }}"
+                   loading="lazy">
+            </div>
+
+            <div class="pub-card-info">
+              <div class="pub-card-badges">
+                {% if m.model == 'gemini-2.5-flash-image' %}
+                  <span class="badge badge-nb">NB</span>
+                {% elif m.model == 'gemini-3-pro-image-preview' %}
+                  <span class="badge badge-pro">Pro</span>
+                {% else %}
+                  <span class="badge badge-nb2">NB2</span>
+                {% endif %}
+                <span class="pub-card-size">{{ m.imageSize|default('') }}</span>
+                <span class="pub-card-ar">{{ m.aspectRatio|default('') }}</span>
+              </div>
+              <p class="pub-card-prompt">{{ (m.prompt or '')|truncate(90) }}</p>
+              <div class="pub-card-time">
+                {% if m.published_at %}
+                  {{ m.published_at[11:16] }}
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Overlay azioni -->
+            <div class="pub-card-actions">
+              <a href="/published/{{ day.date }}/{{ item.filename }}" download="{{ item.filename }}"
+                 onclick="event.stopPropagation()" class="pub-action-btn" title="Download">⬇</a>
+            </div>
+
+          </div>
+          {% endfor %}
+        </div>
+
+      </section>
+      {% endfor %}
+    </div>
+
+  </div><!-- end pub-layout -->
+  {% endif %}
+
+</main>
+
+<!-- Lightbox pubblicati -->
+<div class="lightbox" id="pubLightbox" onclick="closePubLightboxOnBg(event)">
+  <div class="lb-inner">
+    <button class="lb-close" onclick="closePubLightbox()">✕</button>
+    <img id="pubLbImg" src="" alt="">
+    <div class="lb-footer">
+      <div class="lb-meta" id="pubLbMeta"></div>
+      <a id="pubLbDownload" href="#" download class="btn-publish-lb">⬇ Download</a>
+    </div>
+  </div>
+</div>
+
+<script>
+function openLightbox(date, filename, meta) {
+  const lb = document.getElementById("pubLightbox");
+  const imgUrl = `/published/${date}/${filename}`;
+  document.getElementById("pubLbImg").src = imgUrl;
+
+  const modelLabels = {
+    "gemini-2.5-flash-image":         "Nano Banana",
+    "gemini-3-pro-image-preview":     "Nano Banana Pro",
+    "gemini-3.1-flash-image-preview": "Nano Banana 2"
+  };
+
+  const label = modelLabels[meta.model] || meta.model_label || meta.model || "";
+  const parts = [label, meta.imageSize, meta.aspectRatio].filter(Boolean);
+  if (meta.temperature != null) parts.push(`t=${parseFloat(meta.temperature).toFixed(2)}`);
+  document.getElementById("pubLbMeta").textContent = parts.join(" · ");
+
+  const dl = document.getElementById("pubLbDownload");
+  dl.href = imgUrl;
+  dl.download = filename;
+
+  lb.style.display = "flex";
+}
+
+function closePubLightbox() {
+  document.getElementById("pubLightbox").style.display = "none";
+}
+
+function closePubLightboxOnBg(e) {
+  if (e.target === document.getElementById("pubLightbox")) closePubLightbox();
+}
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closePubLightbox();
+});
+
+// Smooth scroll per i link data-nav
+document.querySelectorAll(".pub-date-link").forEach(a => {
+  a.addEventListener("click", e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute("href"));
+    if (target) target.scrollIntoView({behavior: "smooth", block: "start"});
+  });
+});
+
+// Evidenzia sezione attiva in navigazione
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const id = entry.target.id;
+      document.querySelectorAll(".pub-date-link").forEach(l => {
+        l.classList.toggle("active", l.getAttribute("href") === "#" + id);
+      });
+    }
+  });
+}, {threshold: 0.2});
+
+document.querySelectorAll(".pub-day").forEach(s => observer.observe(s));
+
+/* ── Theme toggle ─────────────────────────────────────────── */
+function toggleTheme() {
+  const html = document.documentElement;
+  const isLight = html.getAttribute('data-theme') === 'light';
+  if (isLight) { html.removeAttribute('data-theme'); localStorage.setItem('nb-theme','dark'); }
+  else { html.setAttribute('data-theme','light'); localStorage.setItem('nb-theme','light'); }
+  updateThemeBtn();
+}
+function updateThemeBtn() {
+  const btn = document.getElementById('themeToggleBtn');
+  if (!btn) return;
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  btn.textContent = isLight ? '🌙' : '☀️';
+  btn.title = isLight ? 'Switch to Dark mode' : 'Switch to Light mode';
+}
+updateThemeBtn();
+</script>
+</body>
+</html>

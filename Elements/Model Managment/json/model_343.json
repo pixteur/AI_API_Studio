@@ -1,0 +1,51 @@
+{
+  "id": "model_343",
+  "name": "Elena Varik",
+  "gender": "female",
+  "ethnicity": "northern_european",
+  "age_group": "young_adult",
+  "skin_tone": "fair",
+  "hair_color": "platinum_blonde",
+  "hair_style": "buzz_cut",
+  "eye_color": "blue",
+  "body_type": "slim",
+  "description": "Striking young Northern European woman with an ultra-short platinum blonde buzzcut and cool blue eyes. Her distinctive minimalistic look makes her ideal for high-fashion editorials, beauty campaigns, and modern commercial projects.",
+  "tags": [
+    "editorial",
+    "high fashion"
+  ],
+  "profile": {
+    "height": "approx. 165–173 cm (visual estimate)",
+    "hair": "very short platinum blonde buzzcut",
+    "eyes": "blue",
+    "size": "not visible",
+    "measurements": "not visible",
+    "overall_look": "minimalist, modern, high-fashion",
+    "skills": [
+      "editorial modeling",
+      "beauty advertising",
+      "runway (avant-garde)",
+      "commercial campaigns"
+    ],
+    "languages": [],
+    "personality": "confident, modern, focused",
+    "recommended_usage": [
+      "beauty and skincare campaigns",
+      "high-fashion editorials",
+      "minimalist brand advertising",
+      "cosmetics and fragrance launches"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_343.jpg",
+      "path": "images/model_343.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:19.536348"
+}

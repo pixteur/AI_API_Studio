@@ -1,0 +1,53 @@
+{
+  "id": "model_05",
+  "name": "Liora Aenor",
+  "gender": "female",
+  "ethnicity": "other",
+  "age_group": "young_adult",
+  "skin_tone": "very_fair",
+  "hair_color": "platinum_blonde",
+  "hair_style": "long_curly",
+  "eye_color": "light_blue",
+  "body_type": "slim",
+  "description": "Ethereal model with pale porcelain skin, light blue eyes, and voluminous platinum curls. Her distinctive and delicate aesthetic is ideal for avant-garde, beauty, and artistic editorial work.",
+  "tags": [
+    "editorial",
+    "beauty",
+    "avant-garde",
+    "high fashion"
+  ],
+  "profile": {
+    "height": "approx. 170–175 cm (visual estimate; portrait only)",
+    "hair": "platinum blonde, voluminous curls",
+    "eyes": "light blue, soft expression",
+    "size": "not visible",
+    "measurements": "not visible",
+    "overall_look": "dreamlike and refined, natural lighting, minimal styling",
+    "skills": [
+      "beauty close-up",
+      "editorial posing",
+      "conceptual fashion"
+    ],
+    "languages": [],
+    "personality": "delicate, introspective, artistic",
+    "recommended_usage": [
+      "avant-garde fashion editorials",
+      "beauty campaigns",
+      "high-fashion lookbooks",
+      "artistic photography",
+      "fashion film"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_05.jpg",
+      "path": "images/model_05.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:16.361879"
+}

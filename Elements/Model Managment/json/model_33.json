@@ -1,0 +1,53 @@
+{
+  "id": "model_33",
+  "name": "Noa Ellis",
+  "gender": "female",
+  "ethnicity": "mixed",
+  "age_group": "young_adult",
+  "skin_tone": "brown",
+  "hair_color": "dark_brown",
+  "hair_style": "long_curly",
+  "eye_color": "hazel",
+  "body_type": "athletic",
+  "description": "Stunning model with a warm bronze complexion, light hazel-green eyes, and voluminous curly hair styled with partial braids. Her confident yet serene expression makes her a versatile choice for both high-fashion editorials and commercial beauty campaigns.",
+  "tags": [
+    "high fashion",
+    "beauty",
+    "editorial",
+    "runway"
+  ],
+  "profile": {
+    "height": "approx. 175–180 cm (visual estimate; portrait only)",
+    "hair": "dark brown with lighter highlights, long curls with front braids",
+    "eyes": "light hazel-green, bright and striking",
+    "size": "not visible",
+    "measurements": "not visible",
+    "overall_look": "modern, natural, expressive elegance",
+    "skills": [
+      "editorial posing",
+      "runway versatility",
+      "commercial adaptability"
+    ],
+    "languages": [],
+    "personality": "poised, confident, creative",
+    "recommended_usage": [
+      "high-fashion and editorial photography",
+      "beauty and skincare advertising",
+      "commercial campaigns",
+      "runway and lookbook projects",
+      "diversity-focused media"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_33.jpg",
+      "path": "images/model_33.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:19.483730"
+}

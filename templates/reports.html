@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nano Banana Studio - Reports</title>
+<script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .rep-main { max-width: 1280px; margin: 0 auto; padding: 84px 24px 56px; }
+  .rep-hero { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-bottom:24px; }
+  .rep-title { font-size:34px; line-height:1.05; letter-spacing:-.04em; margin:0 0 10px; }
+  .rep-subtitle { max-width:760px; color:var(--text-dim); font-size:15px; line-height:1.7; margin:0; }
+  .rep-actions { display:flex; gap:10px; align-items:center; }
+  .rep-btn { appearance:none; border:1px solid var(--border2); background:var(--surface2); color:var(--text); border-radius:10px; padding:10px 14px; font-size:13px; font-weight:700; cursor:pointer; }
+  .rep-btn-primary { background:var(--accent); color:var(--acc-fg, #0d0d0d); border:0; }
+  .rep-grid { display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:12px; }
+  .rep-card, .rep-panel { background:var(--surface); border:1px solid var(--border); border-radius:16px; box-shadow:0 12px 36px rgba(0,0,0,.14); }
+  .rep-card { padding:18px; }
+  .rep-panel { padding:22px; margin-top:18px; }
+  .rep-label { color:var(--text-dim); font-size:11px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:8px; }
+  .rep-value { font-size:24px; color:var(--text); font-weight:700; }
+  .rep-value-sm { font-size:18px; }
+  .rep-panels { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; margin-top:18px; }
+  .rep-breakdown { background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:14px; }
+  .rep-breakdown h3 { font-size:12px; letter-spacing:.06em; text-transform:uppercase; margin:0 0 12px; color:var(--text); }
+  .rep-row { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid var(--border); color:var(--text-dim); }
+  .rep-row:first-child { border-top:0; padding-top:0; }
+  .rep-table-wrap { margin-top:16px; overflow:auto; border:1px solid var(--border); border-radius:12px; }
+  .rep-table { width:100%; border-collapse:collapse; min-width:1040px; }
+  .rep-table th, .rep-table td { padding:12px 14px; border-bottom:1px solid var(--border); text-align:left; font-size:13px; }
+  .rep-table th { background:var(--surface2); color:var(--text); text-transform:uppercase; letter-spacing:.06em; font-size:11px; }
+  .rep-table td { color:var(--text-dim); }
+  .rep-status { display:inline-flex; align-items:center; border-radius:999px; padding:5px 9px; font-size:11px; letter-spacing:.04em; text-transform:uppercase; }
+  .rep-status.completed { background:rgba(76,255,145,.12); color:#8ee0a5; }
+  .rep-status.failed { background:rgba(255,79,79,.12); color:#ff9b9b; }
+  .rep-status.planned { background:rgba(79,168,255,.12); color:#9ecfff; }
+  .rep-note { color:var(--text-dim); font-size:12px; line-height:1.6; margin-top:14px; }
+  @media (max-width: 1100px) {
+    .rep-grid { grid-template-columns:repeat(3, minmax(0,1fr)); }
+    .rep-panels { grid-template-columns:repeat(2, minmax(0,1fr)); }
+  }
+  @media (max-width: 760px) {
+    .rep-main { padding:76px 16px 42px; }
+    .rep-hero { flex-direction:column; align-items:stretch; }
+    .rep-grid, .rep-panels { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<nav class="navbar">
+  <div class="nav-left">
+    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+  </div>
+  <div class="nav-links">
+    <a href="/index">Generator</a>
+    <a href="/workbench">Workbench</a>
+    <a href="/reports" class="active">Reports</a>
+    <a href="/loved">Loved</a>
+    <a href="/settings">Settings</a>
+    <a href="/credits">Credits</a>
+    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">Light</button>
+    <a href="/logout" class="nav-logout">Logout</a>
+  </div>
+</nav>
+
+<main class="rep-main">
+  <section class="rep-hero">
+    <div>
+      <h1 class="rep-title">Task, flow, and cost reports.</h1>
+      <p class="rep-subtitle">This page reads the new SQLite task-run history and shows planned versus actual execution metrics, provider mix, workflow mix, client distribution, and recent run status.</p>
+    </div>
+    <div class="rep-actions">
+      <a href="/workbench" class="rep-btn rep-btn-primary" style="text-decoration:none">Open Workbench</a>
+      <button class="rep-btn" onclick="refreshReport()">Refresh</button>
+    </div>
+  </section>
+
+  <section class="rep-grid" id="summaryGrid"></section>
+
+  <section class="rep-panel">
+    <div class="rep-panels">
+      <div class="rep-breakdown"><h3>Task Mix</h3><div id="taskBreakdown"></div></div>
+      <div class="rep-breakdown"><h3>Provider Mix</h3><div id="providerBreakdown"></div></div>
+      <div class="rep-breakdown"><h3>Client Mix</h3><div id="clientBreakdown"></div></div>
+      <div class="rep-breakdown"><h3>Workflow Mix</h3><div id="workflowBreakdown"></div></div>
+    </div>
+  </section>
+
+  <section class="rep-panel">
+    <h2 style="margin:0; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent)">Recent Task Runs</h2>
+    <div class="rep-table-wrap">
+      <table class="rep-table">
+        <thead>
+          <tr>
+            <th>Created</th>
+            <th>Client</th>
+            <th>Project</th>
+            <th>Task</th>
+            <th>Workflow</th>
+            <th>Status</th>
+            <th>Run Count</th>
+            <th>Actual Images</th>
+            <th>Actual Cost</th>
+            <th>Estimated Cost</th>
+            <th>Last Run</th>
+          </tr>
+        </thead>
+        <tbody id="recentRunsBody"></tbody>
+      </table>
+    </div>
+    <p class="rep-note">Planned runs are created when a prompt plan is generated. They move to completed or failed after direct Workbench execution.</p>
+  </section>
+</main>
+
+<script>
+let reportData = {{ report | tojson }};
+function byId(id) { return document.getElementById(id); }
+function escapeHtml(str) {
+  return String(str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function renderBreakdown(elId, rows, labelKey) {
+  const el = byId(elId);
+  if (!rows || !rows.length) {
+    el.innerHTML = '<div class="rep-row"><span>No data yet</span><strong>0</strong></div>';
+    return;
+  }
+  el.innerHTML = rows.map(row => `<div class="rep-row"><span>${escapeHtml(row[labelKey])}</span><strong>${escapeHtml(row.runs)}</strong></div>`).join('');
+}
+function renderRecentRuns(rows) {
+  const body = byId('recentRunsBody');
+  if (!rows || !rows.length) {
+    body.innerHTML = '<tr><td colspan="11">No task runs yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows.map(row => {
+    const status = row.status || 'planned';
+    return `
+      <tr>
+        <td>${escapeHtml(row.created_at_label || '')}</td>
+        <td>${escapeHtml(row.client_name || '—')}</td>
+        <td>${escapeHtml(row.project_name || '—')}</td>
+        <td>${escapeHtml(row.task_name || '')}</td>
+        <td>${escapeHtml(row.recommended_workflow || '')}</td>
+        <td><span class="rep-status ${escapeHtml(status)}">${escapeHtml(status)}</span></td>
+        <td>${escapeHtml(row.run_count || 0)}</td>
+        <td>${escapeHtml(row.actual_images || 0)}</td>
+        <td>$${Number(row.actual_cost_usd || 0).toFixed(4)}</td>
+        <td>$${Number(row.estimated_cost_low || 0).toFixed(4)}-$${Number(row.estimated_cost_high || 0).toFixed(4)}</td>
+        <td>${escapeHtml(row.last_run_at_label || '—')}</td>
+      </tr>
+    `;
+  }).join('');
+}
+function renderReport(report) {
+  reportData = report;
+  const summary = report.summary || {};
+  byId('summaryGrid').innerHTML = `
+    <div class="rep-card"><div class="rep-label">Planned Runs</div><div class="rep-value">${summary.total_runs || 0}</div></div>
+    <div class="rep-card"><div class="rep-label">Executed Runs</div><div class="rep-value">${summary.executed_runs || 0}</div></div>
+    <div class="rep-card"><div class="rep-label">Completed</div><div class="rep-value">${summary.completed_runs || 0}</div></div>
+    <div class="rep-card"><div class="rep-label">Failed</div><div class="rep-value">${summary.failed_runs || 0}</div></div>
+    <div class="rep-card"><div class="rep-label">Actual Images</div><div class="rep-value">${summary.actual_images || 0}</div></div>
+    <div class="rep-card"><div class="rep-label">Actual Cost</div><div class="rep-value rep-value-sm">$${Number(summary.actual_cost_usd || 0).toFixed(2)}</div></div>
+  `;
+  renderBreakdown('taskBreakdown', report.task_breakdown || [], 'task_name');
+  renderBreakdown('providerBreakdown', report.provider_breakdown || [], 'provider');
+  renderBreakdown('clientBreakdown', report.client_breakdown || [], 'client_name');
+  renderBreakdown('workflowBreakdown', report.workflow_breakdown || [], 'recommended_workflow');
+  renderRecentRuns(report.recent_runs || []);
+}
+async function refreshReport() {
+  const resp = await fetch('/api/reports/overview');
+  const data = await resp.json();
+  renderReport(data || {});
+}
+function toggleTheme() {
+  const html = document.documentElement;
+  const isLight = html.getAttribute('data-theme') === 'light';
+  if (isLight) { html.removeAttribute('data-theme'); localStorage.setItem('nb-theme','dark'); }
+  else { html.setAttribute('data-theme','light'); localStorage.setItem('nb-theme','light'); }
+  updateThemeBtn();
+}
+function updateThemeBtn() {
+  const btn = byId('themeToggleBtn');
+  if (!btn) return;
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  btn.textContent = isLight ? 'Dark' : 'Light';
+  btn.title = isLight ? 'Switch to Dark mode' : 'Switch to Light mode';
+}
+renderReport(reportData);
+updateThemeBtn();
+</script>
+</body>
+</html>

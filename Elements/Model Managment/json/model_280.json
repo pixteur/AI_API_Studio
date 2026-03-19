@@ -1,0 +1,53 @@
+{
+  "id": "model_280",
+  "name": "Rhea Vesper",
+  "gender": "female",
+  "ethnicity": "caucasian",
+  "age_group": "young_adult",
+  "skin_tone": "fair",
+  "hair_color": "colored",
+  "hair_style": "fade",
+  "eye_color": "light_blue",
+  "body_type": "fit",
+  "description": "Female model with a cool light complexion, electric-blue tall mohawk, and intense ice-blue eyes. The bold punk-inspired styling combined with a clean, sculptural facial structure makes her ideal for avant-garde editorials, experimental beauty work, and futuristic high-fashion campaigns.",
+  "tags": [
+    "avant-garde",
+    "high fashion",
+    "editorial",
+    "beauty"
+  ],
+  "profile": {
+    "height": "approx. 170–176 cm (visual estimate; headshot only)",
+    "hair": "electric-blue tall mohawk with fully shaved sides",
+    "eyes": "ice-blue, intense gaze",
+    "size": "not visible",
+    "measurements": "not visible",
+    "overall_look": "futuristic, bold, punk-influenced",
+    "skills": [
+      "avant-garde modeling",
+      "editorial posing",
+      "beauty-focused work",
+      "high-fashion concepts"
+    ],
+    "languages": [],
+    "personality": "intense, artistic, fearless",
+    "recommended_usage": [
+      "avant-garde fashion editorials",
+      "conceptual beauty campaigns",
+      "futuristic high-fashion",
+      "fashion film projects"
+    ]
+  },
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "model_280.jpg",
+      "path": "images/model_280.jpg",
+      "added_at": "2026-03-18T14:40:38.357800",
+      "is_primary": true,
+      "analyzed": false
+    }
+  ],
+  "created_at": "2026-03-18T14:40:38.357800",
+  "updated_at": "2026-03-18T15:32:18.828307"
+}
