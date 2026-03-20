@@ -2344,7 +2344,7 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
   // Image - natural height
   const image   = document.createElement("img");
   image.className = options.featured ? "img-card-image img-card-image-featured" : "img-card-image";
-  image.src     = `data:${img.mime_type};base64,${img.data}`;
+  image.src     = getImageSource(img);
   image.alt     = `Generated ${idx+1}`;
   image.loading = options.featured ? "eager" : "lazy";
   image.onclick = () => openLightbox(img, idx, params);
@@ -2363,7 +2363,7 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
 
   // Ã¢â€ â€œ Download
   const dlBtn = makeActionBtn(SVG_DOWNLOAD, "Download");
-  dlBtn.onclick = (e) => { e.stopPropagation(); downloadImage(img, idx); };
+  dlBtn.onclick = async (e) => { e.stopPropagation(); await downloadImage(img, idx); };
 
   // Reuse - copy prompt and parameters into the form
   const copyBtn = makeActionBtn(SVG_REUSE, "Reuse prompt & parameters");
@@ -2425,10 +2425,11 @@ async function deleteGeneration(date, filename) {
   }
 }
 
-function downloadImage(img, idx) {
+async function downloadImage(img, idx) {
+  const payload = await ensureImagePayload(img);
   const a   = document.createElement("a");
-  a.href    = `data:${img.mime_type};base64,${img.data}`;
-  const ext = img.mime_type.split("/")[1] || "png";
+  a.href    = getImageSource(payload);
+  const ext = (payload.mime_type || "image/png").split("/")[1] || "png";
   a.download = `nb-${Date.now()}-${idx+1}.${ext}`;
   a.click();
 }
@@ -2600,12 +2601,13 @@ async function publishImage(img, idx, params, btnEl) {
     btnEl.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9" stroke-dasharray="28 56" stroke-linecap="round"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="0.7s" repeatCount="indefinite"/></circle></svg>`;
   }
   try {
+    const payload = await ensureImagePayload(img);
     const r = await fetch("/api/publish", {
       method:  "POST",
       headers: {"Content-Type":"application/json"},
       body:    JSON.stringify({
-        data:      img.data,
-        mime_type: img.mime_type,
+        data:      payload.data,
+        mime_type: payload.mime_type,
         meta: {
           prompt:      params.prompt,
           model:       params.model,
@@ -2666,7 +2668,7 @@ async function publishFromLightbox() {
 function openLightbox(img, idx, params) {
   lbCurrentImg    = img;
   lbCurrentParams = params;
-  document.getElementById("lbImg").src = `data:${img.mime_type};base64,${img.data}`;
+  document.getElementById("lbImg").src = getImageSource(img);
   const mi = MODELS_INFO[params.model];
   const lbParts = [
     mi ? mi.label : params.model,
@@ -2861,6 +2863,25 @@ function blobToBase64(blob) {
     r.onerror = rej;
     r.readAsDataURL(blob);
   });
+}
+
+function getImageSource(img) {
+  if (!img) return "";
+  if (img.url) return img.url;
+  if (img.data && img.mime_type) return `data:${img.mime_type};base64,${img.data}`;
+  return "";
+}
+
+async function ensureImagePayload(img) {
+  if (!img) throw new Error("Image source unavailable");
+  if (img.data && img.mime_type) return img;
+  if (!img.url) throw new Error("Image source unavailable");
+  const resp = await fetch(img.url);
+  if (!resp.ok) throw new Error(`Could not load image (${resp.status})`);
+  const blob = await resp.blob();
+  img.mime_type = blob.type || img.mime_type || "image/png";
+  img.data = await blobToBase64(blob);
+  return img;
 }
 
 // ============================================================
@@ -3635,21 +3656,29 @@ async function loadGenerations() {
     galleryEntrySequence = 0;
 
     for (const item of items) {
-      const img = { mime_type: item.mime_type, data: item.data };
-      const base = item.params || {};
-      const params = Object.assign({}, base, {
-        gen_date: item.gen_date || "",
-        gen_filename: item.gen_filename || "",
-        generated_at: item.generated_at || "",
-      });
-      const modelInfo = MODELS_INFO[params.model] || {};
-      const label = modelInfo.label || params.model_label || "NB";
-      registerGalleryImageEntry(img, 0, params, label, item.generated_at || "", item.gen_date || "");
-      if (item.text) {
-        registerGalleryTextEntry(item.text, params, item.generated_at || "", item.gen_date || "");
+      try {
+        if (!item || (!item.data && !item.url)) continue;
+        const img = item.url
+          ? { mime_type: item.mime_type || "", url: item.url }
+          : { mime_type: item.mime_type, data: item.data };
+        const base = item.params || {};
+        const params = Object.assign({}, base, {
+          gen_date: item.gen_date || "",
+          gen_filename: item.gen_filename || "",
+          generated_at: item.generated_at || "",
+        });
+        const modelInfo = MODELS_INFO[params.model] || {};
+        const label = modelInfo.label || params.model_label || params.model || "NB";
+        registerGalleryImageEntry(img, 0, params, label, item.generated_at || "", item.gen_date || "");
+        if (item.text) {
+          registerGalleryTextEntry(String(item.text), params, item.generated_at || "", item.gen_date || "");
+        }
+      } catch (itemError) {
+        continue;
       }
     }
 
+    populateGalleryModelFilter();
     renderGalleryEntries();
   } catch(e) {
     // Silently fail - generations are a convenience, not critical

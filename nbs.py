@@ -1755,6 +1755,13 @@ def serve_reference_archive(date_str, filename):
     return send_from_directory(day_path, filename)
 
 
+@app.route("/generations/<date_str>/<filename>")
+@login_required
+def serve_generation(date_str, filename):
+    day_path = os.path.join(GENERATIONS_DIR, date_str)
+    return send_from_directory(day_path, filename)
+
+
 # ---------------------------------------------------------------------------
 # API â€” Delete a loved image (image + JSON sidecar, never touches generations/)
 # ---------------------------------------------------------------------------
@@ -3250,8 +3257,8 @@ def api_workbench_run():
 @login_required
 def api_generations():
     """
-    Returns the last N saved generations as base64 for gallery reload on restart.
-    Each item: {mime_type, data (b64), params, generated_at}
+    Returns the last N saved generations for gallery reload on restart.
+    Each item includes a local image URL plus prompt metadata.
     """
     MAX_LOAD = 100   # load up to last 100 images on startup
     result   = []
@@ -3270,7 +3277,7 @@ def api_generations():
                 if len(result) >= MAX_LOAD:
                     break
                 try:
-                    with open(mf) as f:
+                    with open(mf, encoding="utf-8") as f:
                         meta = json.load(f)
                     base     = mf[:-5]
                     img_path = None
@@ -3281,30 +3288,38 @@ def api_generations():
                             break
                     if not img_path:
                         continue
-                    with open(img_path, "rb") as f:
-                        img_b64 = base64.b64encode(f.read()).decode("utf-8")
+                    filename = os.path.basename(img_path)
+                    model_id = str(meta.get("model", "") or "")
+                    model_info = MODELS_INFO.get(model_id, {})
                     result.append({
                         "mime_type":    meta.get("mime_type", "image/jpeg"),
-                        "data":         img_b64,
+                        "url":          f"/generations/{date_str}/{filename}",
                         "generated_at": meta.get("generated_at", ""),
                         "text":         meta.get("text", ""),
                         "gen_date":     date_str,
-                        "gen_filename": meta.get("filename", ""),
+                        "gen_filename": meta.get("filename", filename),
                         "params": {
-                            "model":        meta.get("model", ""),
-                            "model_label":  meta.get("model_label", ""),
-                            "imageSize":    meta.get("imageSize", ""),
-                            "aspectRatio":  meta.get("aspectRatio", ""),
-                            "temperature":  meta.get("temperature", 1.0),
-                            "topP":         meta.get("topP", 0.95),
+                            "model":         model_id,
+                            "modelFamily":   meta.get("modelFamily", model_info.get("family", "")),
+                            "model_label":   meta.get("model_label", model_info.get("label", "")),
+                            "provider":      meta.get("provider", model_info.get("provider", "")),
+                            "provider_label": meta.get("provider_label", model_info.get("provider_label", "")),
+                            "imageSize":     meta.get("imageSize", ""),
+                            "aspectRatio":   meta.get("aspectRatio", ""),
+                            "temperature":   meta.get("temperature", 1.0),
+                            "topP":          meta.get("topP", 0.95),
                             "thinkingLevel": meta.get("thinkingLevel", "Minimal"),
-                            "useSearch":    meta.get("useSearch", False),
-                            "outputMode":   meta.get("outputMode", "images_text"),
-                            "prompt":       meta.get("prompt", ""),
-                            "ref_count":    meta.get("ref_count", 0),
-                            "refArchive":   meta.get("refArchive", []),
-                            "seedMode":     meta.get("seedMode", "random"),
-                            "seedValue":    meta.get("seedValue", 1),
+                            "useSearch":     meta.get("useSearch", False),
+                            "outputMode":    meta.get("outputMode", "images_text"),
+                            "prompt":        meta.get("prompt", ""),
+                            "ref_count":     meta.get("ref_count", 0),
+                            "refArchive":    meta.get("refArchive", []),
+                            "seedMode":      meta.get("seedMode", "random"),
+                            "seedValue":     meta.get("seedValue", 1),
+                            "falSafetyChecker": meta.get("falSafetyChecker", True),
+                            "falSafetyTolerance": meta.get("falSafetyTolerance", 4),
+                            "geminiSafetyPreset": meta.get("geminiSafetyPreset", "default"),
+                            "byteplusSafetyMode": meta.get("byteplusSafetyMode", "platform_default"),
                         }
                     })
                 except Exception:
