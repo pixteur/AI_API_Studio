@@ -76,28 +76,52 @@
     {% endif %}
   </section>
 
-  <!-- SEEDREAM API KEY -->
   <section class="settings-card">
     <h2>Fal API Key</h2>
-    <p class="settings-desc">Enter your Fal API key for Seedream 4.5 and Seedream 5 Lite image generation. These models are routed separately from Gemini.</p>
+    <p class="settings-desc">Enter your Fal API key for Fal Nano Banana, Seedream 4.5, and Seedream 5 Lite. Fal acts as the alternate provider for both Nano Banana and Seedream families.</p>
 
     <div class="key-row">
       <div class="input-wrap">
-        <input type="password" id="seedreamApiKeyInput" placeholder="fal_..." autocomplete="off"
-               value="{{ '*' * 20 if has_seedream_key else '' }}">
-        <button class="btn-icon" id="toggleSeedreamKeyBtn" title="Show/Hide" onclick="toggleSeedreamKeyVisibility()">Show</button>
+        <input type="password" id="falApiKeyInput" placeholder="fal_key:secret" autocomplete="off"
+               value="{{ '*' * 20 if has_fal_key else '' }}">
+        <button class="btn-icon" id="toggleFalKeyBtn" title="Show/Hide" onclick="toggleFalKeyVisibility()">Show</button>
       </div>
-      <button class="btn-verify" id="verifySeedreamBtn" onclick="verifySeedreamKey()">
-        <span id="verifySeedreamLabel">Verify</span>
+      <button class="btn-verify" id="verifyFalBtn" onclick="verifyFalKey()">
+        <span id="verifyFalLabel">Verify</span>
       </button>
-      <button class="btn-save" id="saveSeedreamBtn" onclick="saveSeedreamKey()">Save</button>
+      <button class="btn-save" id="saveFalBtn" onclick="saveFalKey()">Save</button>
     </div>
 
-    <div id="seedreamKeyStatus" class="key-status"></div>
+    <div id="falKeyStatus" class="key-status"></div>
 
-    {% if has_seedream_key %}
+    {% if has_fal_key %}
     <div class="key-current">
-      Current key: <code>{{ masked_seedream_key }}</code>
+      Current key: <code>{{ masked_fal_key }}</code>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="settings-card">
+    <h2>BytePlus API Key</h2>
+    <p class="settings-desc">Enter your BytePlus ModelArk key for Seedream 4.5. This is the alternate provider option when you switch Seedream 4.5 from Fal to BytePlus.</p>
+
+    <div class="key-row">
+      <div class="input-wrap">
+        <input type="password" id="byteplusApiKeyInput" placeholder="byteplus_..." autocomplete="off"
+               value="{{ '*' * 20 if has_byteplus_key else '' }}">
+        <button class="btn-icon" id="toggleByteplusKeyBtn" title="Show/Hide" onclick="toggleByteplusKeyVisibility()">Show</button>
+      </div>
+      <button class="btn-verify" id="verifyByteplusBtn" onclick="verifyByteplusKey()">
+        <span id="verifyByteplusLabel">Verify</span>
+      </button>
+      <button class="btn-save" id="saveByteplusBtn" onclick="saveByteplusKey()">Save</button>
+    </div>
+
+    <div id="byteplusKeyStatus" class="key-status"></div>
+
+    {% if has_byteplus_key %}
+    <div class="key-current">
+      Current key: <code>{{ masked_byteplus_key }}</code>
     </div>
     {% endif %}
   </section>
@@ -170,9 +194,9 @@
             <tr>
               <td class="td-time">{{ entry.ts[:16].replace('T',' ') }}</td>
               <td>
-                {% if entry.model == 'gemini-2.5-flash-image' %}
+                {% if entry.model in ['gemini-2.5-flash-image', 'fal-ai/gemini-25-flash-image'] %}
                   <span class="badge badge-nb">NB</span>
-                {% elif entry.model == 'gemini-3-pro-image-preview' %}
+                {% elif entry.model in ['gemini-3-pro-image-preview', 'fal-ai/nano-banana-pro'] %}
                   <span class="badge badge-pro">Pro</span>
                 {% elif entry.model in ['fal-ai/bytedance/seedream/v4.5/text-to-image', 'seedream-4-5-251128'] %}
                   <span class="badge badge-sd">SD45</span>
@@ -240,27 +264,47 @@
       </thead>
       <tbody>
         <tr>
-          <td><span class="badge badge-nb">NB</span> Nano Banana</td>
+          <td><span class="badge badge-nb">NB</span> Nano Banana (Gemini)</td>
           <td class="td-na">-</td><td>$0.039</td><td class="td-na">-</td><td class="td-na">-</td>
           <td class="td-free">~500 req/day</td>
         </tr>
         <tr>
-          <td><span class="badge badge-pro">Pro</span> Nano Banana Pro</td>
+          <td><span class="badge badge-nb">NB</span> Nano Banana (Fal)</td>
+          <td class="td-na">-</td><td>$0.039</td><td class="td-na">-</td><td class="td-na">-</td>
+          <td class="td-free">Fal billed separately</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-pro">Pro</span> Nano Banana Pro (Gemini)</td>
           <td class="td-na">-</td><td>$0.134</td><td>$0.134</td><td>$0.240</td>
           <td class="td-na">None</td>
         </tr>
         <tr>
-          <td><span class="badge badge-nb2">NB2</span> Nano Banana 2</td>
+          <td><span class="badge badge-pro">Pro</span> Nano Banana Pro (Fal)</td>
+          <td class="td-na">-</td><td>$0.150</td><td>$0.150</td><td>$0.300</td>
+          <td class="td-free">Fal billed separately</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-nb2">NB2</span> Nano Banana 2 (Gemini)</td>
           <td>$0.045</td><td>$0.067</td><td>$0.101</td><td>$0.151</td>
           <td class="td-free">~500 req/day (1K)</td>
-                </tr>
+        </tr>
         <tr>
-          <td><span class="badge badge-sd">SD45</span> Seedream 4.5</td>
+          <td><span class="badge badge-nb2">NB2</span> Nano Banana 2 (Fal)</td>
+          <td>$0.060</td><td>$0.080</td><td>$0.120</td><td>$0.160</td>
+          <td class="td-free">Fal billed separately</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-sd">SD45</span> Seedream 4.5 (Fal)</td>
           <td class="td-na">-</td><td class="td-na">-</td><td>$0.040</td><td>$0.040</td>
           <td class="td-free">Fal billed separately</td>
         </tr>
         <tr>
-          <td><span class="badge badge-sd">SD5</span> Seedream 5 Lite</td>
+          <td><span class="badge badge-sd">SD45</span> Seedream 4.5 (BytePlus)</td>
+          <td class="td-na">-</td><td class="td-na">-</td><td>$0.040</td><td>$0.040</td>
+          <td class="td-free">BytePlus billed separately</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-sd">SD5</span> Seedream 5 Lite (Fal)</td>
           <td class="td-na">-</td><td class="td-na">-</td><td>$0.035</td><td>$0.035</td>
           <td class="td-free">Fal billed separately</td>
         </tr>
@@ -397,20 +441,20 @@ async function resetStats() {
 }
 
 
-function toggleSeedreamKeyVisibility() {
-  const inp = document.getElementById("seedreamApiKeyInput");
+function toggleFalKeyVisibility() {
+  const inp = document.getElementById("falApiKeyInput");
   inp.type = inp.type === "password" ? "text" : "password";
 }
 
-async function verifySeedreamKey() {
-  const inp = document.getElementById("seedreamApiKeyInput");
+async function verifyFalKey() {
+  const inp = document.getElementById("falApiKeyInput");
   const key = inp.value.trim();
   if (!key || key.startsWith("*")) {
-    showSeedreamKeyStatus("Please enter the new Fal key to verify first", "error");
+    showFalKeyStatus("Please enter the new Fal key to verify first", "error");
     return;
   }
-  const btn = document.getElementById("verifySeedreamBtn");
-  const label = document.getElementById("verifySeedreamLabel");
+  const btn = document.getElementById("verifyFalBtn");
+  const label = document.getElementById("verifyFalLabel");
   label.textContent = "Verifying...";
   btn.disabled = true;
   try {
@@ -421,22 +465,22 @@ async function verifySeedreamKey() {
     });
     const d = await r.json();
     if (d.ok) {
-      showSeedreamKeyStatus("OK: " + (d.message || "Valid key!"), "success");
+      showFalKeyStatus("OK: " + (d.message || "Valid key!"), "success");
     } else {
-      showSeedreamKeyStatus("Error: " + (d.error || "Invalid key"), "error");
+      showFalKeyStatus("Error: " + (d.error || "Invalid key"), "error");
     }
   } catch(e) {
-    showSeedreamKeyStatus("Network error: " + e.message, "error");
+    showFalKeyStatus("Network error: " + e.message, "error");
   }
   label.textContent = "Verify";
   btn.disabled = false;
 }
 
-async function saveSeedreamKey() {
-  const inp = document.getElementById("seedreamApiKeyInput");
+async function saveFalKey() {
+  const inp = document.getElementById("falApiKeyInput");
   const key = inp.value.trim();
   if (!key || key.startsWith("*")) {
-    showSeedreamKeyStatus("Please enter the new Fal key before saving", "error");
+    showFalKeyStatus("Please enter the new Fal key before saving", "error");
     return;
   }
   const r = await fetch("/api/save-config", {
@@ -446,15 +490,78 @@ async function saveSeedreamKey() {
   });
   const d = await r.json();
   if (d.ok) {
-    showSeedreamKeyStatus("Fal key saved successfully", "success");
+    showFalKeyStatus("Fal key saved successfully", "success");
     inp.type = "password";
     inp.value = "*".repeat(20);
     setTimeout(() => location.reload(), 1000);
   }
 }
 
-function showSeedreamKeyStatus(msg, type) {
-  const el = document.getElementById("seedreamKeyStatus");
+function showFalKeyStatus(msg, type) {
+  const el = document.getElementById("falKeyStatus");
+  el.textContent = msg;
+  el.className = "key-status " + type;
+  el.style.display = "block";
+}
+
+function toggleByteplusKeyVisibility() {
+  const inp = document.getElementById("byteplusApiKeyInput");
+  inp.type = inp.type === "password" ? "text" : "password";
+}
+
+async function verifyByteplusKey() {
+  const inp = document.getElementById("byteplusApiKeyInput");
+  const key = inp.value.trim();
+  if (!key || key.startsWith("*")) {
+    showByteplusKeyStatus("Please enter the new BytePlus key to verify first", "error");
+    return;
+  }
+  const btn = document.getElementById("verifyByteplusBtn");
+  const label = document.getElementById("verifyByteplusLabel");
+  label.textContent = "Verifying...";
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/verify-byteplus-key", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({byteplus_api_key: key})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showByteplusKeyStatus("OK: " + (d.message || "Valid key!"), "success");
+    } else {
+      showByteplusKeyStatus("Error: " + (d.error || "Invalid key"), "error");
+    }
+  } catch(e) {
+    showByteplusKeyStatus("Network error: " + e.message, "error");
+  }
+  label.textContent = "Verify";
+  btn.disabled = false;
+}
+
+async function saveByteplusKey() {
+  const inp = document.getElementById("byteplusApiKeyInput");
+  const key = inp.value.trim();
+  if (!key || key.startsWith("*")) {
+    showByteplusKeyStatus("Please enter the new BytePlus key before saving", "error");
+    return;
+  }
+  const r = await fetch("/api/save-config", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({byteplus_api_key: key})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showByteplusKeyStatus("BytePlus key saved successfully", "success");
+    inp.type = "password";
+    inp.value = "*".repeat(20);
+    setTimeout(() => location.reload(), 1000);
+  }
+}
+
+function showByteplusKeyStatus(msg, type) {
+  const el = document.getElementById("byteplusKeyStatus");
   el.textContent = msg;
   el.className = "key-status " + type;
   el.style.display = "block";

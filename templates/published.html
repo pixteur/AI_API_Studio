@@ -138,12 +138,15 @@ function openLightbox(date, filename, meta) {
   document.getElementById("pubLbImg").src = imgUrl;
 
   const modelLabels = {
-    "gemini-2.5-flash-image":         "Nano Banana",
-    "gemini-3-pro-image-preview":     "Nano Banana Pro",
+    "gemini-2.5-flash-image": "Nano Banana",
+    "fal-ai/gemini-25-flash-image": "Nano Banana",
+    "gemini-3-pro-image-preview": "Nano Banana Pro",
+    "fal-ai/nano-banana-pro": "Nano Banana Pro",
     "gemini-3.1-flash-image-preview": "Nano Banana 2",
-  "fal-ai/bytedance/seedream/v4.5/text-to-image": "Seedream 4.5",
-  "seedream-4-5-251128": "Seedream 4.5",
-  "fal-ai/bytedance/seedream/v5/lite/text-to-image": "Seedream 5 Lite"
+    "fal-ai/nano-banana-2": "Nano Banana 2",
+    "fal-ai/bytedance/seedream/v4.5/text-to-image": "Seedream 4.5",
+    "seedream-4-5-251128": "Seedream 4.5",
+    "fal-ai/bytedance/seedream/v5/lite/text-to-image": "Seedream 5 Lite"
   };
 
   const label = modelLabels[meta.model] || meta.model_label || meta.model || "";

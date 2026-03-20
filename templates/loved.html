@@ -97,8 +97,8 @@
 
             <!-- Model badge bottom-left (appears on hover) -->
             <div class="img-card-badge">
-              {% if m.model == 'gemini-2.5-flash-image' %}NB
-              {% elif m.model == 'gemini-3-pro-image-preview' %}PRO
+              {% if m.model in ['gemini-2.5-flash-image', 'fal-ai/gemini-25-flash-image'] %}NB
+              {% elif m.model in ['gemini-3-pro-image-preview', 'fal-ai/nano-banana-pro'] %}PRO
               {% elif m.model in ['fal-ai/bytedance/seedream/v4.5/text-to-image', 'seedream-4-5-251128'] %}SD45
               {% elif m.model == 'fal-ai/bytedance/seedream/v5/lite/text-to-image' %}SD5
               {% else %}NB2{% endif %}
@@ -171,9 +171,12 @@ const ALL_LOVED = [
 
 <script>
 const MODEL_LABELS = {
-  "gemini-2.5-flash-image":         "Nano Banana",
-  "gemini-3-pro-image-preview":     "Nano Banana Pro",
+  "gemini-2.5-flash-image": "Nano Banana",
+  "fal-ai/gemini-25-flash-image": "Nano Banana",
+  "gemini-3-pro-image-preview": "Nano Banana Pro",
+  "fal-ai/nano-banana-pro": "Nano Banana Pro",
   "gemini-3.1-flash-image-preview": "Nano Banana 2",
+  "fal-ai/nano-banana-2": "Nano Banana 2",
   "fal-ai/bytedance/seedream/v4.5/text-to-image": "Seedream 4.5",
   "seedream-4-5-251128": "Seedream 4.5",
   "fal-ai/bytedance/seedream/v5/lite/text-to-image": "Seedream 5 Lite"

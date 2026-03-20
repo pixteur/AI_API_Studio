@@ -24,7 +24,7 @@ def _bootstrap():
         return
     pkgs = [pkg for _, pkg in missing]
     print("\n" + "="*52)
-    print("  Nano Banana Studio - First-run Setup")
+    print(f"  Nano Banana Studio {APP_VERSION} - First-run Setup")
     print("="*52)
     print(f"  Missing packages: {', '.join(pkgs)}")
     print("  Installing automatically... (one-time only)\n")
@@ -54,7 +54,7 @@ import shutil
 import sqlite3
 import unicodedata
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 from uuid import uuid4
 from flask import (Flask, render_template, request, redirect,
@@ -63,6 +63,12 @@ from PIL import Image, ImageOps
 
 app = Flask(__name__)
 app.secret_key = "nb-studio-secret-2024-change-me"
+
+APP_VERSION = "1.1 beta"
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 # ---------------------------------------------------------------------------
 # Credenziali login
@@ -93,6 +99,7 @@ DEFAULT_CONFIG = {
     "api_key": "",
     "seedream_api_key": "",
     "fal_api_key": "",
+    "byteplus_api_key": "",
     "stats": {
         "total_requests":   0,
         "total_images":     0,
@@ -108,7 +115,8 @@ DEFAULT_CONFIG = {
 # ---------------------------------------------------------------------------
 # Price per image in USD (verified March 2026)
 # Gemini source: ai.google.dev/gemini-api/docs/pricing
-# fal Seedream sources: fal.ai model pages
+# fal sources: fal.ai model pages
+# BytePlus source: docs.byteplus.com ModelArk pricing
 # ---------------------------------------------------------------------------
 PRICING = {
     "gemini-2.5-flash-image": {
@@ -120,11 +128,20 @@ PRICING = {
     "gemini-3.1-flash-image-preview": {
         "0.5K": 0.045, "1K": 0.067, "2K": 0.101, "4K": 0.151
     },
+    "fal-ai/gemini-25-flash-image": {
+        "0.5K": 0.0,   "1K": 0.039, "2K": 0.039, "4K": 0.039
+    },
+    "fal-ai/nano-banana-pro": {
+        "0.5K": 0.0,   "1K": 0.150, "2K": 0.150, "4K": 0.300
+    },
+    "fal-ai/nano-banana-2": {
+        "0.5K": 0.060, "1K": 0.080, "2K": 0.120, "4K": 0.160
+    },
     "fal-ai/bytedance/seedream/v4.5/text-to-image": {
-        "0.5K": 0.0, "1K": 0.0, "2K": 0.04, "4K": 0.04
+        "0.5K": 0.0, "1K": 0.0, "2K": 0.040, "4K": 0.040
     },
     "seedream-4-5-251128": {
-        "0.5K": 0.0, "1K": 0.0, "2K": 0.04, "4K": 0.04
+        "0.5K": 0.0, "1K": 0.0, "2K": 0.040, "4K": 0.040
     },
     "fal-ai/bytedance/seedream/v5/lite/text-to-image": {
         "0.5K": 0.0, "1K": 0.0, "2K": 0.035, "4K": 0.035
@@ -136,41 +153,107 @@ PRICING = {
 # ---------------------------------------------------------------------------
 ASPECT_RATIOS_BASE      = ["1:1","16:9","9:16","4:3","3:4","3:2","2:3","21:9","5:4","4:5"]
 ASPECT_RATIOS_NB2_EXTRA = ["4:1","1:4","8:1","1:8"]
-ASPECT_RATIOS_FAL       = ["1:1","16:9","9:16","4:3","3:4"]
+ASPECT_RATIOS_FAL       = ["1:1","16:9","9:16","4:3","3:4","3:2","2:3","21:9","5:4","4:5"]
+ASPECT_RATIOS_BYTEPLUS  = ["1:1","16:9","9:16","4:3","3:4"]
+
+PROVIDER_LABELS = {
+    "gemini": "Gemini",
+    "fal": "Fal",
+    "byteplus": "BytePlus",
+}
+
+GEMINI_BASE_URL                 = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+FAL_BASE_URL                    = "https://fal.run"
+BYTEPLUS_BASE_URL               = "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations"
+FAL_NANO_BANANA_TEXT_ID         = "fal-ai/gemini-25-flash-image"
+FAL_NANO_BANANA_EDIT_ID         = "fal-ai/gemini-25-flash-image/edit"
+FAL_NANO_BANANA_PRO_TEXT_ID     = "fal-ai/nano-banana-pro"
+FAL_NANO_BANANA_PRO_EDIT_ID     = "fal-ai/nano-banana-pro/edit"
+FAL_NANO_BANANA_2_TEXT_ID       = "fal-ai/nano-banana-2"
+FAL_NANO_BANANA_2_EDIT_ID       = "fal-ai/nano-banana-2/edit"
+FAL_SEEDREAM_45_TEXT_ID         = "fal-ai/bytedance/seedream/v4.5/text-to-image"
+FAL_SEEDREAM_45_EDIT_ID         = "fal-ai/bytedance/seedream/v4.5/edit"
+FAL_SEEDREAM_5_TEXT_ID          = "fal-ai/bytedance/seedream/v5/lite/text-to-image"
+FAL_SEEDREAM_5_EDIT_ID          = "fal-ai/bytedance/seedream/v5/lite/edit"
+BYTEPLUS_SEEDREAM_45_MODEL_ID   = "seedream-4-5-251128"
 
 MODELS_INFO = {
     "gemini-2.5-flash-image": {
         "provider":       "gemini",
+        "provider_label": "Gemini",
+        "family":         "nano-banana",
         "label":          "Nano Banana",
         "resolutions":    ["1K"],
         "thinking":       False,
         "aspect_ratios":  ASPECT_RATIOS_BASE,
         "max_images":     4,
         "max_ref_images": 0,
-        "ref_note":       "Does not support reference images"
+        "ref_note":       "Gemini API mode - does not support reference images"
+    },
+    "fal-ai/gemini-25-flash-image": {
+        "provider":       "fal",
+        "provider_label": "Fal",
+        "family":         "nano-banana",
+        "label":          "Nano Banana",
+        "resolutions":    ["1K"],
+        "thinking":       False,
+        "aspect_ratios":  ASPECT_RATIOS_FAL,
+        "max_images":     4,
+        "max_ref_images": 14,
+        "ref_note":       "Fal API mode - up to 14 reference images"
     },
     "gemini-3-pro-image-preview": {
         "provider":       "gemini",
+        "provider_label": "Gemini",
+        "family":         "nano-banana-pro",
         "label":          "Nano Banana Pro",
         "resolutions":    ["1K","2K","4K"],
         "thinking":       False,
         "aspect_ratios":  ASPECT_RATIOS_BASE,
         "max_images":     4,
         "max_ref_images": 8,
-        "ref_note":       "Up to 8 reference images"
+        "ref_note":       "Gemini API mode - up to 8 reference images"
+    },
+    "fal-ai/nano-banana-pro": {
+        "provider":       "fal",
+        "provider_label": "Fal",
+        "family":         "nano-banana-pro",
+        "label":          "Nano Banana Pro",
+        "resolutions":    ["1K","2K","4K"],
+        "thinking":       False,
+        "aspect_ratios":  ASPECT_RATIOS_FAL,
+        "max_images":     4,
+        "max_ref_images": 14,
+        "ref_note":       "Fal API mode - up to 14 reference images"
     },
     "gemini-3.1-flash-image-preview": {
         "provider":       "gemini",
+        "provider_label": "Gemini",
+        "family":         "nano-banana-2",
         "label":          "Nano Banana 2",
         "resolutions":    ["0.5K","1K","2K","4K"],
         "thinking":       True,
         "aspect_ratios":  ASPECT_RATIOS_BASE + ASPECT_RATIOS_NB2_EXTRA,
         "max_images":     4,
         "max_ref_images": 14,
-        "ref_note":       "Up to 14 reference images"
+        "ref_note":       "Gemini API mode - up to 14 reference images"
+    },
+    "fal-ai/nano-banana-2": {
+        "provider":       "fal",
+        "provider_label": "Fal",
+        "family":         "nano-banana-2",
+        "label":          "Nano Banana 2",
+        "resolutions":    ["0.5K","1K","2K","4K"],
+        "thinking":       False,
+        "aspect_ratios":  ASPECT_RATIOS_FAL,
+        "max_images":     4,
+        "max_ref_images": 14,
+        "ref_note":       "Fal API mode - up to 14 reference images"
     },
     "fal-ai/bytedance/seedream/v4.5/text-to-image": {
         "provider":       "fal",
+        "provider_label": "Fal",
+        "family":         "seedream-45",
         "label":          "Seedream 4.5",
         "resolutions":    ["2K","4K"],
         "thinking":       False,
@@ -180,17 +263,21 @@ MODELS_INFO = {
         "ref_note":       "Fal API mode - up to 10 reference images"
     },
     "seedream-4-5-251128": {
-        "provider":       "fal",
+        "provider":       "byteplus",
+        "provider_label": "BytePlus",
+        "family":         "seedream-45",
         "label":          "Seedream 4.5",
         "resolutions":    ["2K","4K"],
         "thinking":       False,
-        "aspect_ratios":  ASPECT_RATIOS_FAL,
+        "aspect_ratios":  ASPECT_RATIOS_BYTEPLUS,
         "max_images":     4,
         "max_ref_images": 10,
-        "ref_note":       "Legacy Seedream 4.5 entries map to the Fal 4.5 route"
+        "ref_note":       "BytePlus API mode - up to 10 reference images"
     },
     "fal-ai/bytedance/seedream/v5/lite/text-to-image": {
         "provider":       "fal",
+        "provider_label": "Fal",
+        "family":         "seedream-5-lite",
         "label":          "Seedream 5 Lite",
         "resolutions":    ["2K","4K"],
         "thinking":       False,
@@ -201,12 +288,97 @@ MODELS_INFO = {
     }
 }
 
-GEMINI_BASE_URL          = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-FAL_BASE_URL             = "https://fal.run"
-FAL_SEEDREAM_45_TEXT_ID  = "fal-ai/bytedance/seedream/v4.5/text-to-image"
-FAL_SEEDREAM_45_EDIT_ID  = "fal-ai/bytedance/seedream/v4.5/edit"
-FAL_SEEDREAM_5_TEXT_ID   = "fal-ai/bytedance/seedream/v5/lite/text-to-image"
-FAL_SEEDREAM_5_EDIT_ID   = "fal-ai/bytedance/seedream/v5/lite/edit"
+MODEL_FAMILIES = {
+    "nano-banana-2": {
+        "label": "Nano Banana 2",
+        "badge": "NB2",
+        "default_provider": "gemini",
+        "provider_order": ["gemini", "fal"],
+        "providers": {
+            "gemini": "gemini-3.1-flash-image-preview",
+            "fal": FAL_NANO_BANANA_2_TEXT_ID,
+        },
+    },
+    "seedream-45": {
+        "label": "Seedream 4.5",
+        "badge": "SD45",
+        "default_provider": "fal",
+        "provider_order": ["fal", "byteplus"],
+        "providers": {
+            "fal": FAL_SEEDREAM_45_TEXT_ID,
+            "byteplus": BYTEPLUS_SEEDREAM_45_MODEL_ID,
+        },
+    },
+    "seedream-5-lite": {
+        "label": "Seedream 5 Lite",
+        "badge": "SD5",
+        "default_provider": "fal",
+        "provider_order": ["fal"],
+        "providers": {
+            "fal": FAL_SEEDREAM_5_TEXT_ID,
+        },
+    },
+    "nano-banana-pro": {
+        "label": "Nano Banana Pro",
+        "badge": "PRO",
+        "default_provider": "gemini",
+        "provider_order": ["gemini", "fal"],
+        "providers": {
+            "gemini": "gemini-3-pro-image-preview",
+            "fal": FAL_NANO_BANANA_PRO_TEXT_ID,
+        },
+    },
+    "nano-banana": {
+        "label": "Nano Banana",
+        "badge": "NB",
+        "default_provider": "gemini",
+        "provider_order": ["gemini", "fal"],
+        "providers": {
+            "gemini": "gemini-2.5-flash-image",
+            "fal": FAL_NANO_BANANA_TEXT_ID,
+        },
+    },
+}
+
+
+def resolve_model_selection(requested_model: str = "", requested_family: str = "", requested_provider: str = "") -> tuple[str, str, str, dict]:
+    model_id = str(requested_model or "").strip()
+    family_key = str(requested_family or "").strip()
+    provider_key = str(requested_provider or "").strip().lower()
+
+    if family_key in MODEL_FAMILIES:
+        family_info = MODEL_FAMILIES[family_key]
+        available = family_info.get("providers", {})
+        if provider_key not in available:
+            provider_key = family_info.get("default_provider", "") or next(iter(available.keys()), "")
+        model_id = available.get(provider_key, model_id)
+        model_info = MODELS_INFO.get(model_id)
+        if model_info:
+            return model_id, family_key, provider_key, model_info
+
+    if model_id in MODELS_INFO:
+        model_info = MODELS_INFO[model_id]
+        return model_id, model_info.get("family", family_key or "nano-banana-2"), model_info.get("provider", provider_key or "gemini"), model_info
+
+    fallback_family = "nano-banana-2"
+    fallback_provider = MODEL_FAMILIES[fallback_family]["default_provider"]
+    fallback_model = MODEL_FAMILIES[fallback_family]["providers"][fallback_provider]
+    return fallback_model, fallback_family, fallback_provider, MODELS_INFO[fallback_model]
+
+
+def normalize_generation_request(body: dict | None) -> dict:
+    payload = dict(body or {})
+    model_id, family_key, provider_key, model_info = resolve_model_selection(
+        payload.get("model", ""),
+        payload.get("modelFamily", ""),
+        payload.get("provider", ""),
+    )
+    payload["model"] = model_id
+    payload["modelFamily"] = family_key
+    payload["provider"] = provider_key
+    payload["modelLabel"] = model_info.get("label", model_id)
+    payload["providerLabel"] = model_info.get("provider_label", PROVIDER_LABELS.get(provider_key, provider_key.title()))
+    return payload
 
 # ---------------------------------------------------------------------------
 # Vocabolario canonico â€” caricato da talent_vocabulary.json se presente
@@ -443,7 +615,7 @@ def init_studio_db():
         """
     )
     ensure_task_runs_columns(conn)
-    now_ts = datetime.utcnow().isoformat()
+    now_ts = utc_now_iso()
     for template in DEFAULT_TASK_TEMPLATES:
         conn.execute(
             """
@@ -686,7 +858,7 @@ def save_task_run(plan: dict) -> dict:
         """,
         (
             run_uuid,
-            plan.get("created_at") or datetime.utcnow().isoformat(),
+            plan.get("created_at") or utc_now_iso(),
             brief.get("client_name", ""),
             brief.get("project_name", ""),
             plan.get("task_slug", ""),
@@ -756,7 +928,7 @@ def update_task_run_after_generation(run_uuid: str, generation_result: dict | No
     run_count = int(item.get("run_count") or 0)
     actual_images = int(item.get("actual_images") or 0)
     actual_cost = float(item.get("actual_cost_usd") or 0.0)
-    now_ts = datetime.utcnow().isoformat()
+    now_ts = utc_now_iso()
     if generation_result is not None:
         actual_images += len(generation_result.get("images", []))
         actual_cost += float(generation_result.get("cost", 0.0) or 0.0)
@@ -1227,6 +1399,14 @@ def build_gemini_safety_settings(profile: str) -> tuple[list[dict] | None, str]:
     return ([{"category": category, "threshold": threshold} for category in GEMINI_SAFETY_CATEGORIES], normalized)
 
 
+def normalize_fal_safety_tolerance(value) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 4
+    return max(1, min(parsed, 6))
+
+
 def compress_seedream_ref_image(image_b64: str, mime_type: str) -> tuple[str, str]:
     """Shrink/compress a reference image until it fits BytePlus Seedream's 10 MiB limit."""
     raw = base64.b64decode(image_b64)
@@ -1269,7 +1449,17 @@ def compress_seedream_ref_image(image_b64: str, mime_type: str) -> tuple[str, st
         return base64.b64encode(payload).decode("utf-8"), "image/jpeg"
 
 
-def build_seedream_ref_inputs(ref_images: list[dict]) -> list[str]:
+def build_data_uri_ref_inputs(ref_images: list[dict]) -> list[str]:
+    items = []
+    for img in ref_images:
+        mime = img.get("mime_type", "image/png")
+        data = img.get("data", "")
+        if data:
+            items.append(f"data:{mime};base64,{data}")
+    return items
+
+
+def build_byteplus_seedream_ref_inputs(ref_images: list[dict]) -> list[str]:
     items = []
     for img in ref_images:
         mime = img.get("mime_type", "image/png")
@@ -1305,6 +1495,29 @@ def extract_fal_error(resp: requests.Response) -> str:
     return f"HTTP {resp.status_code}"
 
 
+def extract_byteplus_error(resp: requests.Response) -> str:
+    try:
+        payload = resp.json()
+    except Exception:
+        raw = (resp.text or "").strip()
+        return raw or f"HTTP {resp.status_code}"
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            code = str(error.get("code") or "").strip()
+            message = str(error.get("message") or error.get("msg") or "").strip()
+            if code and message:
+                return f"{code} - {message}"
+            if message:
+                return message
+        for key in ("message", "msg", "detail"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                code = str(payload.get("code") or "").strip()
+                return f"{code} - {value.strip()}" if code else value.strip()
+    return f"HTTP {resp.status_code}"
+
+
 def build_fal_seedream_image_size(model_id: str, image_size: str) -> str:
     normalized = (image_size or "2K").strip().upper()
     if model_id == FAL_SEEDREAM_5_TEXT_ID:
@@ -1313,11 +1526,32 @@ def build_fal_seedream_image_size(model_id: str, image_size: str) -> str:
 
 
 def build_fal_seedream_endpoint(model_id: str, has_refs: bool) -> str:
-    if model_id in (FAL_SEEDREAM_45_TEXT_ID, "seedream-4-5-251128"):
+    if model_id == FAL_SEEDREAM_45_TEXT_ID:
         return FAL_SEEDREAM_45_EDIT_ID if has_refs else FAL_SEEDREAM_45_TEXT_ID
     if model_id == FAL_SEEDREAM_5_TEXT_ID:
         return FAL_SEEDREAM_5_EDIT_ID if has_refs else FAL_SEEDREAM_5_TEXT_ID
     raise ValueError("Unsupported Fal Seedream model")
+
+
+def build_fal_nano_banana_endpoint(model_id: str, has_refs: bool) -> str:
+    if model_id == FAL_NANO_BANANA_TEXT_ID:
+        return FAL_NANO_BANANA_EDIT_ID if has_refs else FAL_NANO_BANANA_TEXT_ID
+    if model_id == FAL_NANO_BANANA_PRO_TEXT_ID:
+        return FAL_NANO_BANANA_PRO_EDIT_ID if has_refs else FAL_NANO_BANANA_PRO_TEXT_ID
+    if model_id == FAL_NANO_BANANA_2_TEXT_ID:
+        return FAL_NANO_BANANA_2_EDIT_ID if has_refs else FAL_NANO_BANANA_2_TEXT_ID
+    raise ValueError("Unsupported Fal Nano Banana model")
+
+
+def build_fal_nano_banana_resolution(model_id: str, image_size: str) -> str:
+    normalized = (image_size or "1K").strip().upper()
+    if model_id == FAL_NANO_BANANA_TEXT_ID:
+        return "1K"
+    if model_id == FAL_NANO_BANANA_PRO_TEXT_ID and normalized not in {"1K", "2K", "4K"}:
+        return "1K"
+    if model_id == FAL_NANO_BANANA_2_TEXT_ID and normalized not in {"0.5K", "1K", "2K", "4K"}:
+        return "1K"
+    return normalized
 
 
 def decode_fal_image_result(item: dict) -> dict | None:
@@ -1389,9 +1623,15 @@ def logout():
 @login_required
 def index():
     config = load_config()
-    has_key = bool(config.get("api_key", "").strip() or config.get("fal_api_key", "").strip())
+    has_key = bool(
+        config.get("api_key", "").strip()
+        or config.get("fal_api_key", "").strip()
+        or config.get("byteplus_api_key", "").strip()
+    )
     return render_template("index.html",
                            models=MODELS_INFO,
+                           model_families=MODEL_FAMILIES,
+                           provider_labels=PROVIDER_LABELS,
                            has_key=has_key,
                            user=session["user"])
 
@@ -1403,11 +1643,14 @@ def settings():
     stats = config.get("stats", DEFAULT_CONFIG["stats"])
     api_key = config.get("api_key", "")
     fal_api_key = config.get("fal_api_key", "")
+    byteplus_api_key = config.get("byteplus_api_key", "") or config.get("seedream_api_key", "")
     return render_template("settings.html",
                            masked_key=mask_api_key(api_key),
                            has_key=bool(api_key),
-                           masked_seedream_key=mask_api_key(fal_api_key),
-                           has_seedream_key=bool(fal_api_key),
+                           masked_fal_key=mask_api_key(fal_api_key),
+                           has_fal_key=bool(fal_api_key),
+                           masked_byteplus_key=mask_api_key(byteplus_api_key),
+                           has_byteplus_key=bool(byteplus_api_key),
                            stats=stats,
                            vision_models=VISION_MODELS_INFO,
                            analysis_model=TALENT_ANALYSIS_MODEL,
@@ -2023,7 +2266,7 @@ def api_analyze_talent_image():
     sv["vision_cost_usd"] = round(sv.get("vision_cost_usd", 0.0) + vision_cost, 8)
     vlog   = sv.setdefault("vision_log", [])
     vlog.insert(0, {
-        "ts":           datetime.utcnow().isoformat(),
+        "ts":           utc_now_iso(),
         "model":        TALENT_ANALYSIS_MODEL,
         "input_tok":    input_tokens,
         "output_tok":   output_tokens,
@@ -2180,8 +2423,12 @@ def api_save_config():
         config["api_key"] = data["api_key"].strip()
     if "fal_api_key" in data:
         config["fal_api_key"] = data["fal_api_key"].strip()
+    if "byteplus_api_key" in data:
+        config["byteplus_api_key"] = data["byteplus_api_key"].strip()
+        config["seedream_api_key"] = data["byteplus_api_key"].strip()
     if "seedream_api_key" in data:
-        config["fal_api_key"] = data["seedream_api_key"].strip()
+        config["byteplus_api_key"] = data["seedream_api_key"].strip()
+        config["seedream_api_key"] = data["seedream_api_key"].strip()
     save_config(config)
     return jsonify({"ok": True})
 
@@ -2195,7 +2442,7 @@ def api_verify_fal_key():
     if not key:
         return jsonify({"ok": False, "error": "Fal API key is empty"})
     payload = {
-        "prompt": "Fal key verification image",
+        "prompt": "Fal provider verification image",
         "image_size": "auto_2K",
         "num_images": 1,
         "max_images": 1,
@@ -2210,8 +2457,40 @@ def api_verify_fal_key():
     try:
         resp = requests.post(f"{FAL_BASE_URL}/{FAL_SEEDREAM_45_TEXT_ID}", headers=headers, json=payload, timeout=45)
         if resp.status_code == 200:
-            return jsonify({"ok": True, "message": "Valid Fal key and Seedream access confirmed."})
+            return jsonify({"ok": True, "message": "Valid Fal key and model access confirmed."})
         return jsonify({"ok": False, "error": extract_fal_error(resp)})
+    except requests.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Connection timeout"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/verify-byteplus-key", methods=["POST"])
+@login_required
+def api_verify_byteplus_key():
+    data = request.get_json() or {}
+    key = (data.get("byteplus_api_key") or data.get("seedream_api_key") or "").strip()
+    if not key:
+        return jsonify({"ok": False, "error": "BytePlus API key is empty"})
+    payload = {
+        "model": BYTEPLUS_SEEDREAM_45_MODEL_ID,
+        "prompt": "BytePlus provider verification image",
+        "sequential_image_generation": "disabled",
+        "response_format": "url",
+        "size": "2K",
+        "stream": False,
+        "watermark": False,
+    }
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        resp = requests.post(BYTEPLUS_BASE_URL, headers=headers, json=payload, timeout=45)
+        if resp.status_code == 200:
+            return jsonify({"ok": True, "message": "Valid BytePlus key and Seedream access confirmed."})
+        return jsonify({"ok": False, "error": extract_byteplus_error(resp)})
     except requests.exceptions.Timeout:
         return jsonify({"ok": False, "error": "Connection timeout"})
     except Exception as e:
@@ -2249,6 +2528,7 @@ def api_verify_key():
 # API â€” Generate (con supporto immagini di riferimento)
 # ---------------------------------------------------------------------------
 def run_gemini_generation_job(body: dict, api_key: str) -> dict:
+    body = normalize_generation_request(body)
     model_id     = body.get("model", "gemini-3.1-flash-image-preview")
     image_size   = body.get("imageSize", "1K")
     num_images   = max(1, min(int(body.get("numberOfImages", 1)), 4))
@@ -2419,7 +2699,10 @@ def run_gemini_generation_job(body: dict, api_key: str) -> dict:
     cost = price_per_image * len(images)
     params_meta = {
         "model": model_id,
+        "modelFamily": body.get("modelFamily", model_info.get("family", "")),
         "model_label": model_info["label"],
+        "provider": body.get("provider", model_info.get("provider", "gemini")),
+        "provider_label": model_info.get("provider_label", PROVIDER_LABELS.get(body.get("provider", "gemini"), "Gemini")),
         "imageSize": image_size,
         "aspectRatio": aspect_ratio,
         "temperature": temperature,
@@ -2453,8 +2736,9 @@ def persist_generation_result(result: dict):
     params = result.get("params", {})
     raw_ref_images = result.pop("_input_ref_images", [])
     log_entry = {
-        "ts": datetime.utcnow().isoformat(),
+        "ts": utc_now_iso(),
         "model": params.get("model", ""),
+        "provider": params.get("provider", ""),
         "size": params.get("imageSize", ""),
         "aspect": params.get("aspectRatio", ""),
         "n": len(result.get("images", [])),
@@ -2507,6 +2791,7 @@ def persist_generation_result(result: dict):
 
 
 def run_fal_seedream_generation_job(body: dict, api_key: str) -> dict:
+    body = normalize_generation_request(body)
     model_id = body.get("model", FAL_SEEDREAM_45_TEXT_ID)
     image_size = body.get("imageSize", "2K")
     num_images = max(1, min(int(body.get("numberOfImages", 1)), 4))
@@ -2551,7 +2836,7 @@ def run_fal_seedream_generation_job(body: dict, api_key: str) -> dict:
         "enable_safety_checker": enable_safety_checker,
     }
     if ref_images:
-        payload["image_urls"] = build_seedream_ref_inputs(ref_images)
+        payload["image_urls"] = build_data_uri_ref_inputs(ref_images)
 
     actual_seed = None
     if seed_mode != "random":
@@ -2599,8 +2884,10 @@ def run_fal_seedream_generation_job(body: dict, api_key: str) -> dict:
     cost = price_per_image * len(png_images)
     params_meta = {
         "model": model_id,
+        "modelFamily": body.get("modelFamily", model_info.get("family", "")),
         "model_label": model_info["label"],
-        "provider": model_info.get("provider", "fal"),
+        "provider": body.get("provider", model_info.get("provider", "fal")),
+        "provider_label": model_info.get("provider_label", PROVIDER_LABELS.get(body.get("provider", "fal"), "Fal")),
         "imageSize": image_size,
         "aspectRatio": aspect_ratio,
         "temperature": float(body.get("temperature", 1.0)),
@@ -2625,20 +2912,276 @@ def run_fal_seedream_generation_job(body: dict, api_key: str) -> dict:
     }
 
 
-def run_generation_job(body: dict, config: dict) -> dict:
-    model_id = body.get("model", "gemini-3.1-flash-image-preview")
+def run_fal_nano_banana_generation_job(body: dict, api_key: str) -> dict:
+    body = normalize_generation_request(body)
+    model_id = body.get("model", FAL_NANO_BANANA_2_TEXT_ID)
+    image_size = body.get("imageSize", "1K")
+    num_images = max(1, min(int(body.get("numberOfImages", 1)), 4))
+    aspect_ratio = body.get("aspectRatio", "1:1")
+    ref_images = body.get("refImages", [])
+    use_search = bool(body.get("useSearch", False))
+    fal_safety_tolerance = normalize_fal_safety_tolerance(body.get("falSafetyTolerance", 4))
+    seed_mode = normalize_seed_mode(body.get("seedMode", "random"))
+    seed_value = coerce_seed_value(body.get("seedValue", 1))
+
+    raw_prompt = body.get("prompt", "")
+    if isinstance(raw_prompt, dict):
+        prompt = json.dumps(raw_prompt, ensure_ascii=False, indent=2)
+    else:
+        prompt = str(raw_prompt).strip()
+
+    if not prompt:
+        raise ValueError("Please enter a prompt")
     if model_id not in MODELS_INFO:
         raise ValueError("Invalid model")
-    provider = MODELS_INFO[model_id].get("provider", "gemini")
+
+    model_info = MODELS_INFO[model_id]
+    max_ref = model_info["max_ref_images"]
+    if ref_images and max_ref == 0:
+        raise ValueError(f"{model_info['label']} does not support reference images.")
+    ref_images = [
+        {
+            "mime_type": img.get("mime_type", "image/png"),
+            "data": img.get("data", ""),
+            "name": img.get("name", ""),
+        }
+        for img in (ref_images[:max_ref] if isinstance(ref_images, list) else [])
+        if isinstance(img, dict) and img.get("data")
+    ]
+
+    endpoint = build_fal_nano_banana_endpoint(model_id, bool(ref_images))
+    payload = {
+        "prompt": prompt,
+        "num_images": num_images,
+        "resolution": build_fal_nano_banana_resolution(model_id, image_size),
+        "aspect_ratio": aspect_ratio,
+        "output_format": "png",
+        "sync_mode": True,
+        "safety_tolerance": fal_safety_tolerance,
+    }
+    if ref_images:
+        payload["image_urls"] = build_data_uri_ref_inputs(ref_images)
+    if use_search:
+        payload["enable_web_search"] = True
+    actual_seed = None
+    if seed_mode != "random":
+        actual_seed = seed_value
+        payload["seed"] = actual_seed
+
+    headers = {
+        "Authorization": f"Key {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.post(f"{FAL_BASE_URL}/{endpoint}", headers=headers, json=payload, timeout=240)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: Fal Nano Banana generation took too long.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+
+    if response.status_code != 200:
+        raise RuntimeError(extract_fal_error(response))
+
+    result = response.json()
+    returned_seed = result.get("seed") if isinstance(result, dict) else None
+    items = result.get("images") or result.get("data") or []
+    images = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        decoded = decode_fal_image_result(item)
+        if decoded:
+            images.append(decoded)
+
+    if not images:
+        raise RuntimeError("Fal Nano Banana returned no image for this request.")
+
+    png_images = []
+    for img in images:
+        try:
+            png_b64, png_mime = convert_image_b64_to_png(img.get("data", ""), img.get("mime_type", "image/png"))
+            png_images.append({"mime_type": png_mime, "data": png_b64})
+        except Exception:
+            png_images.append(img)
+
+    price_per_image = PRICING.get(model_id, {}).get(image_size, 0.0)
+    cost = price_per_image * len(png_images)
+    params_meta = {
+        "model": model_id,
+        "modelFamily": body.get("modelFamily", model_info.get("family", "")),
+        "model_label": model_info["label"],
+        "provider": body.get("provider", model_info.get("provider", "fal")),
+        "provider_label": model_info.get("provider_label", PROVIDER_LABELS.get(body.get("provider", "fal"), "Fal")),
+        "imageSize": image_size,
+        "aspectRatio": aspect_ratio,
+        "temperature": float(body.get("temperature", 1.0)),
+        "topP": float(body.get("topP", 0.95)),
+        "thinkingLevel": body.get("thinkingLevel", "Minimal"),
+        "useSearch": use_search,
+        "outputMode": body.get("outputMode", "images_only"),
+        "prompt": prompt,
+        "ref_count": len(ref_images),
+        "seedMode": seed_mode,
+        "seedValue": int(returned_seed if returned_seed is not None else actual_seed if actual_seed is not None else seed_value),
+        "falSafetyTolerance": fal_safety_tolerance,
+    }
+    text_value = ""
+    if isinstance(result, dict):
+        text_value = str(result.get("description") or result.get("text") or "")
+    return {
+        "ok": True,
+        "images": png_images,
+        "text": text_value,
+        "cost": round(cost, 4),
+        "model_label": model_info["label"],
+        "params": params_meta,
+        "_input_ref_images": ref_images,
+    }
+
+
+def run_byteplus_seedream_generation_job(body: dict, api_key: str) -> dict:
+    body = normalize_generation_request(body)
+    model_id = body.get("model", BYTEPLUS_SEEDREAM_45_MODEL_ID)
+    image_size = normalize_seedream_size(body.get("imageSize", "2K"))
+    num_images = max(1, min(int(body.get("numberOfImages", 1)), 4))
+    aspect_ratio = body.get("aspectRatio", "1:1")
+    ref_images = body.get("refImages", [])
+    seed_mode = normalize_seed_mode(body.get("seedMode", "random"))
+    seed_value = coerce_seed_value(body.get("seedValue", 1))
+
+    raw_prompt = body.get("prompt", "")
+    if isinstance(raw_prompt, dict):
+        prompt = json.dumps(raw_prompt, ensure_ascii=False, indent=2)
+    else:
+        prompt = str(raw_prompt).strip()
+
+    if not prompt:
+        raise ValueError("Please enter a prompt")
+    if model_id not in MODELS_INFO:
+        raise ValueError("Invalid model")
+
+    model_info = MODELS_INFO[model_id]
+    max_ref = model_info["max_ref_images"]
+    ref_images = [
+        {
+            "mime_type": img.get("mime_type", "image/png"),
+            "data": img.get("data", ""),
+            "name": img.get("name", ""),
+        }
+        for img in (ref_images[:max_ref] if isinstance(ref_images, list) else [])
+        if isinstance(img, dict) and img.get("data")
+    ]
+
+    payload = {
+        "model": BYTEPLUS_SEEDREAM_45_MODEL_ID,
+        "prompt": prompt,
+        "sequential_image_generation": "auto" if num_images > 1 else "disabled",
+        "response_format": "url",
+        "size": image_size,
+        "stream": False,
+        "watermark": False,
+    }
+    if num_images > 1:
+        payload["sequential_image_generation_options"] = {"max_images": num_images}
+    if ref_images:
+        ref_inputs = build_byteplus_seedream_ref_inputs(ref_images)
+        payload["image"] = ref_inputs[0] if len(ref_inputs) == 1 else ref_inputs
+    if seed_mode != "random":
+        payload["seed"] = seed_value
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.post(BYTEPLUS_BASE_URL, headers=headers, json=payload, timeout=240)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: BytePlus Seedream generation took too long.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+
+    if response.status_code != 200:
+        raise RuntimeError(extract_byteplus_error(response))
+
+    result = response.json()
+    items = result.get("data") or result.get("images") or []
+    images = []
+    for item in items:
+        if isinstance(item, dict):
+            decoded = decode_fal_image_result(item)
+            if decoded:
+                images.append(decoded)
+        elif isinstance(item, str):
+            decoded = decode_fal_image_result({"url": item})
+            if decoded:
+                images.append(decoded)
+
+    if not images:
+        raise RuntimeError("BytePlus Seedream returned no image for this request.")
+
+    price_per_image = PRICING.get(model_id, {}).get(image_size, 0.0)
+    cost = price_per_image * len(images)
+    params_meta = {
+        "model": model_id,
+        "modelFamily": body.get("modelFamily", model_info.get("family", "")),
+        "model_label": model_info["label"],
+        "provider": body.get("provider", model_info.get("provider", "byteplus")),
+        "provider_label": model_info.get("provider_label", PROVIDER_LABELS.get(body.get("provider", "byteplus"), "BytePlus")),
+        "byteplusSafetyMode": str(body.get("byteplusSafetyMode", "platform_default") or "platform_default"),
+        "imageSize": image_size,
+        "aspectRatio": aspect_ratio,
+        "temperature": float(body.get("temperature", 1.0)),
+        "topP": float(body.get("topP", 0.95)),
+        "thinkingLevel": body.get("thinkingLevel", "Minimal"),
+        "useSearch": bool(body.get("useSearch", False)),
+        "outputMode": body.get("outputMode", "images_only"),
+        "prompt": prompt,
+        "ref_count": len(ref_images),
+        "seedMode": seed_mode,
+        "seedValue": seed_value,
+    }
+    return {
+        "ok": True,
+        "images": images,
+        "text": "",
+        "cost": round(cost, 4),
+        "model_label": model_info["label"],
+        "params": params_meta,
+        "_input_ref_images": ref_images,
+    }
+
+
+def run_generation_job(body: dict, config: dict) -> dict:
+    payload = normalize_generation_request(body)
+    model_id = payload.get("model", "gemini-3.1-flash-image-preview")
+    if model_id not in MODELS_INFO:
+        raise ValueError("Invalid model")
+    provider = payload.get("provider") or MODELS_INFO[model_id].get("provider", "gemini")
+    family = payload.get("modelFamily") or MODELS_INFO[model_id].get("family", "")
+
+    if provider == "gemini":
+        gemini_key = (config.get("api_key", "") or "").strip()
+        if not gemini_key:
+            raise ValueError("Gemini API key not configured. Go to Settings.")
+        return run_gemini_generation_job(payload, gemini_key)
+
     if provider == "fal":
         fal_key = (config.get("fal_api_key", "") or "").strip()
         if not fal_key:
             raise ValueError("Fal API key not configured. Go to Settings.")
-        return run_fal_seedream_generation_job(body, fal_key)
-    gemini_key = (config.get("api_key", "") or "").strip()
-    if not gemini_key:
-        raise ValueError("Gemini API key not configured. Go to Settings.")
-    return run_gemini_generation_job(body, gemini_key)
+        if family.startswith("seedream"):
+            return run_fal_seedream_generation_job(payload, fal_key)
+        return run_fal_nano_banana_generation_job(payload, fal_key)
+
+    if provider == "byteplus":
+        byteplus_key = (config.get("byteplus_api_key", "") or config.get("seedream_api_key", "") or "").strip()
+        if not byteplus_key:
+            raise ValueError("BytePlus API key not configured. Go to Settings.")
+        return run_byteplus_seedream_generation_job(payload, byteplus_key)
+
+    raise ValueError("Unsupported provider")
 
 
 @app.route("/api/generate", methods=["POST"])
@@ -2956,12 +3499,12 @@ if __name__ == "__main__":
             dst = os.path.join(LOVED_DIR, item)
             if not os.path.exists(dst):
                 shutil.copytree(src, dst) if os.path.isdir(src) else shutil.copy2(src, dst)
-        print("  â¬†  Migrated published/ -> loved/")
+        print("  Migrated published/ -> loved/")
     print("\n" + "="*52)
-    print("  ðŸŒ Nano Banana Studio")
+    print(f"  Nano Banana Studio {APP_VERSION}")
     print("  http://localhost:5000")
     print("  Login: admin / banana2024")
-    print("  Max ref images: NB=0 Â· Pro=8 Â· NB2=14")
+    print("  Max ref images: NB=0, Pro=8, NB2=14")
     print("="*52 + "\n")
     app.run(debug=True, port=5000)
 
