@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -8,7 +8,7 @@
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
 <link rel="stylesheet" href="/static/style.css">
 <style>
-  /* ── Credits page layout ─────────────────────────────── */
+  /* Credits page layout */
   .credits-main {
     max-width: 760px;
     margin: 0 auto;
@@ -21,10 +21,12 @@
   }
 
   .credits-banana {
-    font-size: 64px;
+    font-size: 48px;
     line-height: 1;
     margin-bottom: 16px;
     display: block;
+    font-weight: 800;
+    letter-spacing: 0.06em;
   }
 
   .credits-hero h1 {
@@ -37,14 +39,14 @@
 
   .credits-hero .credits-tagline {
     font-size: 13px;
-    color: var(--text2);
+    color: var(--text2, var(--text-dim));
     margin: 0;
   }
 
   .credits-badge {
     display: inline-block;
     background: var(--accent);
-    color: var(--acc-fg);
+    color: var(--acc-fg, #111);
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -54,7 +56,7 @@
     margin-top: 10px;
   }
 
-  /* ── Cards ───────────────────────────────────────────── */
+  /* Cards */
   .credits-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -74,14 +76,16 @@
 
   .credits-card p {
     font-size: 14px;
-    color: var(--text2);
+    color: var(--text2, var(--text-dim));
     line-height: 1.7;
     margin: 0 0 12px;
   }
 
-  .credits-card p:last-child { margin-bottom: 0; }
+  .credits-card p:last-child {
+    margin-bottom: 0;
+  }
 
-  /* ── Author section ──────────────────────────────────── */
+  /* Credits section */
   .credits-author {
     display: flex;
     align-items: flex-start;
@@ -98,7 +102,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    font-size: 16px;
+    font-weight: 800;
     flex-shrink: 0;
   }
 
@@ -111,12 +116,12 @@
 
   .credits-author-info p {
     font-size: 13px;
-    color: var(--text2);
+    color: var(--text2, var(--text-dim));
     margin: 0;
     line-height: 1.5;
   }
 
-  /* ── Link buttons ─────────────────────────────────────── */
+  /* Link buttons */
   .credits-links {
     display: flex;
     gap: 10px;
@@ -152,7 +157,7 @@
     color: #fff;
   }
 
-  /* ── Open source block ───────────────────────────────── */
+  /* Open source block */
   .credits-oss {
     display: flex;
     align-items: flex-start;
@@ -160,7 +165,8 @@
   }
 
   .credits-oss-icon {
-    font-size: 28px;
+    font-size: 18px;
+    font-weight: 800;
     flex-shrink: 0;
     line-height: 1;
     margin-top: 2px;
@@ -175,12 +181,12 @@
 
   .credits-oss-text p {
     font-size: 13.5px;
-    color: var(--text2);
+    color: var(--text2, var(--text-dim));
     line-height: 1.65;
     margin: 0 0 10px;
   }
 
-  /* ── Stack list ──────────────────────────────────────── */
+  /* Stack list */
   .credits-stack {
     display: flex;
     flex-wrap: wrap;
@@ -195,10 +201,10 @@
     padding: 4px 11px;
     font-size: 12px;
     font-weight: 500;
-    color: var(--text2);
+    color: var(--text2, var(--text-dim));
   }
 
-  /* ── Install section ─────────────────────────────────── */
+  /* Install section */
   .install-platform {
     display: flex;
     align-items: flex-start;
@@ -210,13 +216,17 @@
     margin-bottom: 10px;
   }
 
-  .install-platform:last-of-type { margin-bottom: 0; }
+  .install-platform:last-of-type {
+    margin-bottom: 0;
+  }
 
   .install-os {
-    font-size: 22px;
+    font-size: 14px;
+    font-weight: 800;
     flex-shrink: 0;
     line-height: 1;
     margin-top: 2px;
+    min-width: 34px;
   }
 
   .install-body h4 {
@@ -230,12 +240,14 @@
 
   .install-body p {
     font-size: 13px;
-    color: var(--text2);
+    color: var(--text2, var(--text-dim));
     margin: 0 0 6px;
     line-height: 1.5;
   }
 
-  .install-body p:last-child { margin-bottom: 0; }
+  .install-body p:last-child {
+    margin-bottom: 0;
+  }
 
   .install-cmd {
     display: inline-block;
@@ -259,25 +271,27 @@
     border-left: 3px solid var(--accent);
     border-radius: 0 6px 6px 0;
     font-size: 12.5px;
-    color: var(--text2);
+    color: var(--text2, var(--text-dim));
     line-height: 1.55;
   }
 
-  /* ── How-to section ──────────────────────────────────── */
+  /* How-to section */
   .how-step {
     display: flex;
     gap: 14px;
     margin-bottom: 18px;
   }
 
-  .how-step:last-child { margin-bottom: 0; }
+  .how-step:last-child {
+    margin-bottom: 0;
+  }
 
   .how-num {
     width: 28px;
     height: 28px;
     border-radius: 50%;
     background: var(--accent);
-    color: var(--acc-fg);
+    color: var(--acc-fg, #111);
     font-size: 12px;
     font-weight: 700;
     display: flex;
@@ -296,17 +310,17 @@
 
   .how-body p {
     font-size: 13px;
-    color: var(--text2);
+    color: var(--text2, var(--text-dim));
     margin: 0;
     line-height: 1.55;
   }
 
-  /* ── Footer strip ────────────────────────────────────── */
+  /* Footer strip */
   .credits-footer {
     text-align: center;
     margin-top: 40px;
     font-size: 12px;
-    color: var(--text3, var(--text2));
+    color: var(--text3, var(--text2, var(--text-dim)));
   }
 </style>
 </head>
@@ -315,7 +329,7 @@
 <!-- NAV -->
 <nav class="navbar">
   <div class="nav-left">
-    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.1 beta</span></a>
   </div>
   <div class="nav-links">
     <a href="/index">Generator</a>
@@ -331,21 +345,19 @@
 
 <main class="credits-main">
 
-  <!-- HERO -->
   <div class="credits-hero">
-    <span class="credits-banana">🍌</span>
+    <span class="credits-banana">NBS</span>
     <h1>Nano Banana Studio</h1>
-    <p class="credits-tagline">AI Image Generator · Powered by Google Gemini</p>
-    <span class="credits-badge">1.0 beta · Open Source</span>
+    <p class="credits-tagline">AI Image Generator - Powered by Google Gemini</p>
+    <span class="credits-badge">1.1 beta - Open Source</span>
   </div>
 
-  <!-- ABOUT THE PROJECT -->
   <div class="credits-card">
     <h2>About the Project</h2>
     <p>
       Nano Banana Studio is a local web application that lets you generate AI images directly from your browser,
-      using Google Gemini's latest image generation models — including Nano Banana (Flash),
-      Nano Banana Pro, and Nano Banana 2 — through a single API key.
+      using Google Gemini's latest image generation models - including Nano Banana (Flash),
+      Nano Banana Pro, and Nano Banana 2 - through a single API key.
     </p>
     <p>
       The app runs entirely on your machine: no cloud subscription, no data sent to third-party servers beyond
@@ -354,41 +366,39 @@
     </p>
     <p>
       It was designed as a practical creative tool for photographers, art directors, and digital creators
-      who want a fast, flexible, and private workspace for AI image exploration — with features like
+      who want a fast, flexible, and private workspace for AI image exploration - with features like
       reference-based prompting, talent management, aspect ratio control, and curated image saving.
     </p>
   </div>
 
-  <!-- INSTALLATION -->
   <div class="credits-card">
     <h2>Installation</h2>
-    <p>The only prerequisite is <strong>Python 3.11</strong> (or 3.12). No other manual setup needed — the app installs its own dependencies automatically on first launch.</p>
+    <p>The only prerequisite is <strong>Python 3.11</strong> (or 3.12). No other manual setup is needed - the app installs its own dependencies automatically on first launch.</p>
 
     <div class="install-platform">
-      <div class="install-os">🪟</div>
+      <div class="install-os">Win</div>
       <div class="install-body">
         <h4>Windows</h4>
-        <p>Install Python 3.11 from <strong>python.org/downloads</strong> — tick <em>"Add python.exe to PATH"</em> during setup.</p>
-        <p>Then double-click <span class="install-cmd">start.bat</span> inside the app folder. Done.</p>
+        <p>Install Python 3.11 from <strong>python.org/downloads</strong> and tick <em>"Add python.exe to PATH"</em> during setup.</p>
+        <p>Then double-click <span class="install-cmd">start.bat</span> inside the app folder.</p>
         <p>Or from Command Prompt: <span class="install-cmd">python nbs.py</span></p>
       </div>
     </div>
 
     <div class="install-platform">
-      <div class="install-os">🍎</div>
+      <div class="install-os">Mac</div>
       <div class="install-body">
         <h4>macOS</h4>
-        <p>Install Python 3.11 from <strong>python.org/downloads</strong> (or via Homebrew: <span class="install-cmd">brew install python@3.11</span>).</p>
-        <p>Then double-click <span class="install-cmd">start.sh</span> in Finder, or run <span class="install-cmd">./start.sh</span> in Terminal. Done.</p>
+        <p>Install Python 3.11 from <strong>python.org/downloads</strong> or via Homebrew: <span class="install-cmd">brew install python@3.11</span>.</p>
+        <p>Then double-click <span class="install-cmd">start.sh</span> in Finder, or run <span class="install-cmd">./start.sh</span> in Terminal.</p>
       </div>
     </div>
 
     <div class="install-note">
-      ✨ <span>On first launch, missing packages (Flask, Pillow, Requests) are installed automatically — no <code>pip install</code> or virtual environment required. The app opens at <strong>http://localhost:5000</strong>.</span>
+      Note: missing packages such as Flask, Pillow, and Requests are installed automatically on first launch. No manual <code>pip install</code> or virtual environment is required. The app opens at <strong>http://localhost:5000</strong>.
     </div>
   </div>
 
-  <!-- HOW TO USE -->
   <div class="credits-card">
     <h2>How to Use</h2>
 
@@ -396,7 +406,7 @@
       <div class="how-num">1</div>
       <div class="how-body">
         <h4>Enter your Google Gemini API key</h4>
-        <p>Go to Settings, paste your key from <strong>aistudio.google.com/apikey</strong>, and click Verify. The free tier gives you ~500 image requests/day.</p>
+        <p>Go to Settings, paste your key from <strong>aistudio.google.com/apikey</strong>, and click Verify. The free tier gives you about 500 image requests per day.</p>
       </div>
     </div>
 
@@ -404,23 +414,23 @@
       <div class="how-num">2</div>
       <div class="how-body">
         <h4>Select a model</h4>
-        <p>Use <strong>Nano Banana</strong> (Flash) for fast, free iterations. Switch to <strong>Nano Banana Pro</strong> for higher fidelity, or <strong>Nano Banana 2</strong> for the most advanced output (billed separately).</p>
+        <p>Use <strong>Nano Banana</strong> for fast iterations, <strong>Nano Banana Pro</strong> for higher fidelity, or <strong>Nano Banana 2</strong> for the most advanced output.</p>
       </div>
     </div>
 
     <div class="how-step">
       <div class="how-num">3</div>
       <div class="how-body">
-        <h4>Write a prompt — or use the Wizard</h4>
-        <p>Type freely, or open the Prompt Wizard to build a structured description with subject, style, lighting, mood, and more. Add reference images from Elements for character or location consistency.</p>
+        <h4>Write a prompt or use the Wizard</h4>
+        <p>Type freely, or open the Prompt Wizard to build a structured description with subject, style, lighting, mood, and more. Add reference images from Elements for stronger consistency.</p>
       </div>
     </div>
 
     <div class="how-step">
       <div class="how-num">4</div>
       <div class="how-body">
-        <h4>Generate, refine, love</h4>
-        <p>Hit <strong>Generate</strong>. Click the heart icon to save images you like to your Loved gallery. Download or reuse the prompt directly from the result card.</p>
+        <h4>Generate, refine, and save</h4>
+        <p>Click <strong>Generate</strong>. Use the heart button to save images to your Loved gallery. You can also download or reuse prompts directly from result cards.</p>
       </div>
     </div>
 
@@ -428,66 +438,57 @@
       <div class="how-num">5</div>
       <div class="how-body">
         <h4>Build your Elements library</h4>
-        <p>Add talent, location, and prop reference entries in the Elements panel. Each entry can have multiple reference photos and a full profile, used by the AI to maintain consistency across generations.</p>
+        <p>Add talent, location, and prop entries in the Elements panel. Each entry can include multiple reference photos and a full profile to help maintain consistency across generations.</p>
       </div>
     </div>
   </div>
 
-  <!-- OPEN SOURCE -->
   <div class="credits-card">
-    <h2>License & Open Source</h2>
+    <h2>License and Open Source</h2>
     <div class="credits-oss">
-      <div class="credits-oss-icon">📖</div>
+      <div class="credits-oss-icon">OS</div>
       <div class="credits-oss-text">
         <h3>Free to use, free to modify</h3>
         <p>
-          Nano Banana Studio 1.0 beta is open source. You are free to download it, run it locally,
-          adapt it, and build on top of it for personal or commercial projects.
-          No attribution is required, though it's always appreciated.
+          Nano Banana Studio 1.1 beta is open source. You are free to download it, run it locally,
+          adapt it, and build on top of it for personal or commercial projects. No attribution is required,
+          although it is always appreciated.
         </p>
         <p>
-          If you'd like a custom version — new features, integrations, a different UI, or a tailored
-          workflow for your team — feel free to reach out directly on LinkedIn. I'm available for
-          freelance development and consulting.
+          If you would like a custom version with new features, integrations, a different UI, or a tailored
+          workflow for your team, feel free to reach out directly on LinkedIn.
         </p>
       </div>
     </div>
   </div>
 
-  <!-- AUTHOR -->
   <div class="credits-card">
-    <h2>Author</h2>
+    <h2>Credits</h2>
     <div class="credits-author">
-      <div class="credits-avatar">👤</div>
+      <div class="credits-avatar">SV</div>
       <div class="credits-author-info">
         <h3>Sergio Valsecchi</h3>
-        <p>Creative technologist & digital creative director.<br>
+        <p>Creative technologist and digital creative director.<br>
         Building tools at the intersection of AI, design, and photography.</p>
+        <p style="margin-top:10px"><strong>Additional credit:</strong> Jesse Zamjahn - pixteur</p>
       </div>
     </div>
     <div class="credits-links">
-      <a class="credits-link-btn patreon"
-         href="https://www.patreon.com/c/SergioValsecchi"
-         target="_blank" rel="noopener">
-        <!-- Patreon icon -->
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M14.82 2.41C11.57 2.41 8.93 5.05 8.93 8.3c0 3.24 2.64 5.88 5.89 5.88 3.24 0 5.88-2.64 5.88-5.88 0-3.25-2.64-5.89-5.88-5.89zM3.1 21.59h3.16V2.41H3.1v19.18z"/>
-        </svg>
+      <a class="credits-link-btn patreon" href="https://www.patreon.com/c/SergioValsecchi" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M14.82 2.41C11.57 2.41 8.93 5.05 8.93 8.3c0 3.24 2.64 5.88 5.89 5.88 3.24 0 5.88-2.64 5.88-5.88 0-3.25-2.64-5.89-5.88-5.89zM3.1 21.59h3.16V2.41H3.1v19.18z"/></svg>
         Support on Patreon
       </a>
-      <a class="credits-link-btn linkedin"
-         href="https://www.linkedin.com/in/sergio-valsecchi/"
-         target="_blank" rel="noopener">
-        <!-- LinkedIn icon -->
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-        </svg>
-        Contact on LinkedIn
+      <a class="credits-link-btn linkedin" href="https://www.linkedin.com/in/sergio-valsecchi/" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+        Sergio on LinkedIn
+      </a>
+      <a class="credits-link-btn linkedin" href="https://www.linkedin.com/in/pixteur/" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+        Jesse on LinkedIn
       </a>
     </div>
   </div>
 
-  <!-- TECH STACK -->
   <div class="credits-card">
     <h2>Built With</h2>
     <p>A lightweight stack that runs anywhere Python runs:</p>
@@ -503,9 +504,8 @@
     </div>
   </div>
 
-  <!-- FOOTER -->
   <div class="credits-footer">
-    Nano Banana Studio 1.0 beta · Made with 🍌 by Sergio Valsecchi · 2025
+    Nano Banana Studio 1.1 beta | Made by Sergio Valsecchi and Jesse Zamjahn - pixteur | 2025
   </div>
 
 </main>

@@ -13,7 +13,7 @@
 <!-- NAV -->
 <nav class="navbar">
   <div class="nav-left">
-    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.1 beta</span></a>
   </div>
   <div class="nav-links">
     <a href="/index">Generator</a>
@@ -140,7 +140,10 @@ function openLightbox(date, filename, meta) {
   const modelLabels = {
     "gemini-2.5-flash-image":         "Nano Banana",
     "gemini-3-pro-image-preview":     "Nano Banana Pro",
-    "gemini-3.1-flash-image-preview": "Nano Banana 2"
+    "gemini-3.1-flash-image-preview": "Nano Banana 2",
+  "fal-ai/bytedance/seedream/v4.5/text-to-image": "Seedream 4.5",
+  "seedream-4-5-251128": "Seedream 4.5",
+  "fal-ai/bytedance/seedream/v5/lite/text-to-image": "Seedream 5 Lite"
   };
 
   const label = modelLabels[meta.model] || meta.model_label || meta.model || "";
@@ -209,4 +212,5 @@ updateThemeBtn();
 </script>
 </body>
 </html>
+
 

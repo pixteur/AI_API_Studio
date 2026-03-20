@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Nano Banana Studio (nbs.py)
 AI image generator powered by Google Gemini
@@ -6,7 +6,7 @@ Run: python nbs.py
 """
 
 # ---------------------------------------------------------------------------
-# Bootstrap — auto-install missing dependencies on first run
+# Bootstrap â€” auto-install missing dependencies on first run
 # ---------------------------------------------------------------------------
 import sys
 import subprocess
@@ -41,7 +41,7 @@ def _bootstrap():
 _bootstrap()
 
 # ---------------------------------------------------------------------------
-# End bootstrap — normal imports follow
+# End bootstrap â€” normal imports follow
 # ---------------------------------------------------------------------------
 import base64
 import glob
@@ -59,7 +59,7 @@ from functools import wraps
 from uuid import uuid4
 from flask import (Flask, render_template, request, redirect,
                    url_for, session, jsonify, send_from_directory)
-from PIL import Image
+from PIL import Image, ImageOps
 
 app = Flask(__name__)
 app.secret_key = "nb-studio-secret-2024-change-me"
@@ -82,15 +82,17 @@ ELEMENTS_DIR     = os.path.join(BASE_DIR, "Elements")
 STUDIO_DB_FILE   = os.path.join(BASE_DIR, "studio.db")
 REFERENCE_ARCHIVE_DIR = os.path.join(BASE_DIR, "reference_archive")
 
-# Mapping folder → display name and icon for Elements
+# Mapping folder â†’ display name and icon for Elements
 ELEMENTS_CATEGORIES = {
-    "Model Managment": {"label": "Characters", "icon": "🧑", "slug": "characters"},
-    "Locations":       {"label": "Locations",  "icon": "🌍", "slug": "locations"},
-    "Props":           {"label": "Props",       "icon": "🎨", "slug": "props"},
+    "Model Managment": {"label": "Characters", "icon": "ðŸ§‘", "slug": "characters"},
+    "Locations":       {"label": "Locations",  "icon": "ðŸŒ", "slug": "locations"},
+    "Props":           {"label": "Props",       "icon": "ðŸŽ¨", "slug": "props"},
 }
 
 DEFAULT_CONFIG = {
     "api_key": "",
+    "seedream_api_key": "",
+    "fal_api_key": "",
     "stats": {
         "total_requests":   0,
         "total_images":     0,
@@ -104,7 +106,9 @@ DEFAULT_CONFIG = {
 }
 
 # ---------------------------------------------------------------------------
-# Price per image in USD (verified March 2026 — source: ai.google.dev/gemini-api/docs/pricing)
+# Price per image in USD (verified March 2026)
+# Gemini source: ai.google.dev/gemini-api/docs/pricing
+# fal Seedream sources: fal.ai model pages
 # ---------------------------------------------------------------------------
 PRICING = {
     "gemini-2.5-flash-image": {
@@ -116,19 +120,27 @@ PRICING = {
     "gemini-3.1-flash-image-preview": {
         "0.5K": 0.045, "1K": 0.067, "2K": 0.101, "4K": 0.151
     },
+    "fal-ai/bytedance/seedream/v4.5/text-to-image": {
+        "0.5K": 0.0, "1K": 0.0, "2K": 0.04, "4K": 0.04
+    },
+    "seedream-4-5-251128": {
+        "0.5K": 0.0, "1K": 0.0, "2K": 0.04, "4K": 0.04
+    },
+    "fal-ai/bytedance/seedream/v5/lite/text-to-image": {
+        "0.5K": 0.0, "1K": 0.0, "2K": 0.035, "4K": 0.035
+    },
 }
 
 # ---------------------------------------------------------------------------
-# Models — includes max reference images supported
-#   Nano Banana (2.5-flash):  0  — does not support input images
-#   Nano Banana Pro:          8  — up to 8 reference images
-#   Nano Banana 2:           14  — up to 14 reference images
+# Models - includes max reference images supported
 # ---------------------------------------------------------------------------
-ASPECT_RATIOS_BASE     = ["1:1","16:9","9:16","4:3","3:4","3:2","2:3","21:9","5:4","4:5"]
+ASPECT_RATIOS_BASE      = ["1:1","16:9","9:16","4:3","3:4","3:2","2:3","21:9","5:4","4:5"]
 ASPECT_RATIOS_NB2_EXTRA = ["4:1","1:4","8:1","1:8"]
+ASPECT_RATIOS_FAL       = ["1:1","16:9","9:16","4:3","3:4"]
 
 MODELS_INFO = {
     "gemini-2.5-flash-image": {
+        "provider":       "gemini",
         "label":          "Nano Banana",
         "resolutions":    ["1K"],
         "thinking":       False,
@@ -138,6 +150,7 @@ MODELS_INFO = {
         "ref_note":       "Does not support reference images"
     },
     "gemini-3-pro-image-preview": {
+        "provider":       "gemini",
         "label":          "Nano Banana Pro",
         "resolutions":    ["1K","2K","4K"],
         "thinking":       False,
@@ -147,6 +160,7 @@ MODELS_INFO = {
         "ref_note":       "Up to 8 reference images"
     },
     "gemini-3.1-flash-image-preview": {
+        "provider":       "gemini",
         "label":          "Nano Banana 2",
         "resolutions":    ["0.5K","1K","2K","4K"],
         "thinking":       True,
@@ -154,13 +168,48 @@ MODELS_INFO = {
         "max_images":     4,
         "max_ref_images": 14,
         "ref_note":       "Up to 14 reference images"
+    },
+    "fal-ai/bytedance/seedream/v4.5/text-to-image": {
+        "provider":       "fal",
+        "label":          "Seedream 4.5",
+        "resolutions":    ["2K","4K"],
+        "thinking":       False,
+        "aspect_ratios":  ASPECT_RATIOS_FAL,
+        "max_images":     4,
+        "max_ref_images": 10,
+        "ref_note":       "Fal API mode - up to 10 reference images"
+    },
+    "seedream-4-5-251128": {
+        "provider":       "fal",
+        "label":          "Seedream 4.5",
+        "resolutions":    ["2K","4K"],
+        "thinking":       False,
+        "aspect_ratios":  ASPECT_RATIOS_FAL,
+        "max_images":     4,
+        "max_ref_images": 10,
+        "ref_note":       "Legacy Seedream 4.5 entries map to the Fal 4.5 route"
+    },
+    "fal-ai/bytedance/seedream/v5/lite/text-to-image": {
+        "provider":       "fal",
+        "label":          "Seedream 5 Lite",
+        "resolutions":    ["2K","4K"],
+        "thinking":       False,
+        "aspect_ratios":  ASPECT_RATIOS_FAL,
+        "max_images":     4,
+        "max_ref_images": 10,
+        "ref_note":       "Fal API mode - up to 10 reference images"
     }
 }
 
-GEMINI_BASE_URL    = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_BASE_URL          = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+FAL_BASE_URL             = "https://fal.run"
+FAL_SEEDREAM_45_TEXT_ID  = "fal-ai/bytedance/seedream/v4.5/text-to-image"
+FAL_SEEDREAM_45_EDIT_ID  = "fal-ai/bytedance/seedream/v4.5/edit"
+FAL_SEEDREAM_5_TEXT_ID   = "fal-ai/bytedance/seedream/v5/lite/text-to-image"
+FAL_SEEDREAM_5_EDIT_ID   = "fal-ai/bytedance/seedream/v5/lite/edit"
 
 # ---------------------------------------------------------------------------
-# Vocabolario canonico — caricato da talent_vocabulary.json se presente
+# Vocabolario canonico â€” caricato da talent_vocabulary.json se presente
 # Used to constrain Gemini to return normalized values only
 # ---------------------------------------------------------------------------
 _VOCAB_PATH = os.path.join(BASE_DIR, "talent_vocabulary.json")
@@ -193,7 +242,7 @@ else:
 
 def _build_vocab_prompt_block() -> str:
     """Costruisce il blocco testo del vocabolario da inserire nel prompt Gemini."""
-    lines = ["MANDATORY ALLOWED VALUES — use ONLY these exact strings, no variations:"]
+    lines = ["MANDATORY ALLOWED VALUES â€” use ONLY these exact strings, no variations:"]
     for field, values in TALENT_VOCABULARY.items():
         lines.append(f'  "{field}": {" | ".join(values)}')
     return "\n".join(lines)
@@ -214,16 +263,16 @@ VISION_MODELS_INFO = {
         "badge":         "Vis",
         "input_per_1m":  0.15,    # USD per 1M input tokens
         "output_per_1m": 0.60,    # USD per 1M output tokens
-        "free_tier":     "Preview — free *",
-        "note":          "Recommended for talent analysis — best JSON quality"
+        "free_tier":     "Preview â€” free *",
+        "note":          "Recommended for talent analysis â€” best JSON quality"
     },
     "gemini-3.1-flash-lite-preview": {
         "label":         "Gemini 3.1 Flash-Lite",
         "badge":         "Vis",
         "input_per_1m":  0.075,
         "output_per_1m": 0.30,
-        "free_tier":     "Preview — free *",
-        "note":          "Lite version — faster but less accurate on JSON"
+        "free_tier":     "Preview â€” free *",
+        "note":          "Lite version â€” faster but less accurate on JSON"
     },
     "gemini-2.0-flash-lite": {
         "label":         "Gemini 2.0 Flash-Lite",
@@ -237,7 +286,7 @@ VISION_MODELS_INFO = {
 
 
 # ---------------------------------------------------------------------------
-# Helpers — Talent individual JSON
+# Helpers â€” Talent individual JSON
 # Talent JSON files for "Model Managment" live in the json/ subfolder
 # ---------------------------------------------------------------------------
 TALENT_JSON_SUBDIR = "json"   # subfolder inside Model Managment/
@@ -853,42 +902,63 @@ def save_talent_json(json_path: str, data: dict):
 
 # ---------------------------------------------------------------------------
 # Helper - image normalization
-#   • Se larghezza > MAX_IMG_WIDTH: ridimensiona mantenendo aspect ratio
+#   â€¢ Se larghezza > MAX_IMG_WIDTH: ridimensiona mantenendo aspect ratio
 #   - Always converts to JPG with JPEG_QUALITY quality
-#   • Ritorna (b64_string, "image/jpeg", orig_w, orig_h, new_w, new_h)
+#   â€¢ Ritorna (b64_string, "image/jpeg", orig_w, orig_h, new_w, new_h)
 # ---------------------------------------------------------------------------
 MAX_IMG_WIDTH  = 4000   # px sulla dimensione orizzontale
 JPEG_QUALITY   = 90     # JPG output quality %
+SEEDREAM_MAX_INPUT_BYTES = 10 * 1024 * 1024
+SEEDREAM_TARGET_INPUT_BYTES = int(SEEDREAM_MAX_INPUT_BYTES * 0.92)
+
+
+def open_base64_image(image_b64: str) -> tuple[Image.Image, dict]:
+    raw = base64.b64decode(image_b64)
+    img = Image.open(io.BytesIO(raw))
+    img.load()
+    info = dict(getattr(img, "info", {}) or {})
+    img = ImageOps.exif_transpose(img)
+    return img, info
+
+
+def flatten_image_for_jpeg(img: Image.Image) -> Image.Image:
+    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        rgba = img.convert("RGBA")
+        background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+        return Image.alpha_composite(background, rgba).convert("RGB")
+    if img.mode not in ("RGB", "L"):
+        return img.convert("RGB")
+    return img
 
 
 def normalize_image_b64(image_b64: str, mime_type: str) -> tuple:
     """
     Process a base64 image:
-      - se larghezza > MAX_IMG_WIDTH → ridimensiona a MAX_IMG_WIDTH (mantiene ratio)
+      - se larghezza > MAX_IMG_WIDTH -> ridimensiona a MAX_IMG_WIDTH (mantiene ratio)
       - converte in JPG a JPEG_QUALITY
     Returns (processed_b64, "image/jpeg", orig_w, orig_h, final_w, final_h, resized: bool)
     """
-    raw = base64.b64decode(image_b64)
-    img = Image.open(io.BytesIO(raw))
-
-    # Converti in RGB (necessario per salvare come JPEG — rimuove canale alpha se presente)
-    if img.mode not in ("RGB", "L"):
-        img = img.convert("RGB")
+    img, info = open_base64_image(image_b64)
+    img = flatten_image_for_jpeg(img)
 
     orig_w, orig_h = img.size
     resized = False
 
     if orig_w > MAX_IMG_WIDTH:
-        ratio   = MAX_IMG_WIDTH / orig_w
-        new_w   = MAX_IMG_WIDTH
-        new_h   = int(orig_h * ratio)
-        img     = img.resize((new_w, new_h), Image.LANCZOS)
+        ratio = MAX_IMG_WIDTH / orig_w
+        new_w = MAX_IMG_WIDTH
+        new_h = int(orig_h * ratio)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
         resized = True
     else:
         new_w, new_h = orig_w, orig_h
 
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=JPEG_QUALITY, optimize=True)
+    save_kwargs = {"format": "JPEG", "quality": JPEG_QUALITY, "optimize": True}
+    icc_profile = info.get("icc_profile")
+    if icc_profile:
+        save_kwargs["icc_profile"] = icc_profile
+    img.save(buf, **save_kwargs)
     buf.seek(0)
     b64_out = base64.b64encode(buf.read()).decode("utf-8")
 
@@ -897,9 +967,7 @@ def normalize_image_b64(image_b64: str, mime_type: str) -> tuple:
 
 def convert_image_b64_to_png(image_b64: str, mime_type: str) -> tuple[str, str]:
     """Convert a base64 image payload to PNG while preserving alpha when present."""
-    raw = base64.b64decode(image_b64)
-    img = Image.open(io.BytesIO(raw))
-    img.load()
+    img, info = open_base64_image(image_b64)
 
     has_alpha = ("A" in img.getbands()) or (img.mode == "P" and "transparency" in img.info)
     if has_alpha:
@@ -909,7 +977,11 @@ def convert_image_b64_to_png(image_b64: str, mime_type: str) -> tuple[str, str]:
         img = img.convert("RGB")
 
     buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
+    save_kwargs = {"format": "PNG", "optimize": True}
+    icc_profile = info.get("icc_profile")
+    if icc_profile:
+        save_kwargs["icc_profile"] = icc_profile
+    img.save(buf, **save_kwargs)
     buf.seek(0)
     return base64.b64encode(buf.read()).decode("utf-8"), "image/png"
 
@@ -1024,40 +1096,74 @@ def delete_reference_archive_entries(entries: list[dict]):
                 pass
 
 
-def summarize_generate_response_issue(result: dict) -> str:
-    details = []
-    prompt_feedback = result.get("promptFeedback") or {}
-    block_reason = prompt_feedback.get("blockReason")
-    block_reason_message = prompt_feedback.get("blockReasonMessage")
-    if block_reason:
-        details.append(f"Prompt blocked: {block_reason}")
-    if block_reason_message:
-        details.append(str(block_reason_message))
+class GenerationDebugError(RuntimeError):
+    def __init__(self, message: str, debug: dict | None = None):
+        super().__init__(message)
+        self.debug = debug or {}
 
-    candidate_notes = []
+
+def build_gemini_failure_debug(result: dict, safety_preset: str = "default", safety_settings_sent: bool = False) -> dict:
+    prompt_feedback = result.get("promptFeedback") or {}
+    candidates = []
     for idx, candidate in enumerate(result.get("candidates", []) or []):
         finish_reason = candidate.get("finishReason")
         finish_message = candidate.get("finishMessage")
         parts = (candidate.get("content") or {}).get("parts") or []
         has_image = any("inlineData" in part for part in parts)
+        safety_ratings = candidate.get("safetyRatings") or []
+        candidates.append({
+            "index": idx + 1,
+            "finishReason": finish_reason or "",
+            "finishMessage": finish_message or "",
+            "hasImage": has_image,
+            "safetyRatings": [
+                {
+                    "category": rating.get("category", ""),
+                    "probability": rating.get("probability", ""),
+                    "blocked": bool(rating.get("blocked", False)),
+                }
+                for rating in safety_ratings
+                if isinstance(rating, dict)
+            ],
+        })
+
+    summary_parts = []
+    block_reason = prompt_feedback.get("blockReason")
+    block_reason_message = prompt_feedback.get("blockReasonMessage")
+    if block_reason:
+        summary_parts.append(f"Prompt blocked: {block_reason}")
+    if block_reason_message:
+        summary_parts.append(str(block_reason_message))
+    for item in candidates:
+        finish_reason = item.get("finishReason")
         if finish_reason and finish_reason != "STOP":
             note = finish_reason
-            if finish_message:
-                note += f": {finish_message}"
-            candidate_notes.append(f"Candidate {idx + 1}: {note}")
-        elif finish_reason == "STOP" and not has_image:
+            if item.get("finishMessage"):
+                note += f": {item['finishMessage']}"
+            summary_parts.append(f"Candidate {item['index']}: {note}")
+        elif finish_reason == "STOP" and not item.get("hasImage"):
             note = "STOP but no image was returned"
-            if finish_message:
-                note += f": {finish_message}"
-            candidate_notes.append(f"Candidate {idx + 1}: {note}")
+            if item.get("finishMessage"):
+                note += f": {item['finishMessage']}"
+            summary_parts.append(f"Candidate {item['index']}: {note}")
 
-    if candidate_notes:
-        details.extend(candidate_notes)
+    if not summary_parts:
+        summary_parts.append("Gemini returned no image for this request.")
 
-    if not details:
-        details.append("Gemini returned no image for this request.")
-    return " | ".join(details)
+    return {
+        "provider": "gemini",
+        "safetyPreset": safety_preset,
+        "safetySettingsSent": bool(safety_settings_sent),
+        "promptBlockReason": block_reason or "",
+        "promptBlockReasonMessage": block_reason_message or "",
+        "candidates": candidates,
+        "summary": " | ".join(summary_parts),
+    }
 
+
+def summarize_generate_response_issue(result: dict, safety_preset: str = "default", safety_settings_sent: bool = False) -> tuple[str, dict]:
+    debug = build_gemini_failure_debug(result, safety_preset=safety_preset, safety_settings_sent=safety_settings_sent)
+    return debug["summary"], debug
 
 
 # ---------------------------------------------------------------------------
@@ -1082,6 +1188,159 @@ def save_config(config):
         json.dump(config, f, indent=2)
 
 
+def mask_api_key(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return ""
+    return value[:8] + "..." + value[-4:] if len(value) > 12 else "***"
+
+
+def normalize_seedream_size(image_size: str) -> str:
+    image_size = (image_size or "2K").strip().upper()
+    if image_size not in {"2K", "4K"}:
+        return "2K"
+    return image_size
+
+
+GEMINI_SAFETY_CATEGORIES = [
+    "HARM_CATEGORY_HARASSMENT",
+    "HARM_CATEGORY_HATE_SPEECH",
+    "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+    "HARM_CATEGORY_DANGEROUS_CONTENT",
+    "HARM_CATEGORY_CIVIC_INTEGRITY",
+]
+
+
+def build_gemini_safety_settings(profile: str) -> tuple[list[dict] | None, str]:
+    normalized = (profile or "default").strip().lower()
+    threshold = {
+        "default": None,
+        "relaxed": "BLOCK_ONLY_HIGH",
+        "off": "OFF",
+        "strict": "BLOCK_LOW_AND_ABOVE",
+    }.get(normalized)
+    if normalized not in {"default", "relaxed", "off", "strict"}:
+        normalized = "default"
+        threshold = None
+    if threshold is None:
+        return None, normalized
+    return ([{"category": category, "threshold": threshold} for category in GEMINI_SAFETY_CATEGORIES], normalized)
+
+
+def compress_seedream_ref_image(image_b64: str, mime_type: str) -> tuple[str, str]:
+    """Shrink/compress a reference image until it fits BytePlus Seedream's 10 MiB limit."""
+    raw = base64.b64decode(image_b64)
+    if len(raw) <= SEEDREAM_TARGET_INPUT_BYTES:
+        return image_b64, mime_type
+
+    img, info = open_base64_image(image_b64)
+    img = flatten_image_for_jpeg(img)
+
+    width, height = img.size
+    quality = 88
+    max_side = max(width, height)
+
+    while True:
+        working = img.copy()
+        current_max = max(working.size)
+        if current_max > max_side:
+            scale = max_side / float(current_max)
+            new_w = max(256, int(working.size[0] * scale))
+            new_h = max(256, int(working.size[1] * scale))
+            working = working.resize((new_w, new_h), Image.LANCZOS)
+
+        buf = io.BytesIO()
+        save_kwargs = {"format": "JPEG", "quality": quality, "optimize": True}
+        icc_profile = info.get("icc_profile")
+        if icc_profile:
+            save_kwargs["icc_profile"] = icc_profile
+        working.save(buf, **save_kwargs)
+        payload = buf.getvalue()
+        if len(payload) <= SEEDREAM_TARGET_INPUT_BYTES:
+            return base64.b64encode(payload).decode("utf-8"), "image/jpeg"
+
+        if quality > 50:
+            quality -= 8
+            continue
+        if max_side > 1536:
+            max_side = int(max_side * 0.82)
+            quality = 82
+            continue
+        return base64.b64encode(payload).decode("utf-8"), "image/jpeg"
+
+
+def build_seedream_ref_inputs(ref_images: list[dict]) -> list[str]:
+    items = []
+    for img in ref_images:
+        mime = img.get("mime_type", "image/png")
+        data = img.get("data", "")
+        if data:
+            safe_b64, safe_mime = compress_seedream_ref_image(data, mime)
+            items.append(f"data:{safe_mime};base64,{safe_b64}")
+    return items
+
+
+def extract_fal_error(resp: requests.Response) -> str:
+    try:
+        payload = resp.json()
+    except Exception:
+        return f"HTTP {resp.status_code}"
+    if isinstance(payload, dict):
+        detail = payload.get("detail")
+        if isinstance(detail, list) and detail:
+            first = detail[0]
+            if isinstance(first, dict):
+                msg = first.get("msg") or first.get("message") or first.get("detail")
+                loc = first.get("loc")
+                if msg and loc:
+                    return f"{'.'.join(str(x) for x in loc)}: {msg}"
+                if msg:
+                    return str(msg)
+            elif isinstance(first, str):
+                return first
+        for key in ("error", "message", "detail"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return f"HTTP {resp.status_code}"
+
+
+def build_fal_seedream_image_size(model_id: str, image_size: str) -> str:
+    normalized = (image_size or "2K").strip().upper()
+    if model_id == FAL_SEEDREAM_5_TEXT_ID:
+        return "auto_3K" if normalized == "4K" else "auto_2K"
+    return "auto_4K" if normalized == "4K" else "auto_2K"
+
+
+def build_fal_seedream_endpoint(model_id: str, has_refs: bool) -> str:
+    if model_id in (FAL_SEEDREAM_45_TEXT_ID, "seedream-4-5-251128"):
+        return FAL_SEEDREAM_45_EDIT_ID if has_refs else FAL_SEEDREAM_45_TEXT_ID
+    if model_id == FAL_SEEDREAM_5_TEXT_ID:
+        return FAL_SEEDREAM_5_EDIT_ID if has_refs else FAL_SEEDREAM_5_TEXT_ID
+    raise ValueError("Unsupported Fal Seedream model")
+
+
+def decode_fal_image_result(item: dict) -> dict | None:
+    image_url = str(item.get("url") or item.get("image_url") or item.get("data_uri") or "").strip()
+    if image_url.startswith("data:"):
+        header, _, b64_data = image_url.partition(",")
+        mime_type = header.split(";", 1)[0][5:] or "image/png"
+        return {"mime_type": mime_type, "data": b64_data}
+    if image_url:
+        try:
+            image_resp = requests.get(image_url, timeout=120)
+            image_resp.raise_for_status()
+            raw = image_resp.content
+            png_b64, png_mime = convert_image_b64_to_png(
+                base64.b64encode(raw).decode("utf-8"),
+                image_resp.headers.get("Content-Type", item.get("content_type", "image/png"))
+            )
+            return {"mime_type": png_mime, "data": png_b64}
+        except Exception:
+            return None
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
@@ -1095,7 +1354,7 @@ def login_required(f):
 
 
 # ---------------------------------------------------------------------------
-# Routes — Auth
+# Routes â€” Auth
 # ---------------------------------------------------------------------------
 @app.route("/")
 def root():
@@ -1124,13 +1383,13 @@ def logout():
 
 
 # ---------------------------------------------------------------------------
-# Routes — App
+# Routes â€” App
 # ---------------------------------------------------------------------------
 @app.route("/index")
 @login_required
 def index():
     config = load_config()
-    has_key = bool(config.get("api_key", "").strip())
+    has_key = bool(config.get("api_key", "").strip() or config.get("fal_api_key", "").strip())
     return render_template("index.html",
                            models=MODELS_INFO,
                            has_key=has_key,
@@ -1141,14 +1400,14 @@ def index():
 @login_required
 def settings():
     config = load_config()
-    stats    = config.get("stats", DEFAULT_CONFIG["stats"])
-    api_key  = config.get("api_key", "")
-    masked_key = ""
-    if api_key:
-        masked_key = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
+    stats = config.get("stats", DEFAULT_CONFIG["stats"])
+    api_key = config.get("api_key", "")
+    fal_api_key = config.get("fal_api_key", "")
     return render_template("settings.html",
-                           masked_key=masked_key,
+                           masked_key=mask_api_key(api_key),
                            has_key=bool(api_key),
+                           masked_seedream_key=mask_api_key(fal_api_key),
+                           has_seedream_key=bool(fal_api_key),
                            stats=stats,
                            vision_models=VISION_MODELS_INFO,
                            analysis_model=TALENT_ANALYSIS_MODEL,
@@ -1156,7 +1415,7 @@ def settings():
 
 
 # ---------------------------------------------------------------------------
-# Route — Credits
+# Route â€” Credits
 # ---------------------------------------------------------------------------
 @app.route("/credits")
 @login_required
@@ -1193,7 +1452,7 @@ def reports_page():
 
 
 # ---------------------------------------------------------------------------
-# Route — Loved gallery (saved favorites)
+# Route â€” Loved gallery (saved favorites)
 # ---------------------------------------------------------------------------
 @app.route("/loved")
 @login_required
@@ -1254,7 +1513,7 @@ def serve_reference_archive(date_str, filename):
 
 
 # ---------------------------------------------------------------------------
-# API — Delete a loved image (image + JSON sidecar, never touches generations/)
+# API â€” Delete a loved image (image + JSON sidecar, never touches generations/)
 # ---------------------------------------------------------------------------
 @app.route("/api/loved/<date_str>/<filename>", methods=["DELETE"])
 @login_required
@@ -1288,7 +1547,7 @@ def api_delete_loved(date_str, filename):
 
 
 # ---------------------------------------------------------------------------
-# API — Loved list (for reference image picker)
+# API â€” Loved list (for reference image picker)
 # ---------------------------------------------------------------------------
 @app.route("/api/loved-list")
 @login_required
@@ -1336,7 +1595,7 @@ def api_loved_list():
 
 
 # ---------------------------------------------------------------------------
-# Routes — Elements (asset library)
+# Routes â€” Elements (asset library)
 # ---------------------------------------------------------------------------
 
 @app.route("/elements/<path:filepath>")
@@ -1360,7 +1619,7 @@ def api_elements_catalog():
     search_query    = request.args.get("q", "").strip().lower()
     page            = int(request.args.get("page", 1))
     per_page        = int(request.args.get("per_page", 60))
-    # Filtri metadati (solo characters) — tutti exact-match con vocabolario canonico
+    # Filtri metadati (solo characters) â€” tutti exact-match con vocabolario canonico
     def _fset(param): return {v.strip().lower() for v in request.args.get(param,"").split(",") if v.strip()}
     f_gender     = _fset("gender")
     f_age        = _fset("age_group")
@@ -1478,7 +1737,7 @@ def api_elements_catalog():
                     search_query in item.get("ethnicity", "").lower())
         unique_items = [i for i in unique_items if matches(i)]
 
-    # Filtri metadati — exact match (vocabolario canonico, tutti underscored)
+    # Filtri metadati â€” exact match (vocabolario canonico, tutti underscored)
     def _exact(items, field, fset):
         return [i for i in items if i.get(field, "").lower() in fset] if fset else items
     unique_items = _exact(unique_items, "gender",     f_gender)
@@ -1576,7 +1835,7 @@ def api_migrate_catalog():
     raw_items = data.get("talents", data.get("items", []))
     now_ts    = datetime.now().isoformat()
 
-    # Deduplica per id — per ogni id teniamo il record con image_path valido
+    # Deduplica per id â€” per ogni id teniamo il record con image_path valido
     seen: dict[str, dict] = {}
     for item in raw_items:
         tid = item.get("id")
@@ -1675,18 +1934,18 @@ def api_analyze_talent_image():
     vocab_block = _build_vocab_prompt_block()
     analysis_prompt = (
         "You are a professional talent catalog specialist. Analyze this portrait photo carefully and extract structured metadata.\n"
-        "Your task: fill in EVERY field — never leave anything empty or use values outside the allowed lists.\n\n"
+        "Your task: fill in EVERY field â€” never leave anything empty or use values outside the allowed lists.\n\n"
         f"{vocab_block}\n\n"
         "Additional field rules:\n"
         "- name: INVENT a realistic first+last name that fits the person's apparent ethnicity and vibe "
         "(e.g. Sofia Esposito, Kai Nakamura, Amara Diallo, Luca Ferretti, Yuki Tanaka, Zara Osei)\n"
-        "- description: 2 precise sentences for AI image generation — describe face shape, skin quality, "
+        "- description: 2 precise sentences for AI image generation â€” describe face shape, skin quality, "
         "distinctive features (nose, lips, jawline, cheekbones), eye shape, expression, overall aesthetic vibe\n"
-        "- tags: JSON array of 4–6 lowercase, single-word or hyphenated tags useful for searching "
+        "- tags: JSON array of 4â€“6 lowercase, single-word or hyphenated tags useful for searching "
         "(e.g. [\"editorial\", \"beauty\", \"runway\", \"high-fashion\", \"dark-skin\", \"versatile\"])\n\n"
         "CRITICAL: You MUST use ONLY the exact string values listed above. "
         "Do NOT invent new values, do NOT use variations, plurals, or spaces instead of underscores.\n\n"
-        "Return ONLY a valid JSON object — no markdown fences, no extra text, no comments:\n"
+        "Return ONLY a valid JSON object â€” no markdown fences, no extra text, no comments:\n"
         "{\n"
         '  "name": "...",\n'
         '  "gender": "...",\n'
@@ -1848,7 +2107,7 @@ def api_save_talent():
     except Exception as e:
         return jsonify({"ok": False, "error": f"Image pre-processing error: {e}"})
 
-    # Numero progressivo immagine — sempre .jpg dopo normalizzazione
+    # Numero progressivo immagine â€” sempre .jpg dopo normalizzazione
     num      = get_next_image_number(folder_path, slug)
     img_file = f"{slug}_{num:03d}.jpg"
     img_full = os.path.join(folder_path, img_file)
@@ -1872,7 +2131,7 @@ def api_save_talent():
     }
 
     if os.path.exists(jpath):
-        # Talent esistente → aggiungi immagine
+        # Talent esistente â†’ aggiungi immagine
         talent = load_talent_json(jpath)
         if talent:
             talent["images"].append(new_img)
@@ -1910,17 +2169,53 @@ def api_save_talent():
 
 
 # ---------------------------------------------------------------------------
-# API — Config / Key
+# API â€” Config / Key
 # ---------------------------------------------------------------------------
 @app.route("/api/save-config", methods=["POST"])
 @login_required
 def api_save_config():
-    data = request.get_json()
+    data = request.get_json() or {}
     config = load_config()
     if "api_key" in data:
         config["api_key"] = data["api_key"].strip()
+    if "fal_api_key" in data:
+        config["fal_api_key"] = data["fal_api_key"].strip()
+    if "seedream_api_key" in data:
+        config["fal_api_key"] = data["seedream_api_key"].strip()
     save_config(config)
     return jsonify({"ok": True})
+
+
+@app.route("/api/verify-fal-key", methods=["POST"])
+@app.route("/api/verify-seedream-key", methods=["POST"])
+@login_required
+def api_verify_fal_key():
+    data = request.get_json() or {}
+    key = (data.get("fal_api_key") or data.get("seedream_api_key") or "").strip()
+    if not key:
+        return jsonify({"ok": False, "error": "Fal API key is empty"})
+    payload = {
+        "prompt": "Fal key verification image",
+        "image_size": "auto_2K",
+        "num_images": 1,
+        "max_images": 1,
+        "sync_mode": True,
+        "enable_safety_checker": True,
+    }
+    headers = {
+        "Authorization": f"Key {key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        resp = requests.post(f"{FAL_BASE_URL}/{FAL_SEEDREAM_45_TEXT_ID}", headers=headers, json=payload, timeout=45)
+        if resp.status_code == 200:
+            return jsonify({"ok": True, "message": "Valid Fal key and Seedream access confirmed."})
+        return jsonify({"ok": False, "error": extract_fal_error(resp)})
+    except requests.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Connection timeout"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 
 
 @app.route("/api/verify-key", methods=["POST"])
@@ -1941,7 +2236,7 @@ def api_verify_key():
         elif resp.status_code == 400:
             return jsonify({"ok": False, "error": "Invalid API key (400)"})
         elif resp.status_code == 403:
-            return jsonify({"ok": False, "error": "Access denied — check billing is active (403)"})
+            return jsonify({"ok": False, "error": "Access denied â€” check billing is active (403)"})
         else:
             return jsonify({"ok": False, "error": f"HTTP error {resp.status_code}"})
     except requests.exceptions.Timeout:
@@ -1951,9 +2246,9 @@ def api_verify_key():
 
 
 # ---------------------------------------------------------------------------
-# API — Generate (con supporto immagini di riferimento)
+# API â€” Generate (con supporto immagini di riferimento)
 # ---------------------------------------------------------------------------
-def run_generation_job(body: dict, api_key: str) -> dict:
+def run_gemini_generation_job(body: dict, api_key: str) -> dict:
     model_id     = body.get("model", "gemini-3.1-flash-image-preview")
     image_size   = body.get("imageSize", "1K")
     num_images   = max(1, min(int(body.get("numberOfImages", 1)), 4))
@@ -1961,6 +2256,7 @@ def run_generation_job(body: dict, api_key: str) -> dict:
     top_p        = float(body.get("topP", 0.95))
     thinking_lvl = body.get("thinkingLevel", "Minimal")
     use_search   = bool(body.get("useSearch", False))
+    gemini_safety_settings, gemini_safety_preset = build_gemini_safety_settings(body.get("geminiSafetyPreset", "default"))
     output_mode  = body.get("outputMode", "images_text")
     ref_images   = body.get("refImages", [])
     aspect_ratio = body.get("aspectRatio", "1:1")
@@ -2034,6 +2330,8 @@ def run_generation_job(body: dict, api_key: str) -> dict:
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": gen_config,
     }
+    if gemini_safety_settings:
+        payload["safetySettings"] = gemini_safety_settings
     if use_search:
         payload["tools"] = [{"googleSearch": {}}]
 
@@ -2077,11 +2375,30 @@ def run_generation_job(body: dict, api_key: str) -> dict:
                 elif "text" in part:
                     text_parts.append(part["text"])
         if len(images) == response_images_before:
-            response_issues.append(summarize_generate_response_issue(result))
+            response_issues.append(
+                summarize_generate_response_issue(
+                    result,
+                    safety_preset=gemini_safety_preset,
+                    safety_settings_sent=bool(gemini_safety_settings),
+                )
+            )
 
     if not images:
-        issue_message = next((msg for msg in response_issues if msg), "Gemini returned no image for this request.")
-        raise RuntimeError(issue_message)
+        issue_entry = next((item for item in response_issues if item and item[0]), None)
+        if issue_entry:
+            issue_message, issue_debug = issue_entry
+        else:
+            issue_message, issue_debug = (
+                "Gemini returned no image for this request.",
+                {
+                    "provider": "gemini",
+                    "safetyPreset": gemini_safety_preset,
+                    "safetySettingsSent": bool(gemini_safety_settings),
+                    "summary": "Gemini returned no image for this request.",
+                    "candidates": [],
+                },
+            )
+        raise GenerationDebugError(issue_message, issue_debug)
 
     png_images = []
     for img in images:
@@ -2109,6 +2426,7 @@ def run_generation_job(body: dict, api_key: str) -> dict:
         "topP": top_p,
         "thinkingLevel": thinking_lvl,
         "useSearch": use_search,
+        "geminiSafetyPreset": gemini_safety_preset,
         "outputMode": output_mode,
         "prompt": prompt,
         "ref_count": len(ref_images),
@@ -2188,22 +2506,156 @@ def persist_generation_result(result: dict):
     return result
 
 
+def run_fal_seedream_generation_job(body: dict, api_key: str) -> dict:
+    model_id = body.get("model", FAL_SEEDREAM_45_TEXT_ID)
+    image_size = body.get("imageSize", "2K")
+    num_images = max(1, min(int(body.get("numberOfImages", 1)), 4))
+    aspect_ratio = body.get("aspectRatio", "1:1")
+    ref_images = body.get("refImages", [])
+    enable_safety_checker = bool(body.get("falSafetyChecker", True))
+    seed_mode = normalize_seed_mode(body.get("seedMode", "random"))
+    seed_value = coerce_seed_value(body.get("seedValue", 1))
+
+    raw_prompt = body.get("prompt", "")
+    if isinstance(raw_prompt, dict):
+        prompt = json.dumps(raw_prompt, ensure_ascii=False, indent=2)
+    else:
+        prompt = str(raw_prompt).strip()
+
+    if not prompt:
+        raise ValueError("Please enter a prompt")
+    if model_id not in MODELS_INFO:
+        raise ValueError("Invalid model")
+
+    model_info = MODELS_INFO[model_id]
+    max_ref = model_info["max_ref_images"]
+    if ref_images and max_ref == 0:
+        raise ValueError(f"{model_info['label']} does not support reference images.")
+    ref_images = [
+        {
+            "mime_type": img.get("mime_type", "image/png"),
+            "data": img.get("data", ""),
+            "name": img.get("name", ""),
+        }
+        for img in (ref_images[:max_ref] if isinstance(ref_images, list) else [])
+        if isinstance(img, dict) and img.get("data")
+    ]
+
+    endpoint = build_fal_seedream_endpoint(model_id, bool(ref_images))
+    payload = {
+        "prompt": prompt,
+        "image_size": build_fal_seedream_image_size(model_id, image_size),
+        "num_images": num_images,
+        "max_images": 1,
+        "sync_mode": True,
+        "enable_safety_checker": enable_safety_checker,
+    }
+    if ref_images:
+        payload["image_urls"] = build_seedream_ref_inputs(ref_images)
+
+    actual_seed = None
+    if seed_mode != "random":
+        actual_seed = seed_value
+        payload["seed"] = actual_seed
+
+    headers = {
+        "Authorization": f"Key {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.post(f"{FAL_BASE_URL}/{endpoint}", headers=headers, json=payload, timeout=240)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: Fal Seedream generation took too long.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+
+    if response.status_code != 200:
+        raise RuntimeError(extract_fal_error(response))
+
+    result = response.json()
+    returned_seed = result.get("seed") if isinstance(result, dict) else None
+    items = result.get("images") or result.get("data") or []
+    images = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        decoded = decode_fal_image_result(item)
+        if decoded:
+            images.append(decoded)
+
+    if not images:
+        raise RuntimeError("Fal Seedream returned no image for this request.")
+
+    png_images = []
+    for img in images:
+        try:
+            png_b64, png_mime = convert_image_b64_to_png(img.get("data", ""), img.get("mime_type", "image/png"))
+            png_images.append({"mime_type": png_mime, "data": png_b64})
+        except Exception:
+            png_images.append(img)
+
+    price_per_image = PRICING.get(model_id, {}).get(image_size, 0.0)
+    cost = price_per_image * len(png_images)
+    params_meta = {
+        "model": model_id,
+        "model_label": model_info["label"],
+        "provider": model_info.get("provider", "fal"),
+        "imageSize": image_size,
+        "aspectRatio": aspect_ratio,
+        "temperature": float(body.get("temperature", 1.0)),
+        "topP": float(body.get("topP", 0.95)),
+        "thinkingLevel": body.get("thinkingLevel", "Minimal"),
+        "useSearch": bool(body.get("useSearch", False)),
+        "outputMode": body.get("outputMode", "images_only"),
+        "prompt": prompt,
+        "ref_count": len(ref_images),
+        "seedMode": seed_mode,
+        "seedValue": int(returned_seed if returned_seed is not None else actual_seed if actual_seed is not None else seed_value),
+        "falSafetyChecker": enable_safety_checker,
+    }
+    return {
+        "ok": True,
+        "images": png_images,
+        "text": "",
+        "cost": round(cost, 4),
+        "model_label": model_info["label"],
+        "params": params_meta,
+        "_input_ref_images": ref_images,
+    }
+
+
+def run_generation_job(body: dict, config: dict) -> dict:
+    model_id = body.get("model", "gemini-3.1-flash-image-preview")
+    if model_id not in MODELS_INFO:
+        raise ValueError("Invalid model")
+    provider = MODELS_INFO[model_id].get("provider", "gemini")
+    if provider == "fal":
+        fal_key = (config.get("fal_api_key", "") or "").strip()
+        if not fal_key:
+            raise ValueError("Fal API key not configured. Go to Settings.")
+        return run_fal_seedream_generation_job(body, fal_key)
+    gemini_key = (config.get("api_key", "") or "").strip()
+    if not gemini_key:
+        raise ValueError("Gemini API key not configured. Go to Settings.")
+    return run_gemini_generation_job(body, gemini_key)
+
+
 @app.route("/api/generate", methods=["POST"])
 @login_required
 def api_generate():
     config = load_config()
-    api_key = config.get("api_key", "").strip()
-    if not api_key:
-        return jsonify({"ok": False, "error": "API key not configured. Go to Settings."})
     body = request.get_json(silent=True) or {}
     try:
-        result = run_generation_job(body, api_key)
+        result = run_generation_job(body, config)
         persist_generation_result(result)
         return jsonify(result)
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)})
     except TimeoutError as exc:
         return jsonify({"ok": False, "error": str(exc)})
+    except GenerationDebugError as exc:
+        return jsonify({"ok": False, "error": str(exc), "debug": exc.debug})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
 
@@ -2212,9 +2664,6 @@ def api_generate():
 @login_required
 def api_workbench_run():
     config = load_config()
-    api_key = config.get("api_key", "").strip()
-    if not api_key:
-        return jsonify({"ok": False, "error": "API key not configured. Go to Settings."})
 
     body = request.get_json(silent=True) or {}
     run_uuid = str(body.get("run_uuid", "")).strip()
@@ -2238,7 +2687,7 @@ def api_workbench_run():
         "refImages": body.get("refImages", []),
     }
     try:
-        result = run_generation_job(payload, api_key)
+        result = run_generation_job(payload, config)
         persist_generation_result(result)
         update_task_run_after_generation(run_uuid, generation_result=result)
         fresh_report = get_workbench_report()
@@ -2321,7 +2770,7 @@ def api_generations():
 
 
 # ---------------------------------------------------------------------------
-# API — Delete a generation (image + sidecar JSON only, never loved/)
+# API â€” Delete a generation (image + sidecar JSON only, never loved/)
 # ---------------------------------------------------------------------------
 @app.route("/api/generations/<date_str>/<filename>", methods=["DELETE"])
 @login_required
@@ -2364,7 +2813,7 @@ def api_delete_generation(date_str, filename):
 
 
 # ---------------------------------------------------------------------------
-# API — Publish (save to loved/)
+# API â€” Publish (save to loved/)
 # ---------------------------------------------------------------------------
 @app.route("/api/publish", methods=["POST"])
 @login_required
@@ -2459,7 +2908,7 @@ def api_workbench_plan():
 
 
 # ---------------------------------------------------------------------------
-# API — Stats
+# API â€” Stats
 # ---------------------------------------------------------------------------
 @app.route("/api/stats")
 @login_required
@@ -2507,11 +2956,14 @@ if __name__ == "__main__":
             dst = os.path.join(LOVED_DIR, item)
             if not os.path.exists(dst):
                 shutil.copytree(src, dst) if os.path.isdir(src) else shutil.copy2(src, dst)
-        print("  ⬆  Migrated published/ -> loved/")
+        print("  â¬†  Migrated published/ -> loved/")
     print("\n" + "="*52)
-    print("  🍌 Nano Banana Studio")
+    print("  ðŸŒ Nano Banana Studio")
     print("  http://localhost:5000")
     print("  Login: admin / banana2024")
-    print("  Max ref images: NB=0 · Pro=8 · NB2=14")
+    print("  Max ref images: NB=0 Â· Pro=8 Â· NB2=14")
     print("="*52 + "\n")
     app.run(debug=True, port=5000)
+
+
+

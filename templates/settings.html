@@ -12,7 +12,7 @@
 <!-- NAV -->
 <nav class="navbar">
   <div class="nav-left">
-    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.1 beta</span></a>
   </div>
   <div class="nav-links">
     <a href="/index">Generator</a>
@@ -72,6 +72,32 @@
     {% if has_key %}
     <div class="key-current">
       Current key: <code>{{ masked_key }}</code>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- SEEDREAM API KEY -->
+  <section class="settings-card">
+    <h2>Fal API Key</h2>
+    <p class="settings-desc">Enter your Fal API key for Seedream 4.5 and Seedream 5 Lite image generation. These models are routed separately from Gemini.</p>
+
+    <div class="key-row">
+      <div class="input-wrap">
+        <input type="password" id="seedreamApiKeyInput" placeholder="fal_..." autocomplete="off"
+               value="{{ '*' * 20 if has_seedream_key else '' }}">
+        <button class="btn-icon" id="toggleSeedreamKeyBtn" title="Show/Hide" onclick="toggleSeedreamKeyVisibility()">Show</button>
+      </div>
+      <button class="btn-verify" id="verifySeedreamBtn" onclick="verifySeedreamKey()">
+        <span id="verifySeedreamLabel">Verify</span>
+      </button>
+      <button class="btn-save" id="saveSeedreamBtn" onclick="saveSeedreamKey()">Save</button>
+    </div>
+
+    <div id="seedreamKeyStatus" class="key-status"></div>
+
+    {% if has_seedream_key %}
+    <div class="key-current">
+      Current key: <code>{{ masked_seedream_key }}</code>
     </div>
     {% endif %}
   </section>
@@ -148,6 +174,10 @@
                   <span class="badge badge-nb">NB</span>
                 {% elif entry.model == 'gemini-3-pro-image-preview' %}
                   <span class="badge badge-pro">Pro</span>
+                {% elif entry.model in ['fal-ai/bytedance/seedream/v4.5/text-to-image', 'seedream-4-5-251128'] %}
+                  <span class="badge badge-sd">SD45</span>
+                {% elif entry.model == 'fal-ai/bytedance/seedream/v5/lite/text-to-image' %}
+                  <span class="badge badge-sd">SD5</span>
                 {% else %}
                   <span class="badge badge-nb2">NB2</span>
                 {% endif %}
@@ -223,6 +253,16 @@
           <td><span class="badge badge-nb2">NB2</span> Nano Banana 2</td>
           <td>$0.045</td><td>$0.067</td><td>$0.101</td><td>$0.151</td>
           <td class="td-free">~500 req/day (1K)</td>
+                </tr>
+        <tr>
+          <td><span class="badge badge-sd">SD45</span> Seedream 4.5</td>
+          <td class="td-na">-</td><td class="td-na">-</td><td>$0.040</td><td>$0.040</td>
+          <td class="td-free">Fal billed separately</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-sd">SD5</span> Seedream 5 Lite</td>
+          <td class="td-na">-</td><td class="td-na">-</td><td>$0.035</td><td>$0.035</td>
+          <td class="td-free">Fal billed separately</td>
         </tr>
       </tbody>
     </table>
@@ -293,7 +333,7 @@ function toggleKeyVisibility() {
 async function verifyKey() {
   const inp = document.getElementById("apiKeyInput");
   const key = inp.value.trim();
-  if (!key || key.startsWith("â€¢")) {
+  if (!key || key.startsWith("*")) {
     showKeyStatus("Please enter the new key to verify first", "error");
     return;
   }
@@ -324,7 +364,7 @@ async function verifyKey() {
 async function saveKey() {
   const inp = document.getElementById("apiKeyInput");
   const key = inp.value.trim();
-  if (!key || key.startsWith("â€¢")) {
+  if (!key || key.startsWith("*")) {
     showKeyStatus("Please enter the new key before saving", "error");
     return;
   }
@@ -355,8 +395,75 @@ async function resetStats() {
   const d = await r.json();
   if (d.ok) location.reload();
 }
+
+
+function toggleSeedreamKeyVisibility() {
+  const inp = document.getElementById("seedreamApiKeyInput");
+  inp.type = inp.type === "password" ? "text" : "password";
+}
+
+async function verifySeedreamKey() {
+  const inp = document.getElementById("seedreamApiKeyInput");
+  const key = inp.value.trim();
+  if (!key || key.startsWith("*")) {
+    showSeedreamKeyStatus("Please enter the new Fal key to verify first", "error");
+    return;
+  }
+  const btn = document.getElementById("verifySeedreamBtn");
+  const label = document.getElementById("verifySeedreamLabel");
+  label.textContent = "Verifying...";
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/verify-fal-key", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({fal_api_key: key})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showSeedreamKeyStatus("OK: " + (d.message || "Valid key!"), "success");
+    } else {
+      showSeedreamKeyStatus("Error: " + (d.error || "Invalid key"), "error");
+    }
+  } catch(e) {
+    showSeedreamKeyStatus("Network error: " + e.message, "error");
+  }
+  label.textContent = "Verify";
+  btn.disabled = false;
+}
+
+async function saveSeedreamKey() {
+  const inp = document.getElementById("seedreamApiKeyInput");
+  const key = inp.value.trim();
+  if (!key || key.startsWith("*")) {
+    showSeedreamKeyStatus("Please enter the new Fal key before saving", "error");
+    return;
+  }
+  const r = await fetch("/api/save-config", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({fal_api_key: key})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showSeedreamKeyStatus("Fal key saved successfully", "success");
+    inp.type = "password";
+    inp.value = "*".repeat(20);
+    setTimeout(() => location.reload(), 1000);
+  }
+}
+
+function showSeedreamKeyStatus(msg, type) {
+  const el = document.getElementById("seedreamKeyStatus");
+  el.textContent = msg;
+  el.className = "key-status " + type;
+  el.style.display = "block";
+}
 </script>
 </body>
 </html>
+
+
+
 
 

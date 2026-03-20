@@ -13,7 +13,7 @@
 <!-- NAV -->
 <nav class="navbar">
   <div class="nav-left">
-    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.1 beta</span></a>
   </div>
   <div class="nav-links">
     <a href="/index">Generator</a>
@@ -99,6 +99,8 @@
             <div class="img-card-badge">
               {% if m.model == 'gemini-2.5-flash-image' %}NB
               {% elif m.model == 'gemini-3-pro-image-preview' %}PRO
+              {% elif m.model in ['fal-ai/bytedance/seedream/v4.5/text-to-image', 'seedream-4-5-251128'] %}SD45
+              {% elif m.model == 'fal-ai/bytedance/seedream/v5/lite/text-to-image' %}SD5
               {% else %}NB2{% endif %}
             </div>
 
@@ -171,7 +173,10 @@ const ALL_LOVED = [
 const MODEL_LABELS = {
   "gemini-2.5-flash-image":         "Nano Banana",
   "gemini-3-pro-image-preview":     "Nano Banana Pro",
-  "gemini-3.1-flash-image-preview": "Nano Banana 2"
+  "gemini-3.1-flash-image-preview": "Nano Banana 2",
+  "fal-ai/bytedance/seedream/v4.5/text-to-image": "Seedream 4.5",
+  "seedream-4-5-251128": "Seedream 4.5",
+  "fal-ai/bytedance/seedream/v5/lite/text-to-image": "Seedream 5 Lite"
 };
 
 let _lbMeta     = {};
@@ -415,4 +420,5 @@ updateThemeBtn();
 </script>
 </body>
 </html>
+
 

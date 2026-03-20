@@ -342,6 +342,39 @@ input:checked + .slider::before { transform: translateX(16px); }
 
 .adv-input:focus { border-color: var(--accent); }
 
+.gen-debug {
+  display: none;
+  margin: 10px 0 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border2);
+  border-left: 3px solid #f59e0b;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.gen-debug-title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.gen-debug-row + .gen-debug-row {
+  margin-top: 4px;
+}
+
+.gen-debug-sub {
+  margin-top: 3px;
+  margin-left: 10px;
+  color: var(--text-dim);
+}
+
+.gen-debug-note {
+  margin-top: 8px;
+  color: var(--text-dim);
+}
+
 /* ============================================================
    MAIN AREA
    ============================================================ */
@@ -1406,6 +1439,7 @@ input:checked + .slider::before { transform: translateX(16px); }
 .badge-nb  { background: rgba(79, 168, 255, 0.15); color: var(--blue); }
 .badge-pro { background: rgba(200,255,0,0.12);    color: var(--accent); }
 .badge-nb2 { background: rgba(76,255,145,0.12);   color: var(--green); }
+.badge-sd  { background: rgba(10,102,194,0.12);   color: #63a8ff; }
 
 /* Price table */
 .price-table {
@@ -2736,6 +2770,7 @@ input:checked + .slider::before { transform: translateX(16px); }
   flex-shrink: 0;
 }
 .pm-nb2 { background: linear-gradient(135deg,#6200ea,#9c27b0); color: #fff; }
+.pm-seedream { background: linear-gradient(135deg,#0a66c2,#47a1ff); color: #fff; }
 .pm-pro { background: linear-gradient(135deg,#1565c0,#0d47a1); color: #fff; }
 .pm-nb  { background: var(--surface3); color: var(--text-dim); border: 1px solid var(--border2); }
 

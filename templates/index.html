@@ -81,7 +81,7 @@
     <button class="nav-hamburger" id="navHamburger" onclick="toggleSidebar()" title="Toggle sidebar" aria-label="Toggle sidebar">
       <span></span><span></span><span></span>
     </button>
-    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.0 beta</span></a>
+    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.1 beta</span></a>
   </div>
   <div class="nav-links">
     <a href="/index" class="active">Generator</a>
@@ -133,6 +133,8 @@
       <div class="ctrl-label">Model</div>
       <select id="modelSelect" onchange="onModelChange()">
         <option value="gemini-3.1-flash-image-preview">Nano Banana 2</option>
+        <option value="fal-ai/bytedance/seedream/v4.5/text-to-image">Seedream 4.5</option>
+        <option value="fal-ai/bytedance/seedream/v5/lite/text-to-image">Seedream 5 Lite</option>
         <option value="gemini-3-pro-image-preview">Nano Banana Pro</option>
         <option value="gemini-2.5-flash-image">Nano Banana</option>
       </select>
@@ -217,9 +219,17 @@
       <div class="toggle-row">
         <div class="toggle-item">
           <span class="toggle-icon">G</span>
-          <span>Grounding con Google Search</span>
+          <span>Grounding with Google Search</span>
           <label class="switch">
             <input type="checkbox" id="useSearchToggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="toggle-item" id="falSafetyRow" style="display:none">
+          <span class="toggle-icon">S</span>
+          <span>Fal safety checker</span>
+          <label class="switch">
+            <input type="checkbox" id="falSafetyCheckerToggle" checked onchange="scheduleDraftSave()">
             <span class="slider"></span>
           </label>
         </div>
@@ -245,6 +255,18 @@
         </div>
         <input type="range" id="topPRange" min="0" max="1" step="0.01" value="0.95"
                oninput="document.getElementById('topPVal').textContent = parseFloat(this.value).toFixed(2)">
+        <div id="geminiSafetyRow" style="display:none">
+          <div class="ctrl-label-row" style="margin-top:12px">
+            <span class="ctrl-label-sm">Nano Banana safety</span>
+          </div>
+          <select id="geminiSafetyPresetSelect" class="adv-input">
+            <option value="default" selected>Default</option>
+            <option value="relaxed">Relaxed</option>
+            <option value="off">Off</option>
+            <option value="strict">Strict</option>
+          </select>
+          <div class="ref-note" style="margin-top:8px">This adjusts Gemini safetySettings only. Hard image blocks like IMAGE_SAFETY still apply.</div>
+        </div>
       </div>
     </details>
 
@@ -350,6 +372,8 @@
       <span id="genStatusText">Generating...</span>
     </div>
 
+    <div class="gen-debug" id="genDebugPanel" style="display:none"></div>
+
     <div class="error-banner" id="errorBanner" style="display:none"></div>
 
     <!-- PROMPT BAR -->
@@ -395,6 +419,22 @@
                   <span class="pm-sub">Top quality - 14 ref images</span>
                 </span>
                 <span class="pm-check" id="pmChk-gemini-3.1-flash-image-preview">OK</span>
+              </button>
+              <button class="picker-model-row" data-model="fal-ai/bytedance/seedream/v4.5/text-to-image" onclick="pickModel(this)">
+                <span class="pm-icon pm-seedream">SD45</span>
+                <span class="pm-info">
+                  <span class="pm-name">Seedream 4.5</span>
+                  <span class="pm-sub">Fal API mode - up to 10 ref images</span>
+                </span>
+                <span class="pm-check" id="pmChk-fal-ai/bytedance/seedream/v4.5/text-to-image">OK</span>
+              </button>
+              <button class="picker-model-row" data-model="fal-ai/bytedance/seedream/v5/lite/text-to-image" onclick="pickModel(this)">
+                <span class="pm-icon pm-seedream">SD5</span>
+                <span class="pm-info">
+                  <span class="pm-name">Seedream 5 Lite</span>
+                  <span class="pm-sub">Fal API mode - up to 10 ref images</span>
+                </span>
+                <span class="pm-check" id="pmChk-fal-ai/bytedance/seedream/v5/lite/text-to-image">OK</span>
               </button>
               <button class="picker-model-row" data-model="gemini-3-pro-image-preview" onclick="pickModel(this)">
                 <span class="pm-icon pm-pro">PRO</span>
@@ -444,12 +484,12 @@
               </button>
               <button class="picker-qual-row" data-res="2K" id="qualRow-2K" onclick="pickQual(this)">
                 <span class="pq-name">2K</span>
-                <span class="pq-desc">2048 px - Pro / NB2</span>
+                <span class="pq-desc">2048 px - Pro / NB2 / Seedream</span>
                 <span class="pq-check" id="pqChk-2K">OK</span>
               </button>
               <button class="picker-qual-row" data-res="4K" id="qualRow-4K" onclick="pickQual(this)">
                 <span class="pq-name">4K <span class="pm-badge pm-premium" style="font-size:9px;vertical-align:middle">PREMIUM</span></span>
-                <span class="pq-desc">4096 px</span>
+                <span class="pq-desc">4096 px - Pro / NB2 / Seedream 4.5 / Seedream 5 Lite</span>
                 <span class="pq-check" id="pqChk-4K">OK</span>
               </button>
             </div>
@@ -941,6 +981,8 @@ function collectGeneratorDraft() {
     thinkingLevel: document.getElementById("thinkingSelect").value || "Minimal",
     numberOfImages: parseInt(document.getElementById("numImgRange").value || "1", 10),
     useSearch: document.getElementById("useSearchToggle").checked,
+    falSafetyChecker: document.getElementById("falSafetyCheckerToggle").checked,
+    geminiSafetyPreset: document.getElementById("geminiSafetyPresetSelect").value || "default",
     stopSequence: document.getElementById("stopSeq").value || "",
     outputLength: parseInt(document.getElementById("outLenRange").value || "65536", 10),
     seedMode: document.getElementById("seedModeSelect").value || "random",
@@ -1074,6 +1116,12 @@ function applyDraftState(draft, options = {}) {
     if (draft.useSearch != null) {
       document.getElementById("useSearchToggle").checked = Boolean(draft.useSearch);
     }
+    if (draft.falSafetyChecker != null) {
+      document.getElementById("falSafetyCheckerToggle").checked = Boolean(draft.falSafetyChecker);
+    }
+    if (draft.geminiSafetyPreset) {
+      document.getElementById("geminiSafetyPresetSelect").value = draft.geminiSafetyPreset;
+    }
     if (typeof draft.stopSequence === "string") {
       document.getElementById("stopSeq").value = draft.stopSequence;
     }
@@ -1122,6 +1170,7 @@ function bindDraftPersistence() {
     "thinkingSelect",
     "numImgRange",
     "useSearchToggle",
+    "geminiSafetyPresetSelect",
     "stopSeq",
     "outLenRange",
     "topPRange",
@@ -1150,37 +1199,41 @@ function setOutputMode(mode, btn) {
 function onModelChange() {
   const modelId = document.getElementById("modelSelect").value;
   const info    = MODELS_INFO[modelId];
+  const allowedRes = new Set(info.resolutions || []);
+  const allowedAR = new Set(info.aspect_ratios || []);
 
   // Thinking group
   document.getElementById("thinkingGroup").style.display = info.thinking ? "block" : "none";
 
-  // Resoluzioni
+  const isFalModel = info.provider === "fal";
+  const isGeminiModel = info.provider === "gemini";
+  const falSafetyRow = document.getElementById("falSafetyRow");
+  const falSafetyToggle = document.getElementById("falSafetyCheckerToggle");
+  const geminiSafetyRow = document.getElementById("geminiSafetyRow");
+  const geminiSafetySelect = document.getElementById("geminiSafetyPresetSelect");
+  if (falSafetyRow) falSafetyRow.style.display = isFalModel ? "flex" : "none";
+  if (falSafetyToggle && !isFalModel) falSafetyToggle.checked = true;
+  if (geminiSafetyRow) geminiSafetyRow.style.display = isGeminiModel ? "block" : "none";
+  if (geminiSafetySelect && !isGeminiModel) geminiSafetySelect.value = "default";
+
+  // Resolution availability
   const resEl = document.getElementById("resSelect");
   Array.from(resEl.options).forEach(opt => {
-    if (opt.value === "0.5K") opt.disabled = !info.thinking;
-    else if (opt.value === "2K") opt.disabled = (modelId === "gemini-2.5-flash-image");
-    else if (opt.value === "4K") opt.disabled = (modelId === "gemini-2.5-flash-image");
-    else opt.disabled = false;
+    opt.disabled = !allowedRes.has(opt.value);
   });
-  if (resEl.selectedOptions[0].disabled) resEl.value = "1K";
-  // Sync sidebar resolution button disabled states
+  if (resEl.selectedOptions[0].disabled) resEl.value = (info.resolutions && info.resolutions[0]) || "1K";
   document.querySelectorAll(".ctrl-option-btn[data-res]").forEach(btn => {
-    const r = btn.dataset.res;
-    let dis = false;
-    if (r === "0.5K") dis = !info.thinking;
-    else if (r === "2K" || r === "4K") dis = (modelId === "gemini-2.5-flash-image");
-    btn.disabled = dis;
+    btn.disabled = !allowedRes.has(btn.dataset.res);
   });
 
-  // Aspect ratios NB2 extra
+  // Aspect ratio availability
   const arEl = document.getElementById("aspectSelect");
   Array.from(arEl.options).forEach(opt => {
-    if (opt.classList.contains("nb2-only")) opt.disabled = !info.thinking;
+    opt.disabled = !allowedAR.has(opt.value);
   });
-  if (arEl.selectedOptions[0].disabled) arEl.value = "16:9";
-  // Sync sidebar AR button disabled states
-  document.querySelectorAll(".ctrl-ar-btn[data-nb2]").forEach(btn => {
-    btn.disabled = !info.thinking;
+  if (arEl.selectedOptions[0].disabled) arEl.value = allowedAR.has("16:9") ? "16:9" : ((info.aspect_ratios && info.aspect_ratios[0]) || "1:1");
+  document.querySelectorAll(".ctrl-ar-btn[data-ar]").forEach(btn => {
+    btn.disabled = !allowedAR.has(btn.dataset.ar);
   });
 
   // Chip modello + picker sync
@@ -1414,18 +1467,17 @@ function initSidebarArGrid() {
 }
 
 function syncQualPicker(modelId) {
-  // Enable/disable quality rows based on model
-  const isNB = (modelId === "gemini-2.5-flash-image");
-  const isNB2 = (modelId === "gemini-3.1-flash-image-preview");
+  const info = MODELS_INFO[modelId] || {};
+  const allowedRes = new Set(info.resolutions || []);
+  const allowedAR = new Set(info.aspect_ratios || []);
   const row05 = document.getElementById("qualRow-0_5K");
   const row2K = document.getElementById("qualRow-2K");
   const row4K = document.getElementById("qualRow-4K");
-  if (row05) row05.disabled = !isNB2;
-  if (row2K) row2K.disabled = isNB;
-  if (row4K) row4K.disabled = isNB;
-  // Enable/disable NB2-only AR buttons
-  document.querySelectorAll(".picker-ar-row[data-nb2]").forEach(b => {
-    b.disabled = !isNB2;
+  if (row05) row05.disabled = !allowedRes.has("0.5K");
+  if (row2K) row2K.disabled = !allowedRes.has("2K");
+  if (row4K) row4K.disabled = !allowedRes.has("4K");
+  document.querySelectorAll(".picker-ar-row[data-ar]").forEach(b => {
+    b.disabled = !allowedAR.has(b.dataset.ar);
   });
 }
 
@@ -1759,6 +1811,8 @@ async function generate() {
     topP:           parseFloat(document.getElementById("topPRange").value),
     thinkingLevel:  document.getElementById("thinkingSelect").value,
     useSearch:      document.getElementById("useSearchToggle").checked,
+    falSafetyChecker: document.getElementById("falSafetyCheckerToggle").checked,
+    geminiSafetyPreset: document.getElementById("geminiSafetyPresetSelect").value || "default",
     outputMode:     outputMode,
     seedMode:       seedConfig.seedMode,
     seedValue:      seedConfig.seedValue,
@@ -1790,7 +1844,7 @@ async function generate() {
 
     if (!r.ok || !data.ok) {
       setLoading(false);
-      showError(data.error || `Generation failed (${r.status})`);
+      showError(data.error || `Generation failed (${r.status})`, undefined, data.debug || null);
       return;
     }
 
@@ -1807,6 +1861,7 @@ async function generate() {
       "success",
       2500
     );
+    hideGenerationDebug();
     if (data.cost > 0) showCostToast(data.cost, data.model_label);
   } catch(e) {
     setLoading(false);
@@ -2334,6 +2389,14 @@ async function applyReusableParams(params, successMessage) {
     if (mini) mini.checked = checked;
   }
 
+  if (params.falSafetyChecker != null) {
+    document.getElementById("falSafetyCheckerToggle").checked = Boolean(params.falSafetyChecker);
+  }
+
+  if (params.geminiSafetyPreset) {
+    document.getElementById("geminiSafetyPresetSelect").value = params.geminiSafetyPreset;
+  }
+
   if (params.outputMode) {
     applyOutputMode(params.outputMode);
   }
@@ -2437,6 +2500,8 @@ async function publishImage(img, idx, params, btnEl) {
           topP:        params.topP,
           thinkingLevel: params.thinkingLevel,
           useSearch:   params.useSearch,
+          falSafetyChecker: params.falSafetyChecker,
+          geminiSafetyPreset: params.geminiSafetyPreset,
           outputMode:  params.outputMode,
           seedMode:    params.seedMode,
           seedValue:   params.seedValue,
@@ -2567,23 +2632,76 @@ function hideStatus() {
 function setLoading(on) {
   document.getElementById("generateBtn").disabled = on;
   if (on) {
+    hideGenerationDebug();
     showStatus("Generating...", "loading");
   } else {
     hideStatus();
   }
 }
 
-function showError(msg, type) {
+function escapeDebugHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderGeminiDebug(debug) {
+  const lines = [];
+  lines.push(`<div class="gen-debug-title">Safety debug</div>`);
+  lines.push(`<div class="gen-debug-row"><strong>Preset:</strong> ${escapeDebugHtml(debug.safetyPreset || "default")}</div>`);
+  lines.push(`<div class="gen-debug-row"><strong>safetySettings sent:</strong> ${debug.safetySettingsSent ? "Yes" : "No"}</div>`);
+  if (debug.promptBlockReason) {
+    lines.push(`<div class="gen-debug-row"><strong>Prompt block:</strong> ${escapeDebugHtml(debug.promptBlockReason)}</div>`);
+  }
+  if (debug.promptBlockReasonMessage) {
+    lines.push(`<div class="gen-debug-row">${escapeDebugHtml(debug.promptBlockReasonMessage)}</div>`);
+  }
+  (debug.candidates || []).forEach(item => {
+    lines.push(`<div class="gen-debug-row"><strong>Candidate ${item.index}:</strong> ${escapeDebugHtml(item.finishReason || "")}${item.finishMessage ? " - " + escapeDebugHtml(item.finishMessage) : ""}${item.hasImage ? "" : " (no image)"}</div>`);
+    (item.safetyRatings || []).filter(r => r.blocked || r.probability === 'HIGH').forEach(rating => {
+      lines.push(`<div class="gen-debug-sub">${escapeDebugHtml(rating.category)}: ${escapeDebugHtml(rating.probability || "")}${rating.blocked ? " blocked" : ""}</div>`);
+    });
+  });
+  const hardBlock = (debug.candidates || []).some(item => String(item.finishReason || "").startsWith("IMAGE_") || ["PROHIBITED_CONTENT", "IMAGE_PROHIBITED_CONTENT", "SPII", "OTHER"].includes(String(item.finishReason || "")));
+  if (hardBlock) {
+    lines.push('<div class="gen-debug-note">This looks like a hard image-policy block. Gemini safety presets usually will not override it.</div>');
+  }
+  return lines.join("");
+}
+
+function showGenerationDebug(debug) {
+  const panel = document.getElementById("genDebugPanel");
+  if (!panel || !debug || debug.provider !== "gemini") {
+    hideGenerationDebug();
+    return;
+  }
+  panel.innerHTML = renderGeminiDebug(debug);
+  panel.style.display = "block";
+}
+
+function hideGenerationDebug() {
+  const panel = document.getElementById("genDebugPanel");
+  if (!panel) return;
+  panel.innerHTML = "";
+  panel.style.display = "none";
+}
+
+function showError(msg, type, debug) {
   if (type === "success") {
+    hideGenerationDebug();
     showStatus(msg, "success", 4000);
   } else {
     showStatus(msg, "error", 9000);
+    showGenerationDebug(debug || null);
   }
   document.getElementById("errorBanner").style.display = "none";
 }
 
 function hideError() {
   document.getElementById("errorBanner").style.display = "none";
+  hideGenerationDebug();
   hideStatus();
 }
 
@@ -3470,6 +3588,9 @@ updateThemeBtn();
 </script>
 </body>
 </html>
+
+
+
 
 
 
