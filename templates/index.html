@@ -349,10 +349,23 @@
             <option value="all" selected>All models</option>
           </select>
         </label>
-      </div>
-      <div class="gallery-toolbar-meta">
-        <span class="gallery-filter-count" id="galleryFilterCount">No generations yet</span>
-        <button class="gallery-filter-reset" type="button" onclick="resetGalleryFilters()">Clear filters</button>
+        <label class="gallery-filter-field gallery-filter-field-provider">
+          <span>Provider</span>
+          <select id="galleryProviderFilter">
+            <option value="all" selected>All providers</option>
+          </select>
+        </label>
+        <div class="gallery-toolbar-meta">
+          <span class="gallery-filter-count" id="galleryFilterCount">No generations yet</span>
+          <button class="gallery-filter-reset" type="button" onclick="resetGalleryFilters()">Clear filters</button>
+          <div class="gallery-toolbar-history">
+            <div class="gallery-rail-title">Previous Images</div>
+            <label class="gallery-rail-size-control gallery-rail-size-control-inline" for="galleryDensityRange">
+              <span class="gallery-rail-size-label" id="galleryDensityLabel">Medium</span>
+              <input type="range" id="galleryDensityRange" min="1" max="3" step="1" value="2">
+            </label>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -372,19 +385,6 @@
           <div class="gallery-feature-text" id="galleryFeatureText" style="display:none"></div>
         </div>
         <aside class="gallery-rail">
-          <div class="gallery-rail-header">
-            <div class="gallery-rail-heading">
-              <div class="gallery-rail-title">Previous Images</div>
-              
-            </div>
-            <div class="gallery-rail-controls">
-              <label class="gallery-rail-size-control" for="galleryDensityRange">
-                
-                <span class="gallery-rail-size-label" id="galleryDensityLabel">Medium</span>
-                <input type="range" id="galleryDensityRange" min="1" max="3" step="1" value="2">
-              </label>
-            </div>
-          </div>
           <div class="gallery-rail-empty" id="galleryRailEmpty" style="display:none">Previous images will appear here.</div>
           <div class="gallery-grid gallery-rail-grid" id="galleryGrid"></div>
         </aside>
@@ -1999,6 +1999,7 @@ const GALLERY_FILTER_DEFAULTS = {
   date: "",
   ratio: "all",
   model: "all",
+  provider: "all",
 };
 let galleryFilters = Object.assign({}, GALLERY_FILTER_DEFAULTS);
 const GALLERY_DENSITY_DEFAULT = 2;
@@ -2148,10 +2149,14 @@ function updateGalleryFilterCount(visibleCount, totalCount) {
 function getGalleryFilteredEntries() {
   const filtered = galleryEntries.filter(entry => {
     const params = entry.params || {};
+    const modelInfo = MODELS_INFO[params.model] || {};
+    const familyKey = params.modelFamily || modelInfo.family || params.model || "";
+    const providerKey = params.provider || modelInfo.provider || "";
     if (galleryFilters.size !== "all" && params.imageSize !== galleryFilters.size) return false;
     if (galleryFilters.date && entry.dateKey !== galleryFilters.date) return false;
     if (galleryFilters.ratio !== "all" && params.aspectRatio !== galleryFilters.ratio) return false;
-    if (galleryFilters.model !== "all" && params.model !== galleryFilters.model) return false;
+    if (galleryFilters.model !== "all" && familyKey !== galleryFilters.model) return false;
+    if (galleryFilters.provider !== "all" && providerKey !== galleryFilters.provider) return false;
     return true;
   });
 
@@ -2269,6 +2274,7 @@ function readGalleryFiltersFromUi() {
     date: document.getElementById("galleryDateFilter").value || "",
     ratio: document.getElementById("galleryRatioFilter").value || GALLERY_FILTER_DEFAULTS.ratio,
     model: document.getElementById("galleryModelFilter").value || GALLERY_FILTER_DEFAULTS.model,
+    provider: document.getElementById("galleryProviderFilter").value || GALLERY_FILTER_DEFAULTS.provider,
   };
 }
 
@@ -2283,6 +2289,7 @@ function resetGalleryFilters() {
   document.getElementById("galleryDateFilter").value = GALLERY_FILTER_DEFAULTS.date;
   document.getElementById("galleryRatioFilter").value = GALLERY_FILTER_DEFAULTS.ratio;
   document.getElementById("galleryModelFilter").value = GALLERY_FILTER_DEFAULTS.model;
+  document.getElementById("galleryProviderFilter").value = GALLERY_FILTER_DEFAULTS.provider;
   applyGalleryFilters();
 }
 
@@ -2293,6 +2300,7 @@ function bindGalleryFilters() {
     "galleryDateFilter",
     "galleryRatioFilter",
     "galleryModelFilter",
+    "galleryProviderFilter",
   ].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -2302,14 +2310,34 @@ function bindGalleryFilters() {
 }
 
 function populateGalleryModelFilter() {
-  const select = document.getElementById("galleryModelFilter");
-  if (!select || select.options.length > 1) return;
-  Object.entries(MODELS_INFO).forEach(([modelId, info]) => {
-    const opt = document.createElement("option");
-    opt.value = modelId;
-    opt.textContent = info.label || modelId;
-    select.appendChild(opt);
-  });
+  const modelSelect = document.getElementById("galleryModelFilter");
+  const providerSelect = document.getElementById("galleryProviderFilter");
+
+  if (modelSelect && modelSelect.options.length <= 1) {
+    const seenFamilies = new Set();
+    Object.entries(MODELS_INFO).forEach(([modelId, info]) => {
+      const familyKey = info.family || modelId;
+      if (seenFamilies.has(familyKey)) return;
+      seenFamilies.add(familyKey);
+      const opt = document.createElement("option");
+      opt.value = familyKey;
+      opt.textContent = info.label || familyKey;
+      modelSelect.appendChild(opt);
+    });
+  }
+
+  if (providerSelect && providerSelect.options.length <= 1) {
+    const seenProviders = new Set();
+    Object.values(MODELS_INFO).forEach(info => {
+      const providerKey = info.provider || "";
+      if (!providerKey || seenProviders.has(providerKey)) return;
+      seenProviders.add(providerKey);
+      const opt = document.createElement("option");
+      opt.value = providerKey;
+      opt.textContent = PROVIDER_LABELS[providerKey] || providerKey;
+      providerSelect.appendChild(opt);
+    });
+  }
 }
 
 function renderGallery(images, text, params) {

@@ -422,6 +422,10 @@ input:checked + .slider::before { transform: translateX(16px); }
   flex: 1;
 }
 
+.gallery-filter-field-provider {
+  min-width: 140px;
+}
+
 .gallery-filter-field select,
 .gallery-filter-field input {
   background-color: var(--surface2);
@@ -450,8 +454,18 @@ input:checked + .slider::before { transform: translateX(16px); }
 .gallery-toolbar-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 10px;
+  margin-left: auto;
+  padding-top: 22px;
+  flex-wrap: wrap;
+}
+
+.gallery-toolbar-history {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .gallery-filter-count {
@@ -617,6 +631,16 @@ input:checked + .slider::before { transform: translateX(16px); }
   text-transform: uppercase;
 }
 
+.gallery-rail-size-control-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .gallery-rail-size-label {
   color: var(--text);
   font-size: 11px;
@@ -624,8 +648,17 @@ input:checked + .slider::before { transform: translateX(16px); }
   text-align: left;
 }
 
+.gallery-rail-size-control-inline .gallery-rail-size-label {
+  min-width: 54px;
+  font-size: 12px;
+}
+
 .gallery-rail-size-control input[type="range"] {
   width: 100%;
+}
+
+.gallery-rail-size-control-inline input[type="range"] {
+  width: 132px;
 }
 
 .gallery-rail-title {
@@ -3444,8 +3477,27 @@ input:checked + .slider::before { transform: translateX(16px); }
   }
 
   .gallery-toolbar-meta {
-    align-items: flex-start;
-    flex-direction: column;
+    width: 100%;
+    margin-left: 0;
+    padding-top: 0;
+    align-items: center;
+    justify-content: flex-start;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .gallery-toolbar-history {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .gallery-rail-size-control-inline {
+    flex: 1;
+    justify-content: flex-end;
+  }
+
+  .gallery-rail-size-control-inline input[type="range"] {
+    width: min(180px, 100%);
   }
 
   .gallery { padding: 10px; }
