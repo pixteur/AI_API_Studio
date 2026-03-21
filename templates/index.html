@@ -1993,6 +1993,7 @@ let _galleryRailEmpty = null;
 let _infoPopup   = null;
 let galleryEntries = [];
 let galleryEntrySequence = 0;
+let gallerySelectedImageId = "";
 const GALLERY_FILTER_DEFAULTS = {
   sort: "newest",
   size: "all",
@@ -2102,7 +2103,7 @@ function formatGalleryDateKey(value, fallbackDate) {
 }
 
 function registerGalleryImageEntry(img, idx, params, badgeLabel, generatedAt, fallbackDate) {
-  galleryEntries.push({
+  const entry = {
     id: `gallery-image-${nextGallerySequence()}`,
     type: "image",
     image: img,
@@ -2113,13 +2114,15 @@ function registerGalleryImageEntry(img, idx, params, badgeLabel, generatedAt, fa
     dateKey: formatGalleryDateKey(generatedAt || params.generated_at || "", fallbackDate || params.gen_date || ""),
     sortTimestamp: parseGalleryTimestamp(generatedAt || params.generated_at || "", fallbackDate || params.gen_date || ""),
     sequence: galleryEntrySequence,
-  });
+  };
+  galleryEntries.push(entry);
+  return entry;
 }
 
 function registerGalleryTextEntry(text, params, generatedAt, fallbackDate) {
   if (!text) return;
   const modelInfo = MODELS_INFO[params.model] || {};
-  galleryEntries.push({
+  const entry = {
     id: `gallery-text-${nextGallerySequence()}`,
     type: "text",
     text,
@@ -2129,7 +2132,16 @@ function registerGalleryTextEntry(text, params, generatedAt, fallbackDate) {
     dateKey: formatGalleryDateKey(generatedAt || params.generated_at || "", fallbackDate || params.gen_date || ""),
     sortTimestamp: parseGalleryTimestamp(generatedAt || params.generated_at || "", fallbackDate || params.gen_date || ""),
     sequence: galleryEntrySequence,
-  });
+  };
+  galleryEntries.push(entry);
+  return entry;
+}
+
+function setSelectedGalleryImage(entryId, options = {}) {
+  gallerySelectedImageId = entryId || "";
+  if (!options.silent) {
+    renderGalleryEntries();
+  }
 }
 
 function updateGalleryFilterCount(visibleCount, totalCount) {
@@ -2223,10 +2235,11 @@ function renderGalleryEntries() {
 
   const imageEntries = entries.filter(entry => entry.type === "image");
   const textEntries = entries.filter(entry => entry.type === "text");
-  const featuredImageEntry = imageEntries[0] || null;
+  const featuredImageEntry = imageEntries.find(entry => entry.id === gallerySelectedImageId) || imageEntries[0] || null;
+  gallerySelectedImageId = featuredImageEntry ? featuredImageEntry.id : "";
   const featuredTextEntry = !featuredImageEntry && textEntries.length ? textEntries[0] : null;
   const featureColumnTextEntries = featuredImageEntry ? textEntries : textEntries.slice(1);
-  const railImageEntries = featuredImageEntry ? imageEntries.slice(1) : imageEntries;
+  const railImageEntries = imageEntries;
 
   if (featuredImageEntry) {
     featureStage.appendChild(
@@ -2252,9 +2265,7 @@ function renderGalleryEntries() {
   }
 
   if (railImageEntries.length === 0) {
-    railEmpty.textContent = featuredImageEntry
-      ? "No previous images yet."
-      : "No image cards are available for this filtered view.";
+    railEmpty.textContent = "No image cards are available for this filtered view.";
     railEmpty.style.display = "flex";
     grid.style.display = "none";
     return;
@@ -2263,7 +2274,18 @@ function renderGalleryEntries() {
   railEmpty.style.display = "none";
   grid.style.display = "flex";
   railImageEntries.forEach(entry => {
-    grid.appendChild(buildImgCard(entry.image, entry.idx || 0, entry.params || {}, entry.badgeLabel || "NB"));
+    grid.appendChild(
+      buildImgCard(
+        entry.image,
+        entry.idx || 0,
+        entry.params || {},
+        entry.badgeLabel || "NB",
+        {
+          selected: featuredImageEntry ? entry.id === featuredImageEntry.id : false,
+          onSelect: () => setSelectedGalleryImage(entry.id),
+        }
+      )
+    );
   });
 }
 
@@ -2344,6 +2366,7 @@ function renderGallery(images, text, params) {
   const generatedAt = new Date().toISOString();
   const modelInfo = MODELS_INFO[params.model] || {};
   const label = modelInfo.label || params.model_label || params.model || "NB";
+  let newestEntry = null;
 
   images.forEach((img, i) => {
     const cardParams = Object.assign({}, params, {
@@ -2351,7 +2374,8 @@ function renderGallery(images, text, params) {
       gen_filename: img.gen_filename || "",
       generated_at: params.generated_at || generatedAt,
     });
-    registerGalleryImageEntry(img, i, cardParams, label, generatedAt, cardParams.gen_date);
+    const entry = registerGalleryImageEntry(img, i, cardParams, label, generatedAt, cardParams.gen_date);
+    if (!newestEntry) newestEntry = entry;
   });
 
   if (text) {
@@ -2362,12 +2386,18 @@ function renderGallery(images, text, params) {
     registerGalleryTextEntry(text, textParams, generatedAt, textParams.gen_date);
   }
 
+  if (newestEntry) {
+    gallerySelectedImageId = newestEntry.id;
+  }
   renderGalleryEntries();
 }
 
 function buildImgCard(img, idx, params, badgeLabel, options = {}) {
   const card = document.createElement("div");
-  card.className = options.featured ? "img-card img-card-featured" : "img-card";
+  card.className = options.featured ? "img-card img-card-featured" : "img-card img-card-rail";
+  if (options.selected && !options.featured) {
+    card.classList.add("img-card-selected");
+  }
 
   // Image - natural height
   const image   = document.createElement("img");
@@ -2375,11 +2405,23 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
   image.src     = getImageSource(img);
   image.alt     = `Generated ${idx+1}`;
   image.loading = options.featured ? "eager" : "lazy";
-  image.onclick = () => openLightbox(img, idx, params);
+  if (options.featured) {
+    image.title = "Scroll to zoom. Scroll back out to fit.";
+    bindFeaturedImageZoom(card, image);
+    image.onclick = () => openLightbox(img, idx, params);
+  } else if (typeof options.onSelect === "function") {
+    image.onclick = (event) => {
+      event.preventDefault();
+      options.onSelect();
+    };
+    card.onclick = () => options.onSelect();
+  } else {
+    image.onclick = () => openLightbox(img, idx, params);
+  }
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Icone hover (colonna top-right) Ã¢â‚¬â€ SVG icons Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const actions = document.createElement("div");
-  actions.className = "img-actions";
+  actions.className = options.featured ? "img-actions img-actions-featured" : "img-actions img-actions-rail";
 
   // Ã¢â„¢Â¡ Love (favorite)
   const favBtn = makeActionBtn(SVG_HEART_EMPTY, "Love this image");
@@ -2408,15 +2450,84 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
   actions.append(favBtn, dlBtn, copyBtn, infoBtn, delBtn);
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Badge modello bottom-left Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-  const badge = document.createElement("div");
-  badge.className = "img-card-badge";
-  badge.textContent = badgeLabel.toUpperCase();
+  const badges = document.createElement("div");
+  badges.className = "img-card-badges";
+  [params.imageSize, badgeLabel].filter(Boolean).forEach((value) => {
+    const badge = document.createElement("div");
+    badge.className = "img-card-badge";
+    badge.textContent = String(value).toUpperCase();
+    badges.appendChild(badge);
+  });
 
-  card.append(image, actions, badge);
+  card.append(image, actions, badges);
   return card;
 }
 
 /* Ã¢â€â‚¬Ã¢â€â‚¬ SVG Icon Library (Lucide-style, 15Ãƒâ€”15) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
+const FEATURED_IMAGE_ZOOM_MIN = 1;
+const FEATURED_IMAGE_ZOOM_MAX = 5;
+const FEATURED_IMAGE_ZOOM_STEP = 0.18;
+
+function clampFeaturedImageZoom(value) {
+  return Math.min(FEATURED_IMAGE_ZOOM_MAX, Math.max(FEATURED_IMAGE_ZOOM_MIN, value));
+}
+
+function clampFeaturedImageOffset(card, scale, offsetX, offsetY) {
+  const rect = card.getBoundingClientRect();
+  const maxX = Math.max(0, ((rect.width * scale) - rect.width) / 2);
+  const maxY = Math.max(0, ((rect.height * scale) - rect.height) / 2);
+  return {
+    x: Math.min(maxX, Math.max(-maxX, offsetX || 0)),
+    y: Math.min(maxY, Math.max(-maxY, offsetY || 0)),
+  };
+}
+
+function setFeaturedImageZoom(card, image, scale, offsetX = 0, offsetY = 0) {
+  const safeScale = clampFeaturedImageZoom(scale);
+  const safeOffset = clampFeaturedImageOffset(card, safeScale, offsetX, offsetY);
+  card.dataset.zoomScale = safeScale.toFixed(4);
+  card.dataset.zoomOffsetX = safeOffset.x.toFixed(2);
+  card.dataset.zoomOffsetY = safeOffset.y.toFixed(2);
+  card.classList.toggle("img-card-zoomed", safeScale > 1.001);
+  if (safeScale <= 1.001) {
+    image.style.transform = "translate3d(0, 0, 0) scale(1)";
+    return;
+  }
+  image.style.transform = `translate3d(${safeOffset.x}px, ${safeOffset.y}px, 0) scale(${safeScale})`;
+}
+
+function bindFeaturedImageZoom(card, image) {
+  if (image.dataset.zoomBound === "1") return;
+  image.dataset.zoomBound = "1";
+  setFeaturedImageZoom(card, image, FEATURED_IMAGE_ZOOM_MIN, 0, 0);
+
+  image.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const rect = card.getBoundingClientRect();
+    const currentScale = parseFloat(card.dataset.zoomScale || "1") || 1;
+    const currentOffsetX = parseFloat(card.dataset.zoomOffsetX || "0") || 0;
+    const currentOffsetY = parseFloat(card.dataset.zoomOffsetY || "0") || 0;
+    const nextScale = clampFeaturedImageZoom(currentScale + (event.deltaY < 0 ? FEATURED_IMAGE_ZOOM_STEP : -FEATURED_IMAGE_ZOOM_STEP));
+    if (nextScale <= FEATURED_IMAGE_ZOOM_MIN + 0.001) {
+      setFeaturedImageZoom(card, image, FEATURED_IMAGE_ZOOM_MIN, 0, 0);
+      return;
+    }
+    const pointerX = event.clientX - rect.left - (rect.width / 2);
+    const pointerY = event.clientY - rect.top - (rect.height / 2);
+    const ratio = nextScale / currentScale;
+    const nextOffsetX = pointerX - ((pointerX - currentOffsetX) * ratio);
+    const nextOffsetY = pointerY - ((pointerY - currentOffsetY) * ratio);
+    setFeaturedImageZoom(card, image, nextScale, nextOffsetX, nextOffsetY);
+  }, { passive: false });
+
+  window.addEventListener("resize", () => {
+    const scale = parseFloat(card.dataset.zoomScale || "1") || 1;
+    const offsetX = parseFloat(card.dataset.zoomOffsetX || "0") || 0;
+    const offsetY = parseFloat(card.dataset.zoomOffsetY || "0") || 0;
+    setFeaturedImageZoom(card, image, scale, offsetX, offsetY);
+  });
+}
+
 const SVG_HEART_EMPTY = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`;
 const SVG_HEART_FULL  = `<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`;
 const SVG_DOWNLOAD    = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
