@@ -1,2 +1,1 @@
-# nano-banana-studio
-
+# AI API Studio

@@ -1,4 +1,4 @@
-# Nano Banana Studio v2 Blueprint
+# AI API Studio v2 Blueprint
 
 This document turns the current `CLAUDE.md` from a v1 reference into a launchpad for a more vertical, business-driven product.
 
@@ -90,7 +90,7 @@ Keep Flask if you want speed and low complexity, but split the app into modules.
 Suggested structure:
 
 ```text
-nano-banana-studio/
+AI_API_Studio/
   app/
     __init__.py
     web/
@@ -602,7 +602,7 @@ Why this first:
 
 Recommended milestone name:
 
-`Nano Banana Studio 1.5 - Task Workbench`
+`AI API Studio 1.5 - Task Workbench`
 
 Scope:
 

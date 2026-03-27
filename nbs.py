@@ -1,6 +1,6 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
-Nano Banana Studio (nbs.py)
+AI API Studio (nbs.py)
 AI image generator powered by Google Gemini
 Run: python nbs.py
 """
@@ -13,6 +13,8 @@ import subprocess
 import importlib.util
 import os as _os
 
+APP_VERSION = "1.2 beta"
+
 def _bootstrap():
     deps = [
         ("flask",    "flask>=3.0.0"),
@@ -24,7 +26,7 @@ def _bootstrap():
         return
     pkgs = [pkg for _, pkg in missing]
     print("\n" + "="*52)
-    print(f"  Nano Banana Studio {APP_VERSION} - First-run Setup")
+    print(f"  AI API Studio {APP_VERSION} - First-run Setup")
     print("="*52)
     print(f"  Missing packages: {', '.join(pkgs)}")
     print("  Installing automatically... (one-time only)\n")
@@ -32,7 +34,7 @@ def _bootstrap():
         subprocess.check_call(
             [sys.executable, "-m", "pip", "install", "--quiet"] + pkgs
         )
-        print("\n  Done! Starting Nano Banana Studio...\n")
+        print("\n  Done! Starting AI API Studio...\n")
     except subprocess.CalledProcessError as e:
         print(f"\n  Install failed: {e}")
         print("  Try manually: pip install -r requirements.txt")
@@ -45,6 +47,7 @@ _bootstrap()
 # ---------------------------------------------------------------------------
 import base64
 import glob
+import hashlib
 import io
 import json
 import os
@@ -52,10 +55,12 @@ import random
 import re
 import shutil
 import sqlite3
+import threading
 import unicodedata
 import requests
 from datetime import datetime, timezone
 from functools import wraps
+from urllib.parse import urlparse, unquote
 from uuid import uuid4
 from flask import (Flask, render_template, request, redirect,
                    url_for, session, jsonify, send_from_directory)
@@ -63,8 +68,6 @@ from PIL import Image, ImageOps
 
 app = Flask(__name__)
 app.secret_key = "nb-studio-secret-2024-change-me"
-
-APP_VERSION = "1.1 beta"
 
 
 def utc_now_iso() -> str:
@@ -82,17 +85,64 @@ USERS = {
 # ---------------------------------------------------------------------------
 BASE_DIR         = os.path.dirname(__file__)
 CONFIG_FILE      = os.path.join(BASE_DIR, "config.json")
-LOVED_DIR        = os.path.join(BASE_DIR, "loved")
-GENERATIONS_DIR  = os.path.join(BASE_DIR, "generations")
+IMAGE_ASSETS_DIR = os.path.join(BASE_DIR, "Image_assets")
+LOVED_DIR        = os.path.join(IMAGE_ASSETS_DIR, "loved")
+GENERATIONS_DIR  = os.path.join(IMAGE_ASSETS_DIR, "generations")
+VIDEOS_DIR       = os.path.join(IMAGE_ASSETS_DIR, "videos")
 ELEMENTS_DIR     = os.path.join(BASE_DIR, "Elements")
 STUDIO_DB_FILE   = os.path.join(BASE_DIR, "studio.db")
-REFERENCE_ARCHIVE_DIR = os.path.join(BASE_DIR, "reference_archive")
+REFERENCE_ARCHIVE_DIR = os.path.join(IMAGE_ASSETS_DIR, "reference_archive")
+REFERENCE_ARCHIVE_INDEX_FILE = os.path.join(REFERENCE_ARCHIVE_DIR, "_index.json")
+REFERENCE_MASKS_DIR = os.path.join(IMAGE_ASSETS_DIR, "reference_masks")
+REFERENCE_RENDERS_DIR = os.path.join(IMAGE_ASSETS_DIR, "reference_renders")
+POSE_OUTPUTS_DIR = os.path.join(IMAGE_ASSETS_DIR, "pose_outputs")
 
-# Mapping folder â†’ display name and icon for Elements
+
+def move_tree_contents(src_dir: str, dst_dir: str) -> None:
+    if not os.path.isdir(src_dir):
+        return
+    os.makedirs(dst_dir, exist_ok=True)
+    for item in os.listdir(src_dir):
+        src = os.path.join(src_dir, item)
+        dst = os.path.join(dst_dir, item)
+        if os.path.exists(dst):
+            if os.path.isfile(src) and os.path.basename(src) == ".gitkeep":
+                os.remove(src)
+                continue
+            if os.path.isdir(src) and os.path.isdir(dst):
+                move_tree_contents(src, dst)
+                if os.path.isdir(src) and not os.listdir(src):
+                    os.rmdir(src)
+            continue
+        shutil.move(src, dst)
+    if os.path.isdir(src_dir) and not os.listdir(src_dir):
+        os.rmdir(src_dir)
+
+
+def migrate_image_assets_layout() -> None:
+    os.makedirs(IMAGE_ASSETS_DIR, exist_ok=True)
+    legacy_dirs = {
+        os.path.join(BASE_DIR, "loved"): LOVED_DIR,
+        os.path.join(BASE_DIR, "generations"): GENERATIONS_DIR,
+        os.path.join(BASE_DIR, "videos"): VIDEOS_DIR,
+        os.path.join(BASE_DIR, "reference_archive"): REFERENCE_ARCHIVE_DIR,
+        os.path.join(BASE_DIR, "reference_masks"): REFERENCE_MASKS_DIR,
+        os.path.join(BASE_DIR, "reference_renders"): REFERENCE_RENDERS_DIR,
+        os.path.join(BASE_DIR, "pose_outputs"): POSE_OUTPUTS_DIR,
+    }
+    for legacy_dir, target_dir in legacy_dirs.items():
+        if os.path.realpath(legacy_dir) == os.path.realpath(target_dir):
+            continue
+        if os.path.isdir(legacy_dir):
+            move_tree_contents(legacy_dir, target_dir)
+        else:
+            os.makedirs(target_dir, exist_ok=True)
+
+# Mapping folder to display name and icon for Elements
 ELEMENTS_CATEGORIES = {
-    "Model Managment": {"label": "Characters", "icon": "ðŸ§‘", "slug": "characters"},
-    "Locations":       {"label": "Locations",  "icon": "ðŸŒ", "slug": "locations"},
-    "Props":           {"label": "Props",       "icon": "ðŸŽ¨", "slug": "props"},
+    "Model Managment": {"label": "Characters", "icon": "&#128100;", "slug": "characters"},
+    "Locations":       {"label": "Locations",  "icon": "&#127757;", "slug": "locations"},
+    "Props":           {"label": "Props",      "icon": "&#128230;", "slug": "props"},
 }
 
 DEFAULT_CONFIG = {
@@ -100,6 +150,8 @@ DEFAULT_CONFIG = {
     "seedream_api_key": "",
     "fal_api_key": "",
     "byteplus_api_key": "",
+    "kling_api_token": "",
+    "comfyui_url": "http://127.0.0.1:8188",
     "stats": {
         "total_requests":   0,
         "total_images":     0,
@@ -111,6 +163,227 @@ DEFAULT_CONFIG = {
         "vision_log":       [],
     }
 }
+
+
+ASYNC_JOBS_LOCK = threading.Lock()
+ASYNC_JOBS: dict[str, dict] = {}
+
+
+def clone_jsonable(value):
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False))
+    except Exception:
+        return value
+
+
+def build_async_job_public_record(job: dict) -> dict:
+    return {
+        "ok": True,
+        "jobId": job.get("job_id", ""),
+        "kind": job.get("kind", ""),
+        "status": job.get("status", "queued"),
+        "createdAt": job.get("created_at", ""),
+        "updatedAt": job.get("updated_at", ""),
+        "completedAt": job.get("completed_at", ""),
+        "result": clone_jsonable(job.get("result")),
+        "error": job.get("error", ""),
+        "debug": clone_jsonable(job.get("debug")),
+    }
+
+
+def create_async_job(kind: str) -> dict:
+    now_ts = utc_now_iso()
+    job = {
+        "job_id": str(uuid4()),
+        "kind": kind,
+        "status": "queued",
+        "created_at": now_ts,
+        "updated_at": now_ts,
+        "completed_at": "",
+        "result": None,
+        "error": "",
+        "debug": None,
+    }
+    with ASYNC_JOBS_LOCK:
+        ASYNC_JOBS[job["job_id"]] = job
+    return build_async_job_public_record(job)
+
+
+def get_async_job(job_id: str) -> dict | None:
+    with ASYNC_JOBS_LOCK:
+        job = ASYNC_JOBS.get(job_id)
+        if not job:
+            return None
+        return build_async_job_public_record(job)
+
+
+def update_async_job(job_id: str, **updates) -> None:
+    with ASYNC_JOBS_LOCK:
+        job = ASYNC_JOBS.get(job_id)
+        if not job:
+            return
+        job.update(updates)
+        job["updated_at"] = utc_now_iso()
+
+
+def compact_generation_result(result: dict) -> dict:
+    params = clone_jsonable(result.get("params") or {}) or {}
+    compact_images = []
+    for img in result.get("images", []) or []:
+        gen_date = str(img.get("gen_date") or params.get("gen_date") or "").strip()
+        gen_filename = str(img.get("gen_filename") or "").strip()
+        img_url = f"/generations/{gen_date}/{gen_filename}" if gen_date and gen_filename else ""
+        compact_images.append({
+            "gen_date": gen_date,
+            "gen_filename": gen_filename,
+            "mime_type": str(img.get("mime_type") or "image/png"),
+            "url": img_url,
+        })
+    return {
+        "params": params,
+        "images": compact_images,
+        "text": str(result.get("text") or ""),
+        "cost": round(float(result.get("cost") or 0.0), 6),
+        "model_label": str(result.get("model_label") or ""),
+    }
+
+
+def compact_video_result(result: dict) -> dict:
+    params = clone_jsonable(result.get("params") or {}) or {}
+    compact_videos = []
+    for item in result.get("videos", []) or []:
+        gen_date = str(item.get("gen_date") or params.get("gen_date") or "").strip()
+        gen_filename = str(item.get("gen_filename") or "").strip()
+        video_url = f"/videos/{gen_date}/{gen_filename}" if gen_date and gen_filename else ""
+        compact_videos.append({
+            "gen_date": gen_date,
+            "gen_filename": gen_filename,
+            "mime_type": str(item.get("mime_type") or "video/mp4"),
+            "url": video_url,
+            "poster_url": str(item.get("poster_url") or ""),
+        })
+    return {
+        "params": params,
+        "videos": compact_videos,
+        "text": str(result.get("text") or ""),
+        "cost": round(float(result.get("cost") or 0.0), 6),
+        "model_label": str(result.get("model_label") or ""),
+    }
+
+
+def _run_generate_async_job(job_id: str, payload: dict) -> None:
+    update_async_job(job_id, status="running", error="", debug=None)
+    try:
+        result = run_generation_job(clone_jsonable(payload) or {}, load_config())
+        persist_generation_result(result)
+        update_async_job(
+            job_id,
+            status="completed",
+            completed_at=utc_now_iso(),
+            result=compact_generation_result(result),
+            error="",
+            debug=None,
+        )
+    except GenerationDebugError as exc:
+        update_async_job(
+            job_id,
+            status="failed",
+            completed_at=utc_now_iso(),
+            result=None,
+            error=str(exc),
+            debug=clone_jsonable(exc.debug),
+        )
+    except Exception as exc:
+        update_async_job(
+            job_id,
+            status="failed",
+            completed_at=utc_now_iso(),
+            result=None,
+            error=str(exc),
+            debug=None,
+        )
+
+
+def _run_upscale_async_job(job_id: str, payload: dict) -> None:
+    update_async_job(job_id, status="running", error="", debug=None)
+    try:
+        config = load_config()
+        fal_key = (config.get("fal_api_key", "") or "").strip()
+        if not fal_key:
+            raise ValueError("Fal API key not configured. Go to Settings.")
+        result = run_fal_seedvr_upscale_job(clone_jsonable(payload) or {}, fal_key)
+        persist_generation_result(result)
+        update_async_job(
+            job_id,
+            status="completed",
+            completed_at=utc_now_iso(),
+            result=compact_generation_result(result),
+            error="",
+            debug=None,
+        )
+    except Exception as exc:
+        update_async_job(
+            job_id,
+            status="failed",
+            completed_at=utc_now_iso(),
+            result=None,
+            error=str(exc),
+            debug=None,
+        )
+
+
+def _run_video_async_job(job_id: str, payload: dict) -> None:
+    update_async_job(job_id, status="running", error="", debug=None)
+    try:
+        result = run_video_job(clone_jsonable(payload) or {}, load_config())
+        persist_video_result(result)
+        update_async_job(
+            job_id,
+            status="completed",
+            completed_at=utc_now_iso(),
+            result=compact_video_result(result),
+            error="",
+            debug=None,
+        )
+    except Exception as exc:
+        update_async_job(
+            job_id,
+            status="failed",
+            completed_at=utc_now_iso(),
+            result=None,
+            error=str(exc),
+            debug=None,
+        )
+
+
+def start_async_generate_job(payload: dict) -> dict:
+    job = create_async_job("generate")
+    threading.Thread(
+        target=_run_generate_async_job,
+        args=(job["jobId"], clone_jsonable(payload) or {}),
+        daemon=True,
+    ).start()
+    return job
+
+
+def start_async_upscale_job(payload: dict) -> dict:
+    job = create_async_job("upscale")
+    threading.Thread(
+        target=_run_upscale_async_job,
+        args=(job["jobId"], clone_jsonable(payload) or {}),
+        daemon=True,
+    ).start()
+    return job
+
+
+def start_async_video_job(payload: dict) -> dict:
+    job = create_async_job("video")
+    threading.Thread(
+        target=_run_video_async_job,
+        args=(job["jobId"], clone_jsonable(payload) or {}),
+        daemon=True,
+    ).start()
+    return job
 
 # ---------------------------------------------------------------------------
 # Price per image in USD (verified March 2026)
@@ -160,11 +433,13 @@ PROVIDER_LABELS = {
     "gemini": "Gemini",
     "fal": "Fal",
     "byteplus": "BytePlus",
+    "kling": "Kling",
 }
 
 GEMINI_BASE_URL                 = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 FAL_BASE_URL                    = "https://fal.run"
 BYTEPLUS_BASE_URL               = "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations"
+KLING_BASE_URL                  = "https://api-singapore.klingai.com"
 FAL_NANO_BANANA_TEXT_ID         = "fal-ai/gemini-25-flash-image"
 FAL_NANO_BANANA_EDIT_ID         = "fal-ai/gemini-25-flash-image/edit"
 FAL_NANO_BANANA_PRO_TEXT_ID     = "fal-ai/nano-banana-pro"
@@ -175,6 +450,17 @@ FAL_SEEDREAM_45_TEXT_ID         = "fal-ai/bytedance/seedream/v4.5/text-to-image"
 FAL_SEEDREAM_45_EDIT_ID         = "fal-ai/bytedance/seedream/v4.5/edit"
 FAL_SEEDREAM_5_TEXT_ID          = "fal-ai/bytedance/seedream/v5/lite/text-to-image"
 FAL_SEEDREAM_5_EDIT_ID          = "fal-ai/bytedance/seedream/v5/lite/edit"
+FAL_SEEDVR_UPSCALE_ID           = "fal-ai/seedvr/upscale/image"
+FAL_KLING_T2V_ID                = "fal-ai/kling-video/v2.1/master/text-to-video"
+FAL_KLING_I2V_ID                = "fal-ai/kling-video/v2.1/master/image-to-video"
+FAL_WAN_T2V_ID                  = "fal-ai/wan/v2.2-a14b/text-to-video"
+FAL_WAN_I2V_ID                  = "fal-ai/wan/v2.2-a14b/image-to-video"
+KLING_DIRECT_TEXT_DEFAULT_ID    = "kling-v2-6"
+KLING_DIRECT_IMAGE_DEFAULT_ID   = "kling-v2-6"
+UPSCALER_MODELS = {
+    "seedvr2": {"id": FAL_SEEDVR_UPSCALE_ID, "label": "SeedVR2"},
+}
+
 BYTEPLUS_SEEDREAM_45_MODEL_ID   = "seedream-4-5-251128"
 
 MODELS_INFO = {
@@ -378,6 +664,80 @@ def normalize_generation_request(body: dict | None) -> dict:
     payload["provider"] = provider_key
     payload["modelLabel"] = model_info.get("label", model_id)
     payload["providerLabel"] = model_info.get("provider_label", PROVIDER_LABELS.get(provider_key, provider_key.title()))
+    return payload
+
+
+def resolve_video_model_selection(requested_model: str = "", requested_family: str = "", requested_provider: str = "") -> tuple[str, str, str, dict]:
+    model_id = str(requested_model or "").strip()
+    family_key = str(requested_family or "").strip()
+    provider_key = str(requested_provider or "").strip().lower()
+
+    if family_key in VIDEO_MODEL_FAMILIES:
+        family_info = VIDEO_MODEL_FAMILIES[family_key]
+        available = family_info.get("providers", {})
+        if provider_key not in available:
+            provider_key = family_info.get("default_provider", "") or next(iter(available.keys()), "")
+        model_id = available.get(provider_key, model_id)
+        model_info = VIDEO_MODELS_INFO.get(model_id)
+        if model_info:
+            return model_id, family_key, provider_key, model_info
+
+    if model_id in VIDEO_MODELS_INFO:
+        model_info = VIDEO_MODELS_INFO[model_id]
+        return model_id, model_info.get("family", family_key or "kling"), model_info.get("provider", provider_key or "kling"), model_info
+
+    fallback_family = "kling"
+    fallback_provider = VIDEO_MODEL_FAMILIES[fallback_family]["default_provider"]
+    fallback_model = VIDEO_MODEL_FAMILIES[fallback_family]["providers"][fallback_provider]
+    return fallback_model, fallback_family, fallback_provider, VIDEO_MODELS_INFO[fallback_model]
+
+
+def normalize_video_duration(value, default: int = 5) -> int:
+    try:
+        duration = int(str(value or default).strip())
+    except Exception:
+        duration = default
+    return duration if duration in VIDEO_DURATION_OPTIONS else default
+
+
+def normalize_video_resolution(value: str) -> str:
+    resolution = str(value or "720p").strip().lower()
+    return resolution if resolution in {"720p", "1080p"} else "720p"
+
+
+def normalize_video_input_mode(value: str) -> str:
+    mode = str(value or "text").strip().lower()
+    return mode if mode in {"text", "image"} else "text"
+
+
+def normalize_video_request(body: dict | None) -> dict:
+    payload = dict(body or {})
+    model_id, family_key, provider_key, model_info = resolve_video_model_selection(
+        payload.get("model", ""),
+        payload.get("modelFamily", ""),
+        payload.get("provider", ""),
+    )
+    payload["model"] = model_id
+    payload["modelFamily"] = family_key
+    payload["provider"] = provider_key
+    payload["modelLabel"] = model_info.get("label", model_id)
+    payload["providerLabel"] = model_info.get("provider_label", PROVIDER_LABELS.get(provider_key, provider_key.title()))
+    payload["videoInputMode"] = normalize_video_input_mode(payload.get("videoInputMode", "text"))
+    payload["duration"] = normalize_video_duration(payload.get("duration", 5))
+    payload["aspectRatio"] = str(payload.get("aspectRatio", "16:9") or "16:9").strip()
+    if payload["aspectRatio"] not in VIDEO_ASPECT_RATIOS:
+        payload["aspectRatio"] = "16:9"
+    payload["resolution"] = normalize_video_resolution(payload.get("resolution", "720p"))
+    payload["negativePrompt"] = str(payload.get("negativePrompt", "") or "").strip()
+    payload["videoSafetyChecker"] = bool(payload.get("videoSafetyChecker", True))
+    source_image = payload.get("sourceImage")
+    if not isinstance(source_image, dict):
+        source_image = {}
+    payload["sourceImage"] = {
+        "mime_type": str(source_image.get("mime_type") or "image/png"),
+        "data": str(source_image.get("data") or ""),
+        "name": str(source_image.get("name") or "video-source.png"),
+    }
     return payload
 
 # ---------------------------------------------------------------------------
@@ -1080,8 +1440,10 @@ def save_talent_json(json_path: str, data: dict):
 # ---------------------------------------------------------------------------
 MAX_IMG_WIDTH  = 4000   # px sulla dimensione orizzontale
 JPEG_QUALITY   = 90     # JPG output quality %
+SEEDREAM_MAX_INPUT_PIXELS = 36_000_000
 SEEDREAM_MAX_INPUT_BYTES = 10 * 1024 * 1024
 SEEDREAM_TARGET_INPUT_BYTES = int(SEEDREAM_MAX_INPUT_BYTES * 0.92)
+REMOTE_REF_FETCH_MAX_BYTES = 30 * 1024 * 1024
 
 
 def open_base64_image(image_b64: str) -> tuple[Image.Image, dict]:
@@ -1167,6 +1529,11 @@ def name_to_slug(name: str) -> str:
     return slug or "talent"
 
 
+def safe_output_stem(name: str, fallback: str = "pose_output") -> str:
+    stem = os.path.splitext(os.path.basename(str(name or "").strip()))[0]
+    return name_to_slug(stem or fallback)
+
+
 def get_next_image_number(folder_path: str, slug: str) -> int:
     """Return the next incremental number for slug_NNN.ext."""
     pattern = re.compile(
@@ -1209,42 +1576,243 @@ def coerce_seed_value(value) -> int:
     return max(1, min(seed, MAX_SEED_VALUE))
 
 
+def load_reference_archive_index() -> dict[str, dict]:
+    if not os.path.exists(REFERENCE_ARCHIVE_INDEX_FILE):
+        return {}
+    try:
+        with open(REFERENCE_ARCHIVE_INDEX_FILE, "r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+        return raw if isinstance(raw, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_reference_archive_index(index: dict[str, dict]) -> None:
+    os.makedirs(REFERENCE_ARCHIVE_DIR, exist_ok=True)
+    with open(REFERENCE_ARCHIVE_INDEX_FILE, "w", encoding="utf-8") as fh:
+        json.dump(index, fh, indent=2, ensure_ascii=False)
+
+
+def compute_reference_archive_hash(source_png_b64: str, mask_png_b64: str = "") -> str:
+    digest = hashlib.sha256()
+    try:
+        digest.update(base64.b64decode(source_png_b64))
+    except Exception:
+        digest.update(str(source_png_b64 or "").encode("utf-8"))
+    digest.update(b"\n--mask--\n")
+    if mask_png_b64:
+        try:
+            digest.update(base64.b64decode(mask_png_b64))
+        except Exception:
+            digest.update(str(mask_png_b64 or "").encode("utf-8"))
+    return digest.hexdigest()
+
+
+def get_reference_archive_index_entry(ref_hash: str, index: dict[str, dict] | None = None) -> dict | None:
+    current_index = index if isinstance(index, dict) else load_reference_archive_index()
+    raw_entry = current_index.get(str(ref_hash or "").strip())
+    if not isinstance(raw_entry, dict):
+        return None
+    ref_date = str(raw_entry.get("date", "") or "").strip()
+    filename = os.path.basename(str(raw_entry.get("filename", "") or "").strip())
+    if not ref_date or not filename:
+        return None
+    archive_path = os.path.join(REFERENCE_ARCHIVE_DIR, ref_date, filename)
+    if not os.path.exists(archive_path):
+        current_index.pop(str(ref_hash or "").strip(), None)
+        save_reference_archive_index(current_index)
+        return None
+    return {
+        "hash": str(ref_hash or "").strip(),
+        "date": ref_date,
+        "filename": filename,
+        "name": str(raw_entry.get("name", "") or filename),
+        "mime_type": str(raw_entry.get("mime_type", "image/png") or "image/png"),
+    }
+
+
+def upsert_reference_archive_index_entry(ref_hash: str, entry: dict, index: dict[str, dict] | None = None) -> None:
+    normalized_hash = str(ref_hash or "").strip()
+    if not normalized_hash:
+        return
+    current_index = index if isinstance(index, dict) else load_reference_archive_index()
+    current_index[normalized_hash] = {
+        "date": str(entry.get("date", "") or "").strip(),
+        "filename": os.path.basename(str(entry.get("filename", "") or "").strip()),
+        "name": str(entry.get("name", "") or "").strip(),
+        "mime_type": str(entry.get("mime_type", "image/png") or "image/png"),
+        "updated_at": utc_now_iso(),
+    }
+    if current_index is not index:
+        save_reference_archive_index(current_index)
+
+
+def remove_reference_archive_index_entries(date_str: str, filename: str, index: dict[str, dict] | None = None) -> None:
+    safe_date = str(date_str or "").strip()
+    safe_filename = os.path.basename(str(filename or "").strip())
+    if not safe_date or not safe_filename:
+        return
+    current_index = index if isinstance(index, dict) else load_reference_archive_index()
+    stale_keys = []
+    for key, value in current_index.items():
+        if not isinstance(value, dict):
+            stale_keys.append(key)
+            continue
+        value_date = str(value.get("date", "") or "").strip()
+        value_filename = os.path.basename(str(value.get("filename", "") or "").strip())
+        if value_date == safe_date and value_filename == safe_filename:
+            stale_keys.append(key)
+    for key in stale_keys:
+        current_index.pop(key, None)
+    if stale_keys and current_index is not index:
+        save_reference_archive_index(current_index)
+
+
+def is_reference_archive_entry_still_used(date_str: str, filename: str) -> bool:
+    safe_date = str(date_str or "").strip()
+    safe_filename = os.path.basename(str(filename or "").strip())
+    if not safe_date or not safe_filename or not os.path.isdir(GENERATIONS_DIR):
+        return False
+    for gen_date in os.listdir(GENERATIONS_DIR):
+        day_path = os.path.join(GENERATIONS_DIR, gen_date)
+        if not os.path.isdir(day_path):
+            continue
+        for meta_file in glob.glob(os.path.join(day_path, "*.json")):
+            try:
+                with open(meta_file, encoding="utf-8") as fh:
+                    meta = json.load(fh)
+            except Exception:
+                continue
+            refs = meta.get("refArchive") or []
+            if not isinstance(refs, list):
+                continue
+            for ref in refs:
+                if not isinstance(ref, dict):
+                    continue
+                ref_date = str(ref.get("date", "") or "").strip()
+                ref_name = os.path.basename(str(ref.get("filename", "") or "").strip())
+                if ref_date == safe_date and ref_name == safe_filename:
+                    return True
+    return False
+
+
+def compute_reference_archive_file_hash(date_str: str, filename: str) -> str:
+    paths = get_reference_mask_file_paths(date_str, filename)
+    if not os.path.exists(paths["original_path"]):
+        return ""
+    try:
+        digest = hashlib.sha256()
+        with open(paths["original_path"], "rb") as fh:
+            digest.update(fh.read())
+        digest.update(b"\n--mask--\n")
+        if os.path.exists(paths["mask_path"]):
+            with open(paths["mask_path"], "rb") as fh:
+                digest.update(fh.read())
+        return digest.hexdigest()
+    except Exception:
+        return ""
+
+
 def build_reference_archive_entries(ref_images: list[dict], date_str: str, time_prefix: str) -> list[dict]:
     if not ref_images:
         return []
     archive_day_dir = os.path.join(REFERENCE_ARCHIVE_DIR, date_str)
     os.makedirs(archive_day_dir, exist_ok=True)
     archived = []
+    archive_index = load_reference_archive_index()
+    index_changed = False
     for idx, img in enumerate(ref_images):
         if not isinstance(img, dict):
             continue
         img_b64 = str(img.get("data", "") or "").strip()
         if not img_b64:
             continue
-        mime_type = str(img.get("mime_type", "image/png") or "image/png")
+        source_b64 = str(img.get("original_data", "") or "").strip()
+        mime_type = str(img.get("original_mime_type", img.get("mime_type", "image/png")) or "image/png")
+        existing_date = str(img.get("archive_date", "") or "").strip()
+        existing_filename = os.path.basename(str(img.get("archive_filename", "") or "").strip())
+        existing_path = os.path.join(REFERENCE_ARCHIVE_DIR, existing_date, existing_filename) if existing_date and existing_filename else ""
+        mask_png_data = str(img.get("mask_png_data", "") or "").strip()
+
+        # Reusing an already-archived reference should keep pointing at the same
+        # archive entry unless the user explicitly edited the mask/source data.
+        if existing_path and os.path.exists(existing_path) and not mask_png_data:
+            existing_hash = compute_reference_archive_file_hash(existing_date, existing_filename)
+            if existing_hash and not get_reference_archive_index_entry(existing_hash, archive_index):
+                upsert_reference_archive_index_entry(existing_hash, {
+                    "date": existing_date,
+                    "filename": existing_filename,
+                    "name": str(img.get("name", "") or existing_filename),
+                    "mime_type": "image/png",
+                }, archive_index)
+                index_changed = True
+            existing_entry = enrich_reference_archive_entry({
+                "date": existing_date,
+                "filename": existing_filename,
+                "name": str(img.get("name", "") or existing_filename),
+                "mime_type": "image/png",
+            })
+            archived.append(existing_entry)
+            continue
+
+        if not source_b64:
+            source_date = existing_date
+            source_filename = existing_filename
+            source_path = os.path.join(REFERENCE_ARCHIVE_DIR, source_date, source_filename) if source_date and source_filename else ""
+            if source_path and os.path.exists(source_path):
+                try:
+                    with open(source_path, "rb") as fh:
+                        source_b64 = base64.b64encode(fh.read()).decode("utf-8")
+                    mime_type = "image/png"
+                except Exception:
+                    source_b64 = ""
+        if not source_b64:
+            source_b64 = img_b64
         try:
-            png_b64, png_mime = convert_image_b64_to_png(img_b64, mime_type)
+            png_b64, png_mime = convert_image_b64_to_png(source_b64, mime_type)
         except Exception:
             continue
+        ref_hash = compute_reference_archive_hash(png_b64, mask_png_data)
+        indexed_entry = get_reference_archive_index_entry(ref_hash, archive_index)
+        if indexed_entry:
+            # Keep mask assets in sync if this run supplied a fresh mask payload.
+            if mask_png_data:
+                try:
+                    save_reference_mask_assets(indexed_entry["date"], indexed_entry["filename"], mask_png_data)
+                except Exception:
+                    pass
+            archived.append(enrich_reference_archive_entry(indexed_entry))
+            continue
+
         original_name = os.path.basename(str(img.get("name", "") or f"reference-{idx + 1}.png"))
         stem = os.path.splitext(original_name)[0] or f"reference-{idx + 1}"
         safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-._") or f"reference-{idx + 1}"
-        filename = f"{time_prefix}_ref_{idx + 1}_{uuid4().hex[:6]}_{safe_stem}.png"
+        filename = f"{time_prefix}_ref_{idx + 1}_{ref_hash[:10]}_{safe_stem}.png"
         archive_path = os.path.join(archive_day_dir, filename)
         with open(archive_path, "wb") as fh:
             fh.write(base64.b64decode(png_b64))
-        archived.append({
+        if mask_png_data:
+            try:
+                save_reference_mask_assets(date_str, filename, mask_png_data)
+            except Exception:
+                pass
+        archive_entry = {
             "date": date_str,
             "filename": filename,
             "name": original_name,
             "mime_type": png_mime,
-            "url": f"/reference-archive/{date_str}/{filename}",
-        })
+        }
+        upsert_reference_archive_index_entry(ref_hash, archive_entry, archive_index)
+        index_changed = True
+        archived.append(enrich_reference_archive_entry(archive_entry))
+    if index_changed:
+        save_reference_archive_index(archive_index)
     return archived
 
 
 def delete_reference_archive_entries(entries: list[dict]):
     safe_root = os.path.realpath(REFERENCE_ARCHIVE_DIR)
+    seen = set()
     for item in entries or []:
         if not isinstance(item, dict):
             continue
@@ -1252,20 +1820,62 @@ def delete_reference_archive_entries(entries: list[dict]):
         filename = os.path.basename(str(item.get("filename", "") or "").strip())
         if not date_str or not filename:
             continue
+        ref_key = f"{date_str}/{filename}"
+        if ref_key in seen:
+            continue
+        seen.add(ref_key)
         archive_path = os.path.realpath(os.path.join(REFERENCE_ARCHIVE_DIR, date_str, filename))
         if not archive_path.startswith(safe_root + os.sep):
+            continue
+        if is_reference_archive_entry_still_used(date_str, filename):
             continue
         if os.path.exists(archive_path):
             try:
                 os.remove(archive_path)
             except Exception:
                 pass
+        delete_reference_mask_assets(date_str, filename)
+        remove_reference_archive_index_entries(date_str, filename)
         archive_day_dir = os.path.dirname(archive_path)
         if os.path.isdir(archive_day_dir) and not os.listdir(archive_day_dir):
             try:
                 os.rmdir(archive_day_dir)
             except Exception:
                 pass
+
+
+def normalize_ref_image_payloads(ref_images: list[dict] | None, max_ref: int) -> list[dict]:
+    normalized = []
+    for img in (ref_images[:max_ref] if isinstance(ref_images, list) else []):
+        if not isinstance(img, dict):
+            continue
+        data = str(img.get("data", "") or "").strip()
+        if not data:
+            continue
+        item = {
+            "mime_type": str(img.get("mime_type", "image/png") or "image/png"),
+            "data": data,
+            "name": str(img.get("name", "") or ""),
+        }
+        extra_fields = (
+            "original_data",
+            "original_mime_type",
+            "mask_png_data",
+            "archive_date",
+            "archive_filename",
+            "original_url",
+            "masked_url",
+            "mask_url",
+        )
+        for key in extra_fields:
+            value = img.get(key)
+            if value is None:
+                continue
+            item[key] = str(value or "")
+        if img.get("has_mask") is not None:
+            item["has_mask"] = bool(img.get("has_mask"))
+        normalized.append(item)
+    return normalized
 
 
 class GenerationDebugError(RuntimeError):
@@ -1407,14 +2017,42 @@ def normalize_fal_safety_tolerance(value) -> int:
     return max(1, min(parsed, 6))
 
 
+def constrain_image_to_max_pixels(width: int, height: int, max_pixels: int) -> tuple[int, int]:
+    width = max(1, int(width or 1))
+    height = max(1, int(height or 1))
+    max_pixels = max(1, int(max_pixels or 1))
+    total_pixels = width * height
+    if total_pixels <= max_pixels:
+        return width, height
+
+    scale = (max_pixels / float(total_pixels)) ** 0.5
+    new_width = max(1, min(width, int(width * scale)))
+    new_height = max(1, min(height, int(height * scale)))
+
+    while new_width * new_height > max_pixels:
+        if new_width >= new_height and new_width > 1:
+            new_width -= 1
+        elif new_height > 1:
+            new_height -= 1
+        else:
+            break
+
+    return new_width, new_height
+
+
 def compress_seedream_ref_image(image_b64: str, mime_type: str) -> tuple[str, str]:
-    """Shrink/compress a reference image until it fits BytePlus Seedream's 10 MiB limit."""
+    """Clamp/compress a Seedream reference image to provider-safe pixel and byte limits."""
     raw = base64.b64decode(image_b64)
-    if len(raw) <= SEEDREAM_TARGET_INPUT_BYTES:
+    img, info = open_base64_image(image_b64)
+    orig_width, orig_height = img.size
+    needs_pixel_clamp = (orig_width * orig_height) > SEEDREAM_MAX_INPUT_PIXELS
+    if not needs_pixel_clamp and len(raw) <= SEEDREAM_TARGET_INPUT_BYTES:
         return image_b64, mime_type
 
-    img, info = open_base64_image(image_b64)
     img = flatten_image_for_jpeg(img)
+    clamped_width, clamped_height = constrain_image_to_max_pixels(orig_width, orig_height, SEEDREAM_MAX_INPUT_PIXELS)
+    if (clamped_width, clamped_height) != img.size:
+        img = img.resize((clamped_width, clamped_height), Image.LANCZOS)
 
     width, height = img.size
     quality = 88
@@ -1457,6 +2095,277 @@ def build_data_uri_ref_inputs(ref_images: list[dict]) -> list[str]:
         if data:
             items.append(f"data:{mime};base64,{data}")
     return items
+
+
+def build_seedream_data_uri_ref_inputs(ref_images: list[dict]) -> list[str]:
+    items = []
+    for img in ref_images:
+        mime = img.get("mime_type", "image/png")
+        data = img.get("data", "")
+        if data:
+            safe_b64, safe_mime = compress_seedream_ref_image(data, mime)
+            items.append(f"data:{safe_mime};base64,{safe_b64}")
+    return items
+
+
+def fetch_remote_reference_image(url: str) -> tuple[str, str, str]:
+    parsed = urlparse((url or "").strip())
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Only http and https image URLs are supported.")
+
+    try:
+        response = requests.get(
+            url,
+            headers={"User-Agent": f"AI API Studio/{APP_VERSION}"},
+            stream=True,
+            timeout=20,
+        )
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timed out while downloading the dropped image.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Could not download the dropped image: {exc}") from exc
+
+    with response:
+        if response.status_code != 200:
+            raise ValueError(f"Could not download the dropped image ({response.status_code}).")
+
+        content_type = (response.headers.get("Content-Type", "") or "").split(";")[0].strip().lower()
+        if not content_type.startswith("image/"):
+            raise ValueError("The dropped URL did not return an image.")
+
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(64 * 1024):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > REMOTE_REF_FETCH_MAX_BYTES:
+                raise ValueError("The dropped image is too large to import.")
+            chunks.append(chunk)
+
+    raw = b"".join(chunks)
+    if not raw:
+        raise ValueError("The dropped image was empty.")
+
+    filename = os.path.basename(unquote(parsed.path or "")) or "reference-image"
+    return base64.b64encode(raw).decode("utf-8"), content_type, filename
+
+
+def normalize_comfyui_url(value: str) -> str:
+    value = str(value or "").strip()
+    if not value:
+        raise ValueError("ComfyUI URL is empty.")
+    if not re.match(r"^https?://", value, re.IGNORECASE):
+        value = f"http://{value}"
+    parsed = urlparse(value)
+    if not parsed.scheme or not parsed.netloc:
+        raise ValueError("ComfyUI URL is invalid.")
+    return f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}"
+
+
+def comfyui_request_json(base_url: str, path: str, *, timeout: int = 20) -> dict:
+    response = requests.get(f"{base_url}{path}", timeout=timeout)
+    response.raise_for_status()
+    try:
+        return response.json()
+    except Exception as exc:
+        raise ValueError("ComfyUI did not return valid JSON.") from exc
+
+
+def encode_image_payload_as_png(image_b64: str, mime_type: str = "image/png") -> tuple[bytes, int, int]:
+    img, _ = open_base64_image(image_b64)
+    out = io.BytesIO()
+    img.save(out, format="PNG")
+    width, height = img.size
+    return out.getvalue(), width, height
+
+
+def upload_pose_image_to_comfyui(
+    base_url: str,
+    image_b64: str,
+    mime_type: str,
+    filename: str,
+    *,
+    subfolder: str = "ai_api_pose",
+    upload_type: str = "input",
+) -> dict:
+    png_bytes, width, height = encode_image_payload_as_png(image_b64, mime_type)
+    stem = os.path.splitext(filename or "")[0] or "pose-source"
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-._") or "pose-source"
+    upload_name = f"{safe_stem}-{uuid4().hex[:8]}.png"
+    files = {"image": (upload_name, png_bytes, "image/png")}
+    data = {"subfolder": subfolder, "overwrite": "false", "type": upload_type}
+    response = requests.post(
+        f"{base_url}/upload/image",
+        files=files,
+        data=data,
+        timeout=120,
+    )
+    response.raise_for_status()
+    try:
+        payload = response.json()
+    except Exception as exc:
+        raise ValueError("ComfyUI returned an invalid upload response.") from exc
+    payload.setdefault("name", upload_name)
+    payload.setdefault("subfolder", subfolder)
+    payload["width"] = width
+    payload["height"] = height
+    return payload
+
+
+def comfyui_annotated_upload_name(upload: dict) -> str:
+    name = str(upload.get("name") or "").strip()
+    subfolder = str(upload.get("subfolder") or "").strip().strip("/\\")
+    upload_type = str(upload.get("type") or "input").strip() or "input"
+    rel_path = f"{subfolder}/{name}" if subfolder else name
+    if upload_type in {"input", "output", "temp"}:
+        rel_path = f"{rel_path}[{upload_type}]"
+    return rel_path
+
+
+def comfyui_post_prompt(base_url: str, prompt: dict, *, client_id: str = "", extra_data: dict | None = None) -> dict:
+    body = {"prompt": prompt}
+    if client_id:
+        body["client_id"] = client_id
+    if extra_data:
+        body["extra_data"] = extra_data
+    response = requests.post(
+        f"{base_url}/prompt",
+        json=body,
+        timeout=120,
+    )
+    response.raise_for_status()
+    try:
+        return response.json()
+    except Exception as exc:
+        raise ValueError("ComfyUI returned an invalid prompt response.") from exc
+
+
+def build_action_director_seed_payload(image_b64: str, mime_type: str) -> str:
+    data_uri = f"data:{mime_type};base64,{image_b64}"
+    payload = {
+        "pose": [data_uri],
+        "depth": [],
+        "canny": [],
+        "normal": [],
+        "shaded": [],
+        "alpha": [],
+        "textured": [],
+    }
+    return json.dumps(payload, separators=(",", ":"))
+
+
+def build_pose_workflow_template(
+    pose_tool: str,
+    source_kind: str,
+    upload: dict | None = None,
+    *,
+    image_b64: str = "",
+    mime_type: str = "image/png",
+) -> dict:
+    tool = str(pose_tool or "openpose_editor").strip().lower()
+    source_kind = str(source_kind or "selected_image").strip().lower()
+    width = int(upload.get("width", 0) or 0) if isinstance(upload, dict) else 0
+    height = int(upload.get("height", 0) or 0) if isinstance(upload, dict) else 0
+    safe_width = max(512, width or 1024)
+    safe_height = max(512, height or 1024)
+    if tool == "openpose_editor":
+        image_name = comfyui_annotated_upload_name(upload or {
+            "name": "pose-source.png",
+            "subfolder": "ai_api_pose",
+            "type": "input",
+        })
+        prompt = {
+            "1": {
+                "class_type": "Nui.OpenPoseEditor",
+                "inputs": {"image": image_name},
+                "_meta": {"title": "OpenPose Editor"},
+            },
+            "2": {
+                "class_type": "PreviewImage",
+                "inputs": {"images": ["1", 0]},
+                "_meta": {"title": "Preview Pose"},
+            },
+        }
+        return {
+            "tool": tool,
+            "label": "OpenPose Editor",
+            "queue_supported": True,
+            "interactive_ui_required": True,
+            "notes": (
+                "This template is queueable, but the real value is opening the OpenPose Editor "
+                "node in ComfyUI and adjusting keypoints there. The uploaded image is already staged."
+            ),
+            "prompt": prompt,
+        }
+
+    if tool == "action_director":
+        client_data = (
+            build_action_director_seed_payload(image_b64, mime_type)
+            if image_b64
+            else "PASTE_YEDP_PAYLOAD_ID_OR_JSON_HERE"
+        )
+        prompt = {
+            "1": {
+                "class_type": "YedpActionDirector",
+                "inputs": {
+                    "width": safe_width,
+                    "height": safe_height,
+                    "frame_count": 1,
+                    "fps": 12,
+                    "client_data": client_data,
+                },
+                "_meta": {"title": "Yedp Action Director"},
+            },
+            "2": {
+                "class_type": "PreviewImage",
+                "inputs": {"images": ["1", 0]},
+                "_meta": {"title": "Preview Pose Batch"},
+            },
+        }
+        return {
+            "tool": tool,
+            "label": "Action Director",
+            "queue_supported": False,
+            "interactive_ui_required": True,
+            "notes": (
+                "Action Director is mainly an interactive 3D browser tool. This template seeds the node, "
+                "but the proper client_data payload is normally authored inside the Action Director UI."
+            ),
+            "prompt": prompt,
+        }
+
+    filename_placeholder = "capture.png"
+    if upload:
+        filename_placeholder = str(upload.get("name") or filename_placeholder).strip() or filename_placeholder
+    node_class = "YedpImageMoCap" if source_kind in {"selected_image", "upload_image", "webcam_frame"} else "YedpVideoMoCap"
+    prompt = {
+        "1": {
+            "class_type": node_class,
+            "inputs": {
+                "video_filename": filename_placeholder,
+                "smoothing": 0.5,
+                "include_dense_face": False,
+            },
+            "_meta": {"title": "Yedp MoCap"},
+        },
+        "2": {
+            "class_type": "PreviewImage",
+            "inputs": {"images": ["1", 1]},
+            "_meta": {"title": "Preview Rig Image"},
+        },
+    }
+    return {
+        "tool": tool,
+        "label": "Webcam / Video Mocap",
+        "queue_supported": False,
+        "interactive_ui_required": True,
+        "notes": (
+            "Yedp MoCap relies on its browser UI to produce pose JSON sidecar data. "
+            "This template shows the target node wiring, but the capture UI still needs to run in ComfyUI."
+        ),
+        "prompt": prompt,
+    }
 
 
 def build_byteplus_seedream_ref_inputs(ref_images: list[dict]) -> list[str]:
@@ -1518,6 +2427,26 @@ def extract_byteplus_error(resp: requests.Response) -> str:
     return f"HTTP {resp.status_code}"
 
 
+def extract_kling_error(resp: requests.Response) -> str:
+    try:
+        payload = resp.json()
+    except Exception:
+        raw = (resp.text or "").strip()
+        return raw or f"HTTP {resp.status_code}"
+    if isinstance(payload, dict):
+        for key in ("message", "msg", "error_msg", "detail"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        if isinstance(payload.get("data"), dict):
+            data = payload["data"]
+            for key in ("task_status_msg", "message", "msg"):
+                value = data.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    return f"HTTP {resp.status_code}"
+
+
 def build_fal_seedream_image_size(model_id: str, image_size: str) -> str:
     normalized = (image_size or "2K").strip().upper()
     if model_id == FAL_SEEDREAM_5_TEXT_ID:
@@ -1554,6 +2483,247 @@ def build_fal_nano_banana_resolution(model_id: str, image_size: str) -> str:
     return normalized
 
 
+def normalize_seedvr_preset(value: str | None) -> tuple[str, float | None, str | None, str]:
+    presets = {
+        "factor:2": ("factor", 2.0, None, "2X"),
+        "factor:4": ("factor", 4.0, None, "4X"),
+        "target:720p": ("target", None, "720p", "720P"),
+        "target:1080p": ("target", None, "1080p", "1080P"),
+        "target:1440p": ("target", None, "1440p", "1440P"),
+        "target:2160p": ("target", None, "2160p", "4K"),
+    }
+    return presets.get(str(value or "factor:2").strip().lower(), presets["factor:2"])
+
+
+def normalize_seedvr_custom_resolution(
+    source_width: int,
+    source_height: int,
+    target_width: int | str | None,
+    target_height: int | str | None,
+    anchor: str | None,
+) -> tuple[int, int, float, str]:
+    safe_source_width = max(1, int(source_width or 0))
+    safe_source_height = max(1, int(source_height or 0))
+    if not safe_source_width or not safe_source_height:
+        raise ValueError("Could not read the selected image size for custom upscaling.")
+
+    safe_anchor = str(anchor or "width").strip().lower()
+    if safe_anchor not in {"width", "height"}:
+        safe_anchor = "width"
+
+    raw_width = int(target_width or 0)
+    raw_height = int(target_height or 0)
+    if raw_width <= 0 and raw_height <= 0:
+        raise ValueError("Enter a custom output width or height.")
+
+    if safe_anchor == "height":
+        locked_height = max(64, raw_height or int(round((raw_width * safe_source_height) / safe_source_width)))
+        locked_width = max(64, int(round((locked_height * safe_source_width) / safe_source_height)))
+    else:
+        locked_width = max(64, raw_width or int(round((raw_height * safe_source_width) / safe_source_height)))
+        locked_height = max(64, int(round((locked_width * safe_source_height) / safe_source_width)))
+
+    upscale_factor = max(1.0, locked_width / safe_source_width, locked_height / safe_source_height)
+    return locked_width, locked_height, round(upscale_factor, 6), safe_anchor
+
+
+def approximate_image_size_label(width: int, height: int) -> str:
+    max_dim = max(int(width or 0), int(height or 0))
+    if max_dim >= 3840:
+        return "4K"
+    if max_dim >= 2048:
+        return "2K"
+    if max_dim >= 1024:
+        return "1K"
+    if max_dim >= 512:
+        return "0.5K"
+    return f"{max_dim}px" if max_dim else ""
+
+
+def measure_image_dimensions(image_b64: str, mime_type: str = "image/png") -> tuple[int, int]:
+    try:
+        raw = base64.b64decode(image_b64)
+        with Image.open(io.BytesIO(raw)) as img:
+            return img.size
+    except Exception:
+        return 0, 0
+
+
+def resize_image_b64_to_exact_png(image_b64: str, mime_type: str, target_width: int, target_height: int) -> tuple[str, str]:
+    """Resize an image payload to an exact PNG output while preserving ICC data."""
+    safe_width = max(1, int(target_width or 0))
+    safe_height = max(1, int(target_height or 0))
+    if not safe_width or not safe_height:
+        return image_b64, mime_type or "image/png"
+
+    img, info = open_base64_image(image_b64)
+    has_alpha = ("A" in img.getbands()) or (img.mode == "P" and "transparency" in img.info)
+    if has_alpha:
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
+    elif img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+
+    if img.size != (safe_width, safe_height):
+        img = img.resize((safe_width, safe_height), Image.LANCZOS)
+
+    buf = io.BytesIO()
+    save_kwargs = {"format": "PNG", "optimize": True}
+    icc_profile = info.get("icc_profile")
+    if icc_profile:
+        save_kwargs["icc_profile"] = icc_profile
+    img.save(buf, **save_kwargs)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("utf-8"), "image/png"
+
+
+def get_reference_mask_file_paths(date_str: str, filename: str) -> dict[str, str]:
+    safe_date = str(date_str or "").strip()
+    safe_filename = os.path.basename(str(filename or "").strip())
+    base_stem = os.path.splitext(safe_filename)[0]
+    return {
+        "original_dir": os.path.join(REFERENCE_ARCHIVE_DIR, safe_date),
+        "original_path": os.path.join(REFERENCE_ARCHIVE_DIR, safe_date, safe_filename),
+        "mask_dir": os.path.join(REFERENCE_MASKS_DIR, safe_date),
+        "mask_path": os.path.join(REFERENCE_MASKS_DIR, safe_date, safe_filename),
+        "meta_path": os.path.join(REFERENCE_MASKS_DIR, safe_date, f"{base_stem}.json"),
+        "render_dir": os.path.join(REFERENCE_RENDERS_DIR, safe_date),
+        "render_path": os.path.join(REFERENCE_RENDERS_DIR, safe_date, safe_filename),
+    }
+
+
+def build_reference_mask_bundle(date_str: str, filename: str) -> dict:
+    safe_date = str(date_str or "").strip()
+    safe_filename = os.path.basename(str(filename or "").strip())
+    paths = get_reference_mask_file_paths(safe_date, safe_filename)
+    has_mask = os.path.exists(paths["mask_path"]) and os.path.exists(paths["render_path"])
+    return {
+        "date": safe_date,
+        "filename": safe_filename,
+        "has_mask": has_mask,
+        "original_url": f"/reference-archive/{safe_date}/{safe_filename}",
+        "masked_url": f"/reference-render/{safe_date}/{safe_filename}" if has_mask else "",
+        "mask_url": f"/reference-mask/{safe_date}/{safe_filename}" if has_mask else "",
+        "display_url": f"/reference-render/{safe_date}/{safe_filename}" if has_mask else f"/reference-archive/{safe_date}/{safe_filename}",
+        "mask_edit_payload": {
+            "kind": "references",
+            "date": safe_date,
+            "filename": safe_filename,
+        },
+    }
+
+
+def load_reference_mask_metadata(date_str: str, filename: str) -> dict:
+    paths = get_reference_mask_file_paths(date_str, filename)
+    if not os.path.exists(paths["meta_path"]):
+        return {}
+    try:
+        with open(paths["meta_path"], "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def delete_reference_mask_assets(date_str: str, filename: str) -> None:
+    paths = get_reference_mask_file_paths(date_str, filename)
+    for key in ("mask_path", "meta_path", "render_path"):
+        path = paths[key]
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+    for dir_key in ("mask_dir", "render_dir"):
+        folder = paths[dir_key]
+        if os.path.isdir(folder) and not os.listdir(folder):
+            try:
+                os.rmdir(folder)
+            except Exception:
+                pass
+
+
+def save_reference_mask_assets(date_str: str, filename: str, mask_png_b64: str) -> dict:
+    paths = get_reference_mask_file_paths(date_str, filename)
+    original_path = paths["original_path"]
+    if not os.path.exists(original_path):
+        raise FileNotFoundError("Reference image not found.")
+
+    mask_img, _ = open_base64_image(mask_png_b64)
+    original_img = Image.open(original_path)
+    original_img.load()
+    original_info = dict(getattr(original_img, "info", {}) or {})
+    original_img = ImageOps.exif_transpose(original_img).convert("RGBA")
+
+    mask_img = ImageOps.exif_transpose(mask_img).convert("L")
+    if mask_img.size != original_img.size:
+        mask_img = mask_img.resize(original_img.size, Image.Resampling.LANCZOS)
+
+    render_img = original_img.copy()
+    render_img.putalpha(mask_img)
+
+    os.makedirs(paths["mask_dir"], exist_ok=True)
+    os.makedirs(paths["render_dir"], exist_ok=True)
+
+    mask_buf = io.BytesIO()
+    mask_img.save(mask_buf, format="PNG", optimize=True)
+    with open(paths["mask_path"], "wb") as fh:
+        fh.write(mask_buf.getvalue())
+
+    render_buf = io.BytesIO()
+    save_kwargs = {"format": "PNG", "optimize": True}
+    icc_profile = original_info.get("icc_profile")
+    if icc_profile:
+        save_kwargs["icc_profile"] = icc_profile
+    render_img.save(render_buf, **save_kwargs)
+    with open(paths["render_path"], "wb") as fh:
+        fh.write(render_buf.getvalue())
+
+    metadata = {
+        "date": str(date_str or "").strip(),
+        "filename": os.path.basename(str(filename or "").strip()),
+        "updated_at": utc_now_iso(),
+        "width": int(original_img.width),
+        "height": int(original_img.height),
+        "mode": "alpha_mask",
+    }
+    with open(paths["meta_path"], "w", encoding="utf-8") as fh:
+        json.dump(metadata, fh, indent=2, ensure_ascii=False)
+    return metadata
+
+
+def enrich_reference_archive_entry(entry: dict | None) -> dict:
+    entry = dict(entry or {})
+    ref_date = str(entry.get("date", "") or "").strip()
+    filename = os.path.basename(str(entry.get("filename", "") or "").strip())
+    if not ref_date or not filename:
+        return entry
+    bundle = build_reference_mask_bundle(ref_date, filename)
+    enriched = {
+        "date": ref_date,
+        "filename": filename,
+        "name": entry.get("name", "") or filename,
+        "mime_type": entry.get("mime_type", "image/png"),
+        "url": entry.get("url") or bundle["display_url"],
+        "original_url": entry.get("original_url") or bundle["original_url"],
+        "masked_url": entry.get("masked_url") or bundle["masked_url"],
+        "mask_url": entry.get("mask_url") or bundle["mask_url"],
+        "has_mask": bool(entry.get("has_mask")) or bundle["has_mask"],
+        "mask_edit_payload": entry.get("mask_edit_payload") or bundle["mask_edit_payload"],
+    }
+    enriched["url"] = enriched["masked_url"] if enriched["has_mask"] and enriched["masked_url"] else (enriched["original_url"] or bundle["display_url"])
+    return enriched
+
+
+def enrich_reference_archive_entries(entries: list[dict] | None) -> list[dict]:
+    result = []
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        result.append(enrich_reference_archive_entry(entry))
+    return result
+
+
 def decode_fal_image_result(item: dict) -> dict | None:
     image_url = str(item.get("url") or item.get("image_url") or item.get("data_uri") or "").strip()
     if image_url.startswith("data:"):
@@ -1573,6 +2743,57 @@ def decode_fal_image_result(item: dict) -> dict | None:
         except Exception:
             return None
     return None
+
+
+def download_remote_binary(url: str, *, headers: dict | None = None, timeout: int = 240) -> tuple[bytes, str]:
+    response = requests.get(url, headers=headers or {}, timeout=timeout)
+    response.raise_for_status()
+    return response.content, str(response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+
+
+def extract_fal_video_result(payload: dict) -> dict | None:
+    candidates = []
+    if isinstance(payload, dict):
+        if isinstance(payload.get("video"), dict):
+            candidates.append(payload.get("video"))
+        if isinstance(payload.get("videos"), list):
+            candidates.extend([item for item in payload.get("videos") if isinstance(item, dict)])
+        if isinstance(payload.get("data"), dict):
+            data_payload = payload.get("data")
+            if isinstance(data_payload.get("video"), dict):
+                candidates.append(data_payload.get("video"))
+            if isinstance(data_payload.get("videos"), list):
+                candidates.extend([item for item in data_payload.get("videos") if isinstance(item, dict)])
+    for item in candidates:
+        video_url = str(item.get("url") or item.get("video_url") or "").strip()
+        if video_url:
+            return {
+                "url": video_url,
+                "mime_type": str(item.get("content_type") or item.get("mime_type") or "video/mp4").strip() or "video/mp4",
+                "poster_url": str(item.get("thumbnail_url") or item.get("poster_url") or item.get("preview_image_url") or "").strip(),
+                "width": int(item.get("width") or 0),
+                "height": int(item.get("height") or 0),
+            }
+    return None
+
+
+def normalize_video_extension(mime_type: str, fallback_url: str = "") -> tuple[str, str]:
+    mime = str(mime_type or "").split(";", 1)[0].strip().lower()
+    if mime in {"video/mp4", "application/mp4"}:
+        return "mp4", "video/mp4"
+    if mime in {"video/webm"}:
+        return "webm", "video/webm"
+    if mime in {"video/quicktime"}:
+        return "mov", "video/quicktime"
+    parsed_path = os.path.basename(urlparse(str(fallback_url or "")).path or "")
+    ext = os.path.splitext(parsed_path)[1].lower()
+    if ext in {".mp4", ".webm", ".mov"}:
+        return ext.lstrip("."), mime or {
+            ".mp4": "video/mp4",
+            ".webm": "video/webm",
+            ".mov": "video/quicktime",
+        }[ext]
+    return "mp4", "video/mp4"
 
 
 # ---------------------------------------------------------------------------
@@ -1627,13 +2848,35 @@ def index():
         config.get("api_key", "").strip()
         or config.get("fal_api_key", "").strip()
         or config.get("byteplus_api_key", "").strip()
+        or config.get("kling_api_token", "").strip()
     )
     return render_template("index.html",
                            models=MODELS_INFO,
                            model_families=MODEL_FAMILIES,
+                           video_models=VIDEO_MODELS_INFO,
+                           video_model_families=VIDEO_MODEL_FAMILIES,
                            provider_labels=PROVIDER_LABELS,
+                           comfyui_url=(config.get("comfyui_url", "") or DEFAULT_CONFIG["comfyui_url"]),
                            has_key=has_key,
                            user=session["user"])
+
+
+@app.route("/pose/embed/openpose")
+@login_required
+def pose_embed_openpose():
+    return render_template("pose_openpose.html", user=session["user"])
+
+
+@app.route("/pose/embed/yedp-mocap")
+@login_required
+def pose_embed_yedp_mocap():
+    return render_template("pose_yedp.html", user=session["user"])
+
+
+@app.route("/pose/embed/action-director")
+@login_required
+def pose_embed_action_director():
+    return render_template("pose_action_director.html", user=session["user"])
 
 
 @app.route("/settings")
@@ -1644,6 +2887,7 @@ def settings():
     api_key = config.get("api_key", "")
     fal_api_key = config.get("fal_api_key", "")
     byteplus_api_key = config.get("byteplus_api_key", "") or config.get("seedream_api_key", "")
+    kling_api_token = config.get("kling_api_token", "")
     return render_template("settings.html",
                            masked_key=mask_api_key(api_key),
                            has_key=bool(api_key),
@@ -1651,6 +2895,8 @@ def settings():
                            has_fal_key=bool(fal_api_key),
                            masked_byteplus_key=mask_api_key(byteplus_api_key),
                            has_byteplus_key=bool(byteplus_api_key),
+                           masked_kling_token=mask_api_key(kling_api_token),
+                           has_kling_token=bool(kling_api_token),
                            stats=stats,
                            vision_models=VISION_MODELS_INFO,
                            analysis_model=TALENT_ANALYSIS_MODEL,
@@ -1695,50 +2941,146 @@ def reports_page():
 
 
 # ---------------------------------------------------------------------------
-# Route â€” Loved gallery (saved favorites)
+# Routes - Asset galleries
 # ---------------------------------------------------------------------------
+ASSET_GALLERY_PAGE_CONFIG = {
+    "loved": {
+        "title": "Loved Images",
+        "subtitle": "Favorites saved for reuse and reference.",
+        "empty_title": "No loved images yet.",
+        "empty_subtitle": "Generate images and press the heart button to save them here.",
+    },
+    "references": {
+        "title": "References",
+        "subtitle": "Previously used saved references from your archived generation inputs.",
+        "empty_title": "No archived references yet.",
+        "empty_subtitle": "Generate with reference images and they will appear here for reuse.",
+    },
+    "history": {
+        "title": "History",
+        "subtitle": "Saved generations with the same filters, selection, and scaling flow as the Generator sidebar.",
+        "empty_title": "No history images yet.",
+        "empty_subtitle": "Generate images and they will appear here automatically.",
+    },
+}
+
+VIDEO_ASPECT_RATIOS = ["16:9", "9:16", "1:1"]
+VIDEO_DURATION_OPTIONS = [5, 10]
+WAN_RESOLUTION_OPTIONS = ["720p", "1080p"]
+
+VIDEO_MODELS_INFO = {
+    KLING_DIRECT_TEXT_DEFAULT_ID: {
+        "provider": "kling",
+        "provider_label": "Kling",
+        "family": "kling",
+        "label": "Kling",
+        "input_modes": ["text", "image"],
+        "durations": VIDEO_DURATION_OPTIONS,
+        "aspect_ratios": VIDEO_ASPECT_RATIOS,
+        "supports_negative_prompt": True,
+        "supports_safety_checker": False,
+        "supports_resolution": False,
+        "direct_image_limit_mb": 10,
+    },
+    FAL_KLING_T2V_ID: {
+        "provider": "fal",
+        "provider_label": "Fal",
+        "family": "kling",
+        "label": "Kling",
+        "input_modes": ["text", "image"],
+        "durations": VIDEO_DURATION_OPTIONS,
+        "aspect_ratios": VIDEO_ASPECT_RATIOS,
+        "supports_negative_prompt": True,
+        "supports_safety_checker": False,
+        "supports_resolution": False,
+    },
+    FAL_WAN_T2V_ID: {
+        "provider": "fal",
+        "provider_label": "Fal",
+        "family": "wan-video",
+        "label": "Wan Video",
+        "input_modes": ["text", "image"],
+        "durations": VIDEO_DURATION_OPTIONS,
+        "aspect_ratios": VIDEO_ASPECT_RATIOS,
+        "supports_negative_prompt": True,
+        "supports_safety_checker": True,
+        "supports_resolution": True,
+        "resolutions": WAN_RESOLUTION_OPTIONS,
+    },
+}
+
+VIDEO_MODEL_FAMILIES = {
+    "kling": {
+        "label": "Kling",
+        "default_provider": "kling",
+        "provider_order": ["kling", "fal"],
+        "providers": {
+            "kling": KLING_DIRECT_TEXT_DEFAULT_ID,
+            "fal": FAL_KLING_T2V_ID,
+        },
+    },
+    "wan-video": {
+        "label": "Wan Video",
+        "default_provider": "fal",
+        "provider_order": ["fal"],
+        "providers": {
+            "fal": FAL_WAN_T2V_ID,
+        },
+    },
+}
+
+VIDEO_PRICING = {
+    KLING_DIRECT_TEXT_DEFAULT_ID: {
+        "5": 0.0,
+        "10": 0.0,
+    },
+    FAL_KLING_T2V_ID: {
+        "5": 0.0,
+        "10": 0.0,
+    },
+    FAL_WAN_T2V_ID: {
+        "5": 0.0,
+        "10": 0.0,
+    },
+}
+
+
+def build_asset_page_context(kind: str) -> dict:
+    return {
+        "asset_kind": kind,
+        "page_title": "Images",
+        "page_subtitle": "Browse History, References, and Loved images in one place.",
+        "asset_gallery_config": ASSET_GALLERY_PAGE_CONFIG,
+        "initial_asset_items": collect_asset_records(kind),
+        "user": session["user"],
+    }
+
+
+@app.route("/images")
+@login_required
+def images_gallery():
+    kind = str(request.args.get("kind") or "history").strip().lower()
+    if kind not in ASSET_GALLERY_PAGE_CONFIG:
+        kind = "history"
+    return render_template("asset_gallery.html", **build_asset_page_context(kind))
+
+
 @app.route("/loved")
 @login_required
 def loved_gallery():
-    days = []
-    if os.path.isdir(LOVED_DIR):
-        date_dirs = sorted(
-            [d for d in os.listdir(LOVED_DIR)
-             if os.path.isdir(os.path.join(LOVED_DIR, d))],
-            reverse=True
-        )
-        for date_str in date_dirs:
-            day_path   = os.path.join(LOVED_DIR, date_str)
-            meta_files = sorted(glob.glob(os.path.join(day_path, "*.json")), reverse=True)
-            items = []
-            for mf in meta_files:
-                try:
-                    with open(mf) as f:
-                        meta = json.load(f)
-                    # Look for the image file with any supported extension
-                    base     = mf[:-5]  # rimuove ".json"
-                    img_path = None
-                    for ext in (".jpeg", ".jpg", ".png", ".webp"):
-                        candidate = base + ext
-                        if os.path.exists(candidate):
-                            img_path = candidate
-                            break
-                    if img_path:
-                        items.append({
-                            "filename": os.path.basename(img_path),
-                            "date":     date_str,
-                            "meta":     meta
-                        })
-                except Exception:
-                    pass
-            if items:
-                try:
-                    dt    = datetime.strptime(date_str, "%Y-%m-%d")
-                    label = dt.strftime("%-d %B %Y")
-                except Exception:
-                    label = date_str
-                days.append({"date": date_str, "label": label, "entries": items})
-    return render_template("loved.html", days=days, user=session["user"])
+    return redirect(url_for("images_gallery", kind="loved"))
+
+
+@app.route("/references")
+@login_required
+def references_gallery():
+    return redirect(url_for("images_gallery", kind="references"))
+
+
+@app.route("/history")
+@login_required
+def history_gallery():
+    return redirect(url_for("images_gallery", kind="history"))
 
 
 @app.route("/loved/<date_str>/<filename>")
@@ -1755,11 +3097,115 @@ def serve_reference_archive(date_str, filename):
     return send_from_directory(day_path, filename)
 
 
+@app.route("/reference-mask/<date_str>/<filename>")
+@login_required
+def serve_reference_mask(date_str, filename):
+    day_path = os.path.join(REFERENCE_MASKS_DIR, date_str)
+    return send_from_directory(day_path, filename)
+
+
+@app.route("/reference-render/<date_str>/<filename>")
+@login_required
+def serve_reference_render(date_str, filename):
+    day_path = os.path.join(REFERENCE_RENDERS_DIR, date_str)
+    return send_from_directory(day_path, filename)
+
+
 @app.route("/generations/<date_str>/<filename>")
 @login_required
 def serve_generation(date_str, filename):
     day_path = os.path.join(GENERATIONS_DIR, date_str)
     return send_from_directory(day_path, filename)
+
+
+@app.route("/videos/<date_str>/<filename>")
+@login_required
+def serve_video(date_str, filename):
+    day_path = os.path.join(VIDEOS_DIR, date_str)
+    return send_from_directory(day_path, filename)
+
+
+@app.route("/pose-outputs/<date_str>/<filename>")
+@login_required
+def serve_pose_output(date_str, filename):
+    day_path = os.path.join(POSE_OUTPUTS_DIR, date_str)
+    return send_from_directory(day_path, filename)
+
+
+def open_file_in_folder(img_path: str):
+    if sys.platform.startswith("win"):
+        subprocess.Popen(["explorer", "/select,", img_path])
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-R", img_path])
+    else:
+        subprocess.Popen(["xdg-open", os.path.dirname(img_path)])
+
+
+def resolve_asset_image_path(kind: str, date_str: str, filename: str) -> tuple[str, str]:
+    kind = str(kind or "").strip()
+    filename = os.path.basename(str(filename or "").strip())
+    date_str = str(date_str or "").strip()
+    mapping = {
+        "history": GENERATIONS_DIR,
+        "generations": GENERATIONS_DIR,
+        "loved": LOVED_DIR,
+        "references": REFERENCE_ARCHIVE_DIR,
+        "reference_archive": REFERENCE_ARCHIVE_DIR,
+    }
+    root_dir = mapping.get(kind)
+    if not root_dir:
+        raise ValueError("Invalid asset kind.")
+    if not date_str or not filename:
+        raise ValueError("Missing asset file.")
+    safe_root = os.path.realpath(root_dir)
+    img_path = os.path.realpath(os.path.join(root_dir, date_str, filename))
+    if not img_path.startswith(safe_root + os.sep):
+        raise ValueError("Invalid path.")
+    if not os.path.exists(img_path):
+        raise FileNotFoundError("File not found.")
+    return safe_root, img_path
+
+
+@app.route("/api/generations/open-folder", methods=["POST"])
+@login_required
+def api_open_generation_folder():
+    body = request.get_json(silent=True) or {}
+    date_str = str(body.get("date") or "").strip()
+    filename = os.path.basename(str(body.get("filename") or "").strip())
+
+    try:
+        resolve_asset_image_path("history", date_str, filename)
+    except FileNotFoundError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    try:
+        _, img_path = resolve_asset_image_path("history", date_str, filename)
+        open_file_in_folder(img_path)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/api/assets/open-folder", methods=["POST"])
+@login_required
+def api_open_asset_folder():
+    body = request.get_json(silent=True) or {}
+    kind = str(body.get("kind") or "").strip()
+    date_str = str(body.get("date") or "").strip()
+    filename = os.path.basename(str(body.get("filename") or "").strip())
+
+    try:
+        _, img_path = resolve_asset_image_path(kind, date_str, filename)
+        open_file_in_folder(img_path)
+        return jsonify({"ok": True})
+    except FileNotFoundError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -1796,6 +3242,103 @@ def api_delete_loved(date_str, filename):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+@app.route("/api/reference-archive/<date_str>/<filename>", methods=["DELETE"])
+@login_required
+def api_delete_reference_archive(date_str, filename):
+    safe_root = os.path.realpath(REFERENCE_ARCHIVE_DIR)
+    filename = os.path.basename(filename)
+    img_path = os.path.realpath(os.path.join(REFERENCE_ARCHIVE_DIR, date_str, filename))
+
+    if not img_path.startswith(safe_root + os.sep):
+        return jsonify({"ok": False, "error": "Invalid path"}), 400
+    if os.path.splitext(filename)[1].lower() not in (".jpeg", ".jpg", ".png", ".webp"):
+        return jsonify({"ok": False, "error": "Invalid file type"}), 400
+    if not os.path.exists(img_path):
+        return jsonify({"ok": False, "error": "File not found"}), 404
+
+    try:
+        os.remove(img_path)
+        delete_reference_mask_assets(date_str, filename)
+        remove_reference_archive_index_entries(date_str, filename)
+        archive_day_dir = os.path.dirname(img_path)
+        if os.path.isdir(archive_day_dir) and not os.listdir(archive_day_dir):
+            os.rmdir(archive_day_dir)
+
+        if os.path.isdir(GENERATIONS_DIR):
+            for gen_date in os.listdir(GENERATIONS_DIR):
+                day_path = os.path.join(GENERATIONS_DIR, gen_date)
+                if not os.path.isdir(day_path):
+                    continue
+                meta_files = glob.glob(os.path.join(day_path, "*.json"))
+                for meta_file in meta_files:
+                    try:
+                        with open(meta_file, encoding="utf-8") as fh:
+                            meta = json.load(fh)
+                    except Exception:
+                        continue
+                    refs = meta.get("refArchive") or []
+                    if not isinstance(refs, list) or not refs:
+                        continue
+                    new_refs = []
+                    changed = False
+                    for ref in refs:
+                        if not isinstance(ref, dict):
+                            continue
+                        ref_date = str(ref.get("date", "") or "").strip()
+                        ref_name = os.path.basename(str(ref.get("filename", "") or "").strip())
+                        if ref_date == date_str and ref_name == filename:
+                            changed = True
+                            continue
+                        new_refs.append(ref)
+                    if changed:
+                        meta["refArchive"] = new_refs
+                        meta["ref_count"] = len(new_refs)
+                        with open(meta_file, "w", encoding="utf-8") as fh:
+                            json.dump(meta, fh, indent=2, ensure_ascii=False)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/reference-mask/<date_str>/<filename>", methods=["GET", "POST"])
+@login_required
+def api_reference_mask(date_str, filename):
+    safe_date = str(date_str or "").strip()
+    safe_filename = os.path.basename(str(filename or "").strip())
+    paths = get_reference_mask_file_paths(safe_date, safe_filename)
+    safe_root = os.path.realpath(REFERENCE_ARCHIVE_DIR)
+    original_path = os.path.realpath(paths["original_path"])
+
+    if not original_path.startswith(safe_root + os.sep):
+        return jsonify({"ok": False, "error": "Invalid path"}), 400
+    if not os.path.exists(original_path):
+        return jsonify({"ok": False, "error": "Reference image not found"}), 404
+
+    if request.method == "GET":
+        return jsonify({
+            "ok": True,
+            "bundle": build_reference_mask_bundle(safe_date, safe_filename),
+            "meta": load_reference_mask_metadata(safe_date, safe_filename),
+        })
+
+    body = request.get_json(silent=True) or {}
+    mask_png_data = str(body.get("mask_data", "") or "").strip()
+    clear_mask = bool(body.get("clear")) or not mask_png_data
+    try:
+        if clear_mask:
+            delete_reference_mask_assets(safe_date, safe_filename)
+            metadata = {}
+        else:
+            metadata = save_reference_mask_assets(safe_date, safe_filename, mask_png_data)
+        return jsonify({
+            "ok": True,
+            "bundle": build_reference_mask_bundle(safe_date, safe_filename),
+            "meta": metadata,
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # API â€” Loved list (for reference image picker)
 # ---------------------------------------------------------------------------
@@ -1806,42 +3349,584 @@ def api_loved_list():
     Returns list of loved images for the picker (no base64, only URL and meta).
     """
     result = []
-    if os.path.isdir(LOVED_DIR):
-        date_dirs = sorted(
-            [d for d in os.listdir(LOVED_DIR)
-             if os.path.isdir(os.path.join(LOVED_DIR, d))],
-            reverse=True
-        )
-        for date_str in date_dirs:
-            day_path   = os.path.join(LOVED_DIR, date_str)
-            meta_files = sorted(glob.glob(os.path.join(day_path, "*.json")), reverse=True)
-            for mf in meta_files:
-                try:
-                    with open(mf) as f:
-                        meta = json.load(f)
-                    # Look for the image file with any supported extension
-                    base     = mf[:-5]  # rimuove ".json"
-                    img_path = None
-                    filename = None
-                    for ext in (".jpeg", ".jpg", ".png", ".webp"):
-                        candidate = base + ext
-                        if os.path.exists(candidate):
-                            img_path = candidate
-                            filename = os.path.basename(candidate)
-                            break
-                    if img_path:
-                        result.append({
-                            "url":      f"/loved/{date_str}/{filename}",
-                            "date":     date_str,
-                            "filename": filename,
-                            "prompt":   (meta.get("prompt") or "")[:60],
-                            "model_label": meta.get("model_label", ""),
-                            "imageSize":   meta.get("imageSize", ""),
-                            "aspectRatio": meta.get("aspectRatio", ""),
-                        })
-                except Exception:
-                    pass
+    for item in collect_asset_records("loved"):
+        params = item.get("params", {})
+        result.append({
+            "url": item.get("url", ""),
+            "date": item.get("date", ""),
+            "filename": item.get("filename", ""),
+            "prompt": (params.get("prompt", "") or "")[:60],
+            "model_label": params.get("model_label", ""),
+            "imageSize": params.get("imageSize", ""),
+            "aspectRatio": params.get("aspectRatio", ""),
+        })
     return jsonify(result)
+
+
+def build_common_asset_params(meta: dict | None, *, default_model: str = "", default_provider: str = "") -> dict:
+    meta = meta or {}
+    model_id = str(meta.get("model", default_model) or default_model or "")
+    model_info = MODELS_INFO.get(model_id, {})
+    provider = str(meta.get("provider", default_provider or model_info.get("provider", "")) or default_provider or model_info.get("provider", ""))
+    provider_label = str(meta.get("provider_label", model_info.get("provider_label", PROVIDER_LABELS.get(provider, provider.title() if provider else ""))) or "")
+    return {
+        "model": model_id,
+        "modelFamily": meta.get("modelFamily", model_info.get("family", model_id)),
+        "model_label": meta.get("model_label", model_info.get("label", "")),
+        "provider": provider,
+        "provider_label": provider_label,
+        "imageSize": meta.get("imageSize", ""),
+        "aspectRatio": meta.get("aspectRatio", ""),
+        "prompt": meta.get("prompt", ""),
+        "temperature": meta.get("temperature", 1.0),
+        "topP": meta.get("topP", 0.95),
+        "thinkingLevel": meta.get("thinkingLevel", "Minimal"),
+        "useSearch": meta.get("useSearch", False),
+        "ref_count": meta.get("ref_count", 0),
+        "refArchive": enrich_reference_archive_entries(meta.get("refArchive", [])),
+        "seedMode": meta.get("seedMode", "random"),
+        "seedValue": meta.get("seedValue", 1),
+        "falSafetyChecker": meta.get("falSafetyChecker", True),
+        "falSafetyTolerance": meta.get("falSafetyTolerance", 4),
+        "geminiSafetyPreset": meta.get("geminiSafetyPreset", "default"),
+        "byteplusSafetyMode": meta.get("byteplusSafetyMode", "platform_default"),
+        "upscaled": meta.get("upscaled", False),
+        "upscalerType": meta.get("upscalerType", ""),
+        "upscalerLabel": meta.get("upscalerLabel", ""),
+        "upscaleModel": meta.get("upscaleModel", meta.get("upscalerType", "")),
+        "upscalePreset": meta.get("upscalePreset", ""),
+        "upscaleMode": meta.get("upscaleMode", ""),
+        "upscaleFactor": meta.get("upscaleFactor"),
+        "upscaleTargetResolution": meta.get("upscaleTargetResolution", ""),
+        "upscaleTargetWidth": meta.get("upscaleTargetWidth", 0),
+        "upscaleTargetHeight": meta.get("upscaleTargetHeight", 0),
+        "upscaleTargetAnchor": meta.get("upscaleTargetAnchor", ""),
+        "upscaleDisplaySize": meta.get("upscaleDisplaySize", ""),
+        "upscaleSourceDate": meta.get("upscaleSourceDate", ""),
+        "upscaleSourceFilename": meta.get("upscaleSourceFilename", ""),
+        "upscaleOutputWidth": meta.get("upscaleOutputWidth", 0),
+        "upscaleOutputHeight": meta.get("upscaleOutputHeight", 0),
+        "mime_type": meta.get("mime_type", "image/png"),
+    }
+
+
+def find_existing_image_for_meta_base(base_path: str) -> tuple[str | None, str | None]:
+    for ext in (".jpeg", ".jpg", ".png", ".webp"):
+        candidate = base_path + ext
+        if os.path.exists(candidate):
+            return candidate, os.path.basename(candidate)
+    return None, None
+
+
+def iso_sort_key(value: str, fallback: str) -> str:
+    raw = str(value or "").strip()
+    return raw or fallback
+
+
+def collect_generation_records(max_load: int | None = None) -> list[dict]:
+    result = []
+    if not os.path.isdir(GENERATIONS_DIR):
+        return result
+
+    date_dirs = sorted(
+        [d for d in os.listdir(GENERATIONS_DIR) if os.path.isdir(os.path.join(GENERATIONS_DIR, d))],
+        reverse=True,
+    )
+    for date_str in date_dirs:
+        if max_load is not None and len(result) >= max_load:
+            break
+        day_path = os.path.join(GENERATIONS_DIR, date_str)
+        meta_files = sorted(glob.glob(os.path.join(day_path, "*.json")), reverse=True)
+        for mf in meta_files:
+            if max_load is not None and len(result) >= max_load:
+                break
+            try:
+                with open(mf, encoding="utf-8") as f:
+                    meta = json.load(f)
+                img_path, filename = find_existing_image_for_meta_base(mf[:-5])
+                if not img_path or not filename:
+                    continue
+                params = build_common_asset_params(meta)
+                generated_at = str(meta.get("generated_at", "") or "")
+                result.append({
+                    "id": f"history:{date_str}:{filename}",
+                    "kind": "history",
+                    "url": f"/generations/{date_str}/{filename}",
+                    "download_url": f"/generations/{date_str}/{filename}",
+                    "date": date_str,
+                    "filename": filename,
+                    "generated_at": generated_at,
+                    "sortTimestamp": iso_sort_key(generated_at, f"{date_str}T00:00:00"),
+                    "prompt_preview": (params.get("prompt", "") or "")[:120],
+                    "text": meta.get("text", ""),
+                    "params": params,
+                    "delete_url": f"/api/generations/{date_str}/{filename}",
+                    "folder_open_payload": {"kind": "history", "date": date_str, "filename": filename},
+                })
+            except Exception:
+                pass
+    return result
+
+
+def collect_loved_records() -> list[dict]:
+    result = []
+    if not os.path.isdir(LOVED_DIR):
+        return result
+
+    date_dirs = sorted(
+        [d for d in os.listdir(LOVED_DIR) if os.path.isdir(os.path.join(LOVED_DIR, d))],
+        reverse=True,
+    )
+    for date_str in date_dirs:
+        day_path = os.path.join(LOVED_DIR, date_str)
+        meta_files = sorted(glob.glob(os.path.join(day_path, "*.json")), reverse=True)
+        for mf in meta_files:
+            try:
+                with open(mf, encoding="utf-8") as f:
+                    meta = json.load(f)
+                img_path, filename = find_existing_image_for_meta_base(mf[:-5])
+                if not img_path or not filename:
+                    continue
+                params = build_common_asset_params(meta)
+                published_at = str(meta.get("published_at", meta.get("generated_at", "")) or "")
+                result.append({
+                    "id": f"loved:{date_str}:{filename}",
+                    "kind": "loved",
+                    "url": f"/loved/{date_str}/{filename}",
+                    "download_url": f"/loved/{date_str}/{filename}",
+                    "date": date_str,
+                    "filename": filename,
+                    "generated_at": published_at,
+                    "sortTimestamp": iso_sort_key(published_at, f"{date_str}T00:00:00"),
+                    "prompt_preview": (params.get("prompt", "") or "")[:120],
+                    "text": meta.get("text", ""),
+                    "params": params,
+                    "delete_url": f"/api/loved/{date_str}/{filename}",
+                    "folder_open_payload": {"kind": "loved", "date": date_str, "filename": filename},
+                })
+            except Exception:
+                pass
+    return result
+
+
+def collect_reference_archive_records() -> list[dict]:
+    result = []
+    seen_refs = set()
+    if not os.path.isdir(GENERATIONS_DIR):
+        return result
+
+    date_dirs = sorted(
+        [d for d in os.listdir(GENERATIONS_DIR) if os.path.isdir(os.path.join(GENERATIONS_DIR, d))],
+        reverse=True,
+    )
+    for date_str in date_dirs:
+        day_path = os.path.join(GENERATIONS_DIR, date_str)
+        meta_files = sorted(glob.glob(os.path.join(day_path, "*.json")), reverse=True)
+        for mf in meta_files:
+            try:
+                with open(mf, encoding="utf-8") as f:
+                    meta = json.load(f)
+                params = build_common_asset_params(meta)
+                generated_at = str(meta.get("generated_at", "") or "")
+                for idx, ref_entry in enumerate(meta.get("refArchive", []) or []):
+                    if not isinstance(ref_entry, dict):
+                        continue
+                    ref_date = str(ref_entry.get("date", "") or "").strip()
+                    filename = os.path.basename(str(ref_entry.get("filename", "") or "").strip())
+                    if not ref_date or not filename:
+                        continue
+                    ref_key = compute_reference_archive_file_hash(ref_date, filename) or f"{ref_date}/{filename}"
+                    if ref_key in seen_refs:
+                        continue
+                    ref_path = os.path.join(REFERENCE_ARCHIVE_DIR, ref_date, filename)
+                    if not os.path.exists(ref_path):
+                        continue
+                    seen_refs.add(ref_key)
+                    enriched_ref = enrich_reference_archive_entry(ref_entry)
+                    result.append({
+                        "id": f"reference:{ref_date}:{filename}",
+                        "kind": "references",
+                        "url": str(enriched_ref.get("url") or f"/reference-archive/{ref_date}/{filename}"),
+                        "download_url": str(enriched_ref.get("url") or f"/reference-archive/{ref_date}/{filename}"),
+                        "date": ref_date,
+                        "filename": filename,
+                        "generated_at": generated_at,
+                        "sortTimestamp": iso_sort_key(generated_at, f"{ref_date}T00:00:00"),
+                        "prompt_preview": str(enriched_ref.get("name") or params.get("prompt", "") or filename)[:120],
+                        "text": "",
+                        "params": params,
+                        "reference_name": str(enriched_ref.get("name", "") or ""),
+                        "source_generation_date": date_str,
+                        "source_generation_filename": str(meta.get("filename", "") or ""),
+                        "delete_url": f"/api/reference-archive/{ref_date}/{filename}",
+                        "folder_open_payload": {"kind": "references", "date": ref_date, "filename": filename},
+                        "original_url": str(enriched_ref.get("original_url") or ""),
+                        "masked_url": str(enriched_ref.get("masked_url") or ""),
+                        "mask_url": str(enriched_ref.get("mask_url") or ""),
+                        "has_mask": bool(enriched_ref.get("has_mask")),
+                        "mask_edit_payload": enriched_ref.get("mask_edit_payload") or {"kind": "references", "date": ref_date, "filename": filename},
+                    })
+            except Exception:
+                pass
+    return result
+
+
+def collect_asset_records(kind: str) -> list[dict]:
+    if kind == "history":
+        return collect_generation_records(max_load=None)
+    if kind == "loved":
+        return collect_loved_records()
+    if kind == "references":
+        return collect_reference_archive_records()
+    raise ValueError("Invalid asset kind")
+
+
+@app.route("/api/reference-archive-list")
+@login_required
+def api_reference_archive_list():
+    result = []
+    for item in collect_reference_archive_records():
+        params = item.get("params", {})
+        result.append({
+            "url": item.get("url", ""),
+            "original_url": item.get("original_url", ""),
+            "masked_url": item.get("masked_url", ""),
+            "mask_url": item.get("mask_url", ""),
+            "has_mask": item.get("has_mask", False),
+            "mask_edit_payload": item.get("mask_edit_payload", {}),
+            "date": item.get("date", ""),
+            "filename": item.get("filename", ""),
+            "prompt": (item.get("reference_name") or params.get("prompt", "") or "")[:60],
+            "model_label": params.get("model_label", ""),
+            "imageSize": params.get("imageSize", ""),
+            "aspectRatio": params.get("aspectRatio", ""),
+        })
+    return jsonify(result)
+
+
+@app.route("/api/asset-gallery/<kind>")
+@login_required
+def api_asset_gallery(kind):
+    if kind not in ASSET_GALLERY_PAGE_CONFIG:
+        return jsonify({"ok": False, "error": "Invalid gallery kind"}), 404
+    return jsonify({"ok": True, "items": collect_asset_records(kind)})
+
+
+@app.route("/api/import-ref-image", methods=["POST"])
+@login_required
+def api_import_ref_image():
+    body = request.get_json(silent=True) or {}
+    url = str(body.get("url", "") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "Image URL is empty"})
+
+    try:
+        image_b64, mime_type, filename = fetch_remote_reference_image(url)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
+    return jsonify({
+        "ok": True,
+        "data": image_b64,
+        "mime_type": mime_type,
+        "name": filename,
+    })
+
+
+# ---------------------------------------------------------------------------
+# API - Embedded pose tools
+# ---------------------------------------------------------------------------
+@app.route("/api/pose/save-output", methods=["POST"])
+@login_required
+def api_pose_save_output():
+    body = request.get_json(silent=True) or {}
+    tool = str(body.get("tool") or "pose_tool").strip() or "pose_tool"
+    image_b64 = str(body.get("image_data") or body.get("data") or "").strip()
+    mime_type = str(body.get("mime_type") or body.get("mimeType") or "image/png").strip() or "image/png"
+    filename = str(body.get("filename") or body.get("name") or "").strip()
+    json_data = body.get("json_data")
+    extra_images = body.get("extra_images") if isinstance(body.get("extra_images"), list) else []
+    meta = body.get("meta") if isinstance(body.get("meta"), dict) else {}
+
+    if not image_b64:
+        return jsonify({"ok": False, "error": "Pose output image is missing."}), 400
+
+    try:
+        image_b64, mime_type = convert_image_b64_to_png(image_b64, mime_type)
+        img_obj, _ = open_base64_image(image_b64)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Could not prepare the pose image: {exc}"}), 400
+
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H%M%S%f")
+    safe_tool = safe_output_stem(tool, "pose_tool")
+    safe_name = safe_output_stem(filename, safe_tool)
+    day_dir = os.path.join(POSE_OUTPUTS_DIR, date_str)
+    os.makedirs(day_dir, exist_ok=True)
+
+    saved_images = []
+
+    def _write_image(image_payload_b64: str, image_mime: str, suffix: str, requested_name: str = ""):
+        prepared_b64, prepared_mime = convert_image_b64_to_png(image_payload_b64, image_mime)
+        stem = safe_output_stem(requested_name, safe_name)
+        final_name = f"{time_str}_{stem}{suffix}.png"
+        final_path = os.path.join(day_dir, final_name)
+        with open(final_path, "wb") as f:
+            f.write(base64.b64decode(prepared_b64))
+        saved_images.append({
+            "filename": final_name,
+            "url": f"/pose-outputs/{date_str}/{final_name}",
+            "mime_type": prepared_mime,
+        })
+        return final_name
+
+    try:
+        primary_filename = _write_image(image_b64, mime_type, "", filename)
+        for idx, extra in enumerate(extra_images):
+            if not isinstance(extra, dict):
+                continue
+            extra_b64 = str(extra.get("image_data") or extra.get("data") or "").strip()
+            if not extra_b64:
+                continue
+            extra_mime = str(extra.get("mime_type") or extra.get("mimeType") or "image/png").strip() or "image/png"
+            extra_name = str(extra.get("filename") or extra.get("name") or f"{safe_name}_{idx + 1}").strip()
+            _write_image(extra_b64, extra_mime, f"_{idx + 1}", extra_name)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Could not save pose output: {exc}"}), 500
+
+    sidecar_payload = {
+        "tool": tool,
+        "saved_at": utc_now_iso(),
+        "width": img_obj.width,
+        "height": img_obj.height,
+        "meta": meta,
+        "json_data": json_data,
+        "images": saved_images,
+    }
+    sidecar_path = os.path.join(day_dir, os.path.splitext(primary_filename)[0] + ".json")
+    try:
+        with open(sidecar_path, "w", encoding="utf-8") as f:
+            json.dump(sidecar_payload, f, ensure_ascii=False, indent=2)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Could not save pose metadata: {exc}"}), 500
+
+    return jsonify({
+        "ok": True,
+        "tool": tool,
+        "date": date_str,
+        "filename": primary_filename,
+        "url": f"/pose-outputs/{date_str}/{primary_filename}",
+        "json_url": f"/pose-outputs/{date_str}/{os.path.basename(sidecar_path)}",
+        "width": img_obj.width,
+        "height": img_obj.height,
+        "images": saved_images,
+    })
+
+
+# ---------------------------------------------------------------------------
+# API - ComfyUI Pose bridge
+# ---------------------------------------------------------------------------
+
+@app.route("/api/comfyui/status", methods=["POST"])
+@login_required
+def api_comfyui_status():
+    body = request.get_json(silent=True) or {}
+    config = load_config()
+    raw_url = str(body.get("server_url") or config.get("comfyui_url") or "").strip()
+    remember = bool(body.get("remember_url", True))
+    try:
+        base_url = normalize_comfyui_url(raw_url)
+        stats = comfyui_request_json(base_url, "/system_stats", timeout=12)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Timed out while checking ComfyUI."}), 504
+    except requests.exceptions.RequestException as exc:
+        return jsonify({"ok": False, "error": f"Could not reach ComfyUI: {exc}"}), 502
+
+    if remember:
+        config["comfyui_url"] = base_url
+        save_config(config)
+
+    system = stats.get("system") if isinstance(stats, dict) else {}
+    devices = []
+    if isinstance(system, dict):
+        devices = system.get("devices") or []
+    return jsonify({
+        "ok": True,
+        "server_url": base_url,
+        "devices": len(devices) if isinstance(devices, list) else 0,
+        "raw": stats,
+    })
+
+
+@app.route("/api/comfyui/send-pose", methods=["POST"])
+@login_required
+def api_comfyui_send_pose():
+    body = request.get_json(silent=True) or {}
+    config = load_config()
+    raw_url = str(body.get("server_url") or config.get("comfyui_url") or "").strip()
+    remember = bool(body.get("remember_url", True))
+    pose_tool = str(body.get("pose_tool") or "openpose_editor").strip() or "openpose_editor"
+    source_kind = str(body.get("source_kind") or "selected_image").strip() or "selected_image"
+    image_data = str(body.get("data") or "").strip()
+    mime_type = str(body.get("mime_type") or "image/png").strip() or "image/png"
+    filename = str(body.get("filename") or "pose-source.png").strip() or "pose-source.png"
+    if not image_data:
+        return jsonify({"ok": False, "error": "No pose source image was provided."}), 400
+
+    try:
+        base_url = normalize_comfyui_url(raw_url)
+        upload = upload_pose_image_to_comfyui(base_url, image_data, mime_type, filename)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Timed out while uploading to ComfyUI."}), 504
+    except requests.exceptions.RequestException as exc:
+        error_message = f"Could not upload to ComfyUI: {exc}"
+        response = getattr(exc, "response", None)
+        if response is not None:
+            try:
+                payload = response.json()
+                if isinstance(payload, dict):
+                    error_message = str(payload.get("error") or payload.get("message") or error_message)
+            except Exception:
+                pass
+        return jsonify({"ok": False, "error": error_message}), 502
+
+    if remember:
+        config["comfyui_url"] = base_url
+        save_config(config)
+
+    return jsonify({
+        "ok": True,
+        "server_url": base_url,
+        "pose_tool": pose_tool,
+        "source_kind": source_kind,
+        "upload": upload,
+    })
+
+
+@app.route("/api/comfyui/workflow-template", methods=["POST"])
+@login_required
+def api_comfyui_workflow_template():
+    body = request.get_json(silent=True) or {}
+    pose_tool = str(body.get("pose_tool") or "openpose_editor").strip() or "openpose_editor"
+    source_kind = str(body.get("source_kind") or "selected_image").strip() or "selected_image"
+    image_data = str(body.get("data") or "").strip()
+    mime_type = str(body.get("mime_type") or "image/png").strip() or "image/png"
+    filename = str(body.get("filename") or "pose-source.png").strip() or "pose-source.png"
+    upload_first = bool(body.get("upload_first", False))
+    upload = None
+    server_url = ""
+
+    if upload_first:
+        config = load_config()
+        raw_url = str(body.get("server_url") or config.get("comfyui_url") or "").strip()
+        remember = bool(body.get("remember_url", True))
+        if not image_data:
+            return jsonify({"ok": False, "error": "No pose source image was provided."}), 400
+        try:
+            base_url = normalize_comfyui_url(raw_url)
+            upload = upload_pose_image_to_comfyui(base_url, image_data, mime_type, filename)
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except requests.exceptions.Timeout:
+            return jsonify({"ok": False, "error": "Timed out while uploading to ComfyUI."}), 504
+        except requests.exceptions.RequestException as exc:
+            return jsonify({"ok": False, "error": f"Could not upload to ComfyUI: {exc}"}), 502
+        if remember:
+            config["comfyui_url"] = base_url
+            save_config(config)
+        server_url = base_url
+
+    template = build_pose_workflow_template(
+        pose_tool,
+        source_kind,
+        upload,
+        image_b64=image_data,
+        mime_type=mime_type,
+    )
+    return jsonify({
+        "ok": True,
+        "server_url": server_url,
+        "upload": upload,
+        "template": template,
+    })
+
+
+@app.route("/api/comfyui/queue-pose-workflow", methods=["POST"])
+@login_required
+def api_comfyui_queue_pose_workflow():
+    body = request.get_json(silent=True) or {}
+    config = load_config()
+    raw_url = str(body.get("server_url") or config.get("comfyui_url") or "").strip()
+    remember = bool(body.get("remember_url", True))
+    pose_tool = str(body.get("pose_tool") or "openpose_editor").strip() or "openpose_editor"
+    source_kind = str(body.get("source_kind") or "selected_image").strip() or "selected_image"
+    image_data = str(body.get("data") or "").strip()
+    mime_type = str(body.get("mime_type") or "image/png").strip() or "image/png"
+    filename = str(body.get("filename") or "pose-source.png").strip() or "pose-source.png"
+    client_id = str(body.get("client_id") or "").strip()
+    if not image_data:
+        return jsonify({"ok": False, "error": "No pose source image was provided."}), 400
+
+    try:
+        base_url = normalize_comfyui_url(raw_url)
+        upload = upload_pose_image_to_comfyui(base_url, image_data, mime_type, filename)
+        template = build_pose_workflow_template(
+            pose_tool,
+            source_kind,
+            upload,
+            image_b64=image_data,
+            mime_type=mime_type,
+        )
+        if not template.get("queue_supported"):
+            return jsonify({
+                "ok": False,
+                "error": template.get("notes") or "This workflow requires its interactive ComfyUI UI.",
+                "template": template,
+                "upload": upload,
+                "server_url": base_url,
+            }), 400
+        prompt_result = comfyui_post_prompt(
+            base_url,
+            template["prompt"],
+            client_id=client_id,
+            extra_data={"ai_api_pose_tool": pose_tool},
+        )
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except requests.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Timed out while queueing the ComfyUI workflow."}), 504
+    except requests.exceptions.RequestException as exc:
+        message = f"Could not queue the ComfyUI workflow: {exc}"
+        response = getattr(exc, "response", None)
+        if response is not None:
+            try:
+                payload = response.json()
+                if isinstance(payload, dict):
+                    error_obj = payload.get("error")
+                    if isinstance(error_obj, dict):
+                        message = str(error_obj.get("message") or error_obj.get("details") or message)
+                    else:
+                        message = str(payload.get("message") or error_obj or message)
+            except Exception:
+                pass
+        return jsonify({"ok": False, "error": message}), 502
+
+    if remember:
+        config["comfyui_url"] = base_url
+        save_config(config)
+
+    return jsonify({
+        "ok": True,
+        "server_url": base_url,
+        "upload": upload,
+        "template": template,
+        "queue": prompt_result,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -2436,6 +4521,10 @@ def api_save_config():
     if "seedream_api_key" in data:
         config["byteplus_api_key"] = data["seedream_api_key"].strip()
         config["seedream_api_key"] = data["seedream_api_key"].strip()
+    if "kling_api_token" in data:
+        config["kling_api_token"] = data["kling_api_token"].strip()
+    if "comfyui_url" in data:
+        config["comfyui_url"] = str(data["comfyui_url"] or "").strip()
     save_config(config)
     return jsonify({"ok": True})
 
@@ -2502,6 +4591,25 @@ def api_verify_byteplus_key():
         return jsonify({"ok": False, "error": "Connection timeout"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/verify-kling-token", methods=["POST"])
+@login_required
+def api_verify_kling_token():
+    data = request.get_json() or {}
+    token = str(data.get("kling_api_token") or "").strip()
+    if not token:
+        return jsonify({"ok": False, "error": "Kling API token is empty"})
+    headers = build_kling_headers(token)
+    try:
+        response = requests.get(f"{KLING_BASE_URL}/v1/videos/text2video?pageNum=1&pageSize=1", headers=headers, timeout=45)
+        if response.status_code == 200:
+            return jsonify({"ok": True, "message": "Valid Kling token confirmed."})
+        return jsonify({"ok": False, "error": extract_kling_error(response)})
+    except requests.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Connection timeout"})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
 
 
 @app.route("/api/verify-key", methods=["POST"])
@@ -2575,15 +4683,7 @@ def run_gemini_generation_job(body: dict, api_key: str) -> dict:
     max_ref = model_info["max_ref_images"]
     if ref_images and max_ref == 0:
         raise ValueError(f"{model_info['label']} does not support reference images.")
-    ref_images = [
-        {
-            "mime_type": img.get("mime_type", "image/png"),
-            "data": img.get("data", ""),
-            "name": img.get("name", ""),
-        }
-        for img in (ref_images[:max_ref] if isinstance(ref_images, list) else [])
-        if isinstance(img, dict) and img.get("data")
-    ]
+    ref_images = normalize_ref_image_payloads(ref_images, max_ref)
 
     parts = []
     for img in ref_images:
@@ -2741,13 +4841,14 @@ def persist_generation_result(result: dict):
     stats["total_images"]   = stats.get("total_images", 0) + len(result.get("images", []))
     stats["total_cost_usd"] = round(stats.get("total_cost_usd", 0.0) + result.get("cost", 0.0), 6)
     params = result.get("params", {})
-    raw_ref_images = result.pop("_input_ref_images", [])
+    raw_ref_images = result.pop("_input_ref_images", None)
     log_entry = {
         "ts": utc_now_iso(),
         "model": params.get("model", ""),
         "provider": params.get("provider", ""),
         "size": params.get("imageSize", ""),
         "aspect": params.get("aspectRatio", ""),
+        "upscaler": params.get("upscalerType", ""),
         "n": len(result.get("images", [])),
         "ref_n": params.get("ref_count", 0),
         "cost": round(result.get("cost", 0.0), 4),
@@ -2761,9 +4862,13 @@ def persist_generation_result(result: dict):
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
     time_str = now.strftime("%H%M%S%f")[:12]
-    archived_refs = build_reference_archive_entries(raw_ref_images, date_str, time_str)
-    params["refArchive"] = archived_refs
-    params["ref_count"] = len(archived_refs)
+    if raw_ref_images is not None:
+        archived_refs = build_reference_archive_entries(raw_ref_images, date_str, time_str)
+        params["refArchive"] = archived_refs
+        params["ref_count"] = len(archived_refs)
+    else:
+        params["refArchive"] = params.get("refArchive", []) or []
+        params["ref_count"] = int(params.get("ref_count", len(params["refArchive"])))
     result["params"] = params
 
     gen_day_dir = os.path.join(GENERATIONS_DIR, date_str)
@@ -2797,6 +4902,321 @@ def persist_generation_result(result: dict):
     return result
 
 
+def persist_video_result(result: dict):
+    params = result.get("params", {}) or {}
+    now = datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    time_str = now.strftime("%H%M%S%f")[:12]
+    video_day_dir = os.path.join(VIDEOS_DIR, date_str)
+    os.makedirs(video_day_dir, exist_ok=True)
+
+    for idx, video in enumerate(result.get("videos", []) or []):
+        video_url = str(video.get("url") or "").strip()
+        if not video_url:
+            continue
+        try:
+            raw_bytes, detected_mime = download_remote_binary(video_url, timeout=300)
+            ext, mime_type = normalize_video_extension(video.get("mime_type") or detected_mime, video_url)
+            basename = f"{time_str}_{idx}"
+            video_filename = f"{basename}.{ext}"
+            video_path = os.path.join(video_day_dir, video_filename)
+            with open(video_path, "wb") as fh:
+                fh.write(raw_bytes)
+
+            poster_url = str(video.get("poster_url") or "").strip()
+            poster_filename = ""
+            if poster_url:
+                try:
+                    poster_raw, poster_mime = download_remote_binary(poster_url, timeout=120)
+                    poster_b64 = base64.b64encode(poster_raw).decode("utf-8")
+                    poster_png_b64, poster_png_mime = convert_image_b64_to_png(poster_b64, poster_mime or "image/png")
+                    poster_filename = f"{basename}_poster.png"
+                    poster_path = os.path.join(video_day_dir, poster_filename)
+                    with open(poster_path, "wb") as pfh:
+                        pfh.write(base64.b64decode(poster_png_b64))
+                    video["poster_url"] = f"/videos/{date_str}/{poster_filename}"
+                    video["poster_mime_type"] = poster_png_mime
+                except Exception:
+                    poster_filename = ""
+
+            video["gen_date"] = date_str
+            video["gen_filename"] = video_filename
+            video["url"] = f"/videos/{date_str}/{video_filename}"
+            video["mime_type"] = mime_type
+
+            meta_path = os.path.join(video_day_dir, f"{basename}.json")
+            video_meta = dict(params)
+            video_meta.update({
+                "generated_at": now.isoformat(),
+                "mime_type": mime_type,
+                "filename": video_filename,
+                "poster_filename": poster_filename,
+                "poster_url": video.get("poster_url", ""),
+                "text": result.get("text", "") if idx == 0 else "",
+            })
+            with open(meta_path, "w", encoding="utf-8") as fh:
+                json.dump(video_meta, fh, indent=2, ensure_ascii=False)
+        except Exception:
+            continue
+    return result
+
+
+def build_kling_headers(api_token: str) -> dict:
+    return {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
+def poll_kling_task(api_token: str, endpoint: str, task_id: str, *, timeout_seconds: int = 900) -> dict:
+    headers = build_kling_headers(api_token)
+    max_attempts = max(10, int(timeout_seconds / 5))
+    for _ in range(max_attempts):
+        response = requests.get(f"{KLING_BASE_URL}{endpoint}/{task_id}", headers=headers, timeout=45)
+        if response.status_code != 200:
+            raise RuntimeError(extract_kling_error(response))
+        payload = response.json()
+        task_status = str(payload.get("data", {}).get("task_status") or payload.get("task_status") or "").strip().lower()
+        if task_status in {"succeed", "success"}:
+            return payload
+        if task_status in {"failed", "error"}:
+            raise RuntimeError(
+                str(
+                    payload.get("data", {}).get("task_status_msg")
+                    or payload.get("message")
+                    or payload.get("msg")
+                    or "Kling video generation failed."
+                )
+            )
+        threading.Event().wait(5)
+    raise TimeoutError("Timeout: Kling video generation took too long.")
+
+
+def build_kling_video_from_payload(result_payload: dict) -> dict:
+    data = result_payload.get("data") if isinstance(result_payload, dict) else {}
+    videos = []
+    if isinstance(data, dict):
+        task_result = data.get("task_result")
+        if isinstance(task_result, dict) and isinstance(task_result.get("videos"), list):
+            videos = [item for item in task_result.get("videos") if isinstance(item, dict)]
+        elif isinstance(data.get("videos"), list):
+            videos = [item for item in data.get("videos") if isinstance(item, dict)]
+    if not videos:
+        raise RuntimeError("Kling returned no video for this request.")
+    first = videos[0]
+    video_url = str(first.get("url") or "").strip()
+    if not video_url:
+        raise RuntimeError("Kling returned no video URL for this request.")
+    return {
+        "url": video_url,
+        "mime_type": "video/mp4",
+        "poster_url": str(first.get("cover_url") or first.get("poster_url") or first.get("thumbnail_url") or "").strip(),
+        "width": int(first.get("width") or 0),
+        "height": int(first.get("height") or 0),
+    }
+
+
+def run_native_kling_video_job(body: dict, api_token: str) -> dict:
+    body = normalize_video_request(body)
+    input_mode = body.get("videoInputMode", "text")
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt:
+        raise ValueError("Please enter a video prompt.")
+
+    model_name = str(body.get("model") or KLING_DIRECT_TEXT_DEFAULT_ID).strip() or KLING_DIRECT_TEXT_DEFAULT_ID
+    duration = normalize_video_duration(body.get("duration", 5))
+    aspect_ratio = body.get("aspectRatio", "16:9")
+    negative_prompt = str(body.get("negativePrompt") or "").strip()
+    source_image = body.get("sourceImage") or {}
+    endpoint = "/v1/videos/text2video"
+    payload = {
+        "model_name": model_name,
+        "prompt": prompt,
+        "duration": str(duration),
+        "mode": "pro",
+        "sound": "off",
+        "aspect_ratio": aspect_ratio,
+    }
+    if negative_prompt:
+        payload["negative_prompt"] = negative_prompt
+    if input_mode == "image":
+        if not source_image.get("data"):
+            raise ValueError("Choose a source image for image-to-video.")
+        endpoint = "/v1/videos/image2video"
+        payload["image"] = str(source_image.get("data") or "").strip()
+    headers = build_kling_headers(api_token)
+    try:
+        create_response = requests.post(f"{KLING_BASE_URL}{endpoint}", headers=headers, json=payload, timeout=90)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: Kling request took too long to start.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+    if create_response.status_code != 200:
+        raise RuntimeError(extract_kling_error(create_response))
+    create_payload = create_response.json()
+    task_id = str(create_payload.get("data", {}).get("task_id") or create_payload.get("task_id") or "").strip()
+    if not task_id:
+        raise RuntimeError("Kling did not return a task id.")
+    result_payload = poll_kling_task(api_token, endpoint, task_id)
+    video_item = build_kling_video_from_payload(result_payload)
+    params_meta = {
+        "model": model_name,
+        "modelFamily": body.get("modelFamily", "kling"),
+        "model_label": "Kling",
+        "provider": "kling",
+        "provider_label": "Kling",
+        "videoInputMode": input_mode,
+        "duration": duration,
+        "aspectRatio": aspect_ratio,
+        "negativePrompt": negative_prompt,
+        "prompt": prompt,
+        "resolution": body.get("resolution", "720p"),
+    }
+    return {
+        "ok": True,
+        "videos": [video_item],
+        "text": "",
+        "cost": round(float(VIDEO_PRICING.get(model_name, {}).get(str(duration), 0.0)), 4),
+        "model_label": "Kling",
+        "params": params_meta,
+    }
+
+
+def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
+    body = normalize_video_request(body)
+    input_mode = body.get("videoInputMode", "text")
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt:
+        raise ValueError("Please enter a video prompt.")
+    duration = normalize_video_duration(body.get("duration", 5))
+    aspect_ratio = body.get("aspectRatio", "16:9")
+    negative_prompt = str(body.get("negativePrompt") or "").strip()
+    source_image = body.get("sourceImage") or {}
+    endpoint = FAL_KLING_T2V_ID if input_mode == "text" else FAL_KLING_I2V_ID
+    payload = {
+        "prompt": prompt,
+        "duration": str(duration),
+        "aspect_ratio": aspect_ratio,
+        "sync_mode": True,
+    }
+    if negative_prompt:
+        payload["negative_prompt"] = negative_prompt
+    if input_mode == "image":
+        if not source_image.get("data"):
+            raise ValueError("Choose a source image for image-to-video.")
+        payload["image_url"] = f"data:{source_image.get('mime_type', 'image/png')};base64,{source_image.get('data', '')}"
+    headers = {
+        "Authorization": f"Key {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.post(f"{FAL_BASE_URL}/{endpoint}", headers=headers, json=payload, timeout=600)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: Fal Kling generation took too long.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+    if response.status_code != 200:
+        raise RuntimeError(extract_fal_error(response))
+    result = response.json()
+    video_item = extract_fal_video_result(result)
+    if not video_item:
+        raise RuntimeError("Fal Kling returned no video for this request.")
+    params_meta = {
+        "model": endpoint,
+        "modelFamily": body.get("modelFamily", "kling"),
+        "model_label": "Kling",
+        "provider": "fal",
+        "provider_label": "Fal",
+        "videoInputMode": input_mode,
+        "duration": duration,
+        "aspectRatio": aspect_ratio,
+        "negativePrompt": negative_prompt,
+        "prompt": prompt,
+        "resolution": body.get("resolution", "720p"),
+    }
+    return {
+        "ok": True,
+        "videos": [video_item],
+        "text": "",
+        "cost": round(float(VIDEO_PRICING.get(FAL_KLING_T2V_ID, {}).get(str(duration), 0.0)), 4),
+        "model_label": "Kling",
+        "params": params_meta,
+    }
+
+
+def run_fal_wan_video_job(body: dict, api_key: str) -> dict:
+    body = normalize_video_request(body)
+    input_mode = body.get("videoInputMode", "text")
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt:
+        raise ValueError("Please enter a video prompt.")
+    duration = normalize_video_duration(body.get("duration", 5))
+    num_frames = (duration * 16) + 1
+    aspect_ratio = body.get("aspectRatio", "16:9")
+    negative_prompt = str(body.get("negativePrompt") or "").strip()
+    resolution = normalize_video_resolution(body.get("resolution", "720p"))
+    safety_checker = bool(body.get("videoSafetyChecker", True))
+    source_image = body.get("sourceImage") or {}
+    endpoint = FAL_WAN_T2V_ID if input_mode == "text" else FAL_WAN_I2V_ID
+    payload = {
+        "prompt": prompt,
+        "negative_prompt": negative_prompt,
+        "num_frames": num_frames,
+        "frames_per_second": 16,
+        "resolution": resolution,
+        "aspect_ratio": aspect_ratio,
+        "enable_safety_checker": safety_checker,
+        "enable_output_safety_checker": False,
+        "enable_prompt_expansion": True,
+        "sync_mode": True,
+    }
+    if input_mode == "image":
+        if not source_image.get("data"):
+            raise ValueError("Choose a source image for image-to-video.")
+        payload["image_url"] = f"data:{source_image.get('mime_type', 'image/png')};base64,{source_image.get('data', '')}"
+    headers = {
+        "Authorization": f"Key {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.post(f"{FAL_BASE_URL}/{endpoint}", headers=headers, json=payload, timeout=900)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: Fal Wan generation took too long.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+    if response.status_code != 200:
+        raise RuntimeError(extract_fal_error(response))
+    result = response.json()
+    video_item = extract_fal_video_result(result)
+    if not video_item:
+        raise RuntimeError("Fal Wan returned no video for this request.")
+    params_meta = {
+        "model": endpoint,
+        "modelFamily": body.get("modelFamily", "wan-video"),
+        "model_label": "Wan Video",
+        "provider": "fal",
+        "provider_label": "Fal",
+        "videoInputMode": input_mode,
+        "duration": duration,
+        "aspectRatio": aspect_ratio,
+        "negativePrompt": negative_prompt,
+        "prompt": prompt,
+        "resolution": resolution,
+        "videoSafetyChecker": safety_checker,
+    }
+    return {
+        "ok": True,
+        "videos": [video_item],
+        "text": "",
+        "cost": round(float(VIDEO_PRICING.get(FAL_WAN_T2V_ID, {}).get(str(duration), 0.0)), 4),
+        "model_label": "Wan Video",
+        "params": params_meta,
+    }
+
+
 def run_fal_seedream_generation_job(body: dict, api_key: str) -> dict:
     body = normalize_generation_request(body)
     model_id = body.get("model", FAL_SEEDREAM_45_TEXT_ID)
@@ -2823,15 +5243,7 @@ def run_fal_seedream_generation_job(body: dict, api_key: str) -> dict:
     max_ref = model_info["max_ref_images"]
     if ref_images and max_ref == 0:
         raise ValueError(f"{model_info['label']} does not support reference images.")
-    ref_images = [
-        {
-            "mime_type": img.get("mime_type", "image/png"),
-            "data": img.get("data", ""),
-            "name": img.get("name", ""),
-        }
-        for img in (ref_images[:max_ref] if isinstance(ref_images, list) else [])
-        if isinstance(img, dict) and img.get("data")
-    ]
+    ref_images = normalize_ref_image_payloads(ref_images, max_ref)
 
     endpoint = build_fal_seedream_endpoint(model_id, bool(ref_images))
     payload = {
@@ -2843,7 +5255,7 @@ def run_fal_seedream_generation_job(body: dict, api_key: str) -> dict:
         "enable_safety_checker": enable_safety_checker,
     }
     if ref_images:
-        payload["image_urls"] = build_data_uri_ref_inputs(ref_images)
+        payload["image_urls"] = build_seedream_data_uri_ref_inputs(ref_images)
 
     actual_seed = None
     if seed_mode != "random":
@@ -2946,15 +5358,7 @@ def run_fal_nano_banana_generation_job(body: dict, api_key: str) -> dict:
     max_ref = model_info["max_ref_images"]
     if ref_images and max_ref == 0:
         raise ValueError(f"{model_info['label']} does not support reference images.")
-    ref_images = [
-        {
-            "mime_type": img.get("mime_type", "image/png"),
-            "data": img.get("data", ""),
-            "name": img.get("name", ""),
-        }
-        for img in (ref_images[:max_ref] if isinstance(ref_images, list) else [])
-        if isinstance(img, dict) and img.get("data")
-    ]
+    ref_images = normalize_ref_image_payloads(ref_images, max_ref)
 
     endpoint = build_fal_nano_banana_endpoint(model_id, bool(ref_images))
     payload = {
@@ -3070,15 +5474,7 @@ def run_byteplus_seedream_generation_job(body: dict, api_key: str) -> dict:
 
     model_info = MODELS_INFO[model_id]
     max_ref = model_info["max_ref_images"]
-    ref_images = [
-        {
-            "mime_type": img.get("mime_type", "image/png"),
-            "data": img.get("data", ""),
-            "name": img.get("name", ""),
-        }
-        for img in (ref_images[:max_ref] if isinstance(ref_images, list) else [])
-        if isinstance(img, dict) and img.get("data")
-    ]
+    ref_images = normalize_ref_image_payloads(ref_images, max_ref)
 
     payload = {
         "model": BYTEPLUS_SEEDREAM_45_MODEL_ID,
@@ -3160,6 +5556,129 @@ def run_byteplus_seedream_generation_job(body: dict, api_key: str) -> dict:
     }
 
 
+def run_fal_seedvr_upscale_job(body: dict, api_key: str) -> dict:
+    upscale_model_key = str(body.get("upscaleModel") or "seedvr2").strip().lower()
+    upscaler_info = UPSCALER_MODELS.get(upscale_model_key)
+    if not upscaler_info:
+        raise ValueError("Invalid upscale model.")
+
+    source_image = body.get("image") if isinstance(body.get("image"), dict) else {}
+    image_b64 = str(source_image.get("data") or "").strip()
+    mime_type = str(source_image.get("mime_type") or "image/png").strip() or "image/png"
+    if not image_b64:
+        raise ValueError("Select an image from the gallery to upscale.")
+
+    source_params = dict(body.get("sourceParams") or {})
+    source_width, source_height = measure_image_dimensions(image_b64, mime_type)
+    preset_value = str(body.get("upscalePreset") or "factor:2").strip().lower()
+    target_width = 0
+    target_height = 0
+    target_anchor = ""
+    if preset_value == "custom":
+        target_width, target_height, upscale_factor, target_anchor = normalize_seedvr_custom_resolution(
+            source_width,
+            source_height,
+            body.get("upscaleTargetWidth"),
+            body.get("upscaleTargetHeight"),
+            body.get("upscaleTargetAnchor"),
+        )
+        upscale_mode = "factor"
+        target_resolution = ""
+        preset_label = f"{target_width}x{target_height}"
+    else:
+        upscale_mode, upscale_factor, target_resolution, preset_label = normalize_seedvr_preset(preset_value)
+
+    payload = {
+        "image_url": f"data:{mime_type};base64,{image_b64}",
+        "upscale_mode": upscale_mode,
+        "noise_scale": 0.1,
+        "output_format": "png",
+        "sync_mode": True,
+    }
+    if upscale_mode == "factor" and upscale_factor is not None:
+        payload["upscale_factor"] = upscale_factor
+    if upscale_mode == "target" and target_resolution:
+        payload["target_resolution"] = target_resolution
+
+    headers = {
+        "Authorization": f"Key {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.post(f"{FAL_BASE_URL}/{upscaler_info['id']}", headers=headers, json=payload, timeout=240)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: SeedVR upscaling took too long.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+
+    if response.status_code != 200:
+        raise RuntimeError(extract_fal_error(response))
+
+    result = response.json()
+    image_item = result.get("image") if isinstance(result, dict) else None
+    if not isinstance(image_item, dict):
+        items = result.get("images") or result.get("data") or []
+        image_item = items[0] if items and isinstance(items[0], dict) else None
+    if not isinstance(image_item, dict):
+        raise RuntimeError("SeedVR returned no image for this request.")
+
+    decoded = decode_fal_image_result(image_item)
+    if not decoded:
+        raise RuntimeError("SeedVR returned no image for this request.")
+
+    output_width = int(image_item.get("width") or 0)
+    output_height = int(image_item.get("height") or 0)
+    if not output_width or not output_height:
+        output_width, output_height = measure_image_dimensions(decoded.get("data", ""), decoded.get("mime_type", "image/png"))
+
+    if target_width and target_height and (output_width != target_width or output_height != target_height):
+        resized_b64, resized_mime = resize_image_b64_to_exact_png(
+            decoded.get("data", ""),
+            decoded.get("mime_type", "image/png"),
+            target_width,
+            target_height,
+        )
+        decoded = {"mime_type": resized_mime, "data": resized_b64}
+        output_width = target_width
+        output_height = target_height
+
+    image_size_label = approximate_image_size_label(output_width, output_height) or str(source_params.get("imageSize") or "")
+    display_size_label = preset_label or image_size_label
+    megapixels = max(0.0, (output_width * output_height) / 1_000_000) if output_width and output_height else 0.0
+    cost = round(megapixels * 0.001, 4)
+
+    params_meta = dict(source_params)
+    params_meta.update({
+        "imageSize": image_size_label,
+        "upscaled": True,
+        "upscalerType": upscale_model_key,
+        "upscalerLabel": upscaler_info["label"],
+        "upscaleModel": upscale_model_key,
+        "upscalePreset": preset_value,
+        "upscaleMode": upscale_mode,
+        "upscaleFactor": upscale_factor,
+        "upscaleTargetResolution": target_resolution or (f"{target_width}x{target_height}" if target_width and target_height else ""),
+        "upscaleTargetWidth": target_width,
+        "upscaleTargetHeight": target_height,
+        "upscaleTargetAnchor": target_anchor,
+        "upscaleDisplaySize": f"Upscaled {str(display_size_label).upper()}" if display_size_label else "Upscaled",
+        "upscaleSourceDate": str(source_params.get("gen_date") or ""),
+        "upscaleOutputWidth": output_width,
+        "upscaleOutputHeight": output_height,
+        "upscaleSourceFilename": str(body.get("sourceFilename") or ""),
+    })
+
+    return {
+        "ok": True,
+        "images": [decoded],
+        "text": "",
+        "cost": cost,
+        "model_label": params_meta.get("model_label", ""),
+        "params": params_meta,
+    }
+
+
 def run_generation_job(body: dict, config: dict) -> dict:
     payload = normalize_generation_request(body)
     model_id = payload.get("model", "gemini-3.1-flash-image-preview")
@@ -3191,6 +5710,28 @@ def run_generation_job(body: dict, config: dict) -> dict:
     raise ValueError("Unsupported provider")
 
 
+def run_video_job(body: dict, config: dict) -> dict:
+    payload = normalize_video_request(body)
+    provider = payload.get("provider", "kling")
+    family = payload.get("modelFamily", "kling")
+
+    if provider == "kling":
+        kling_token = (config.get("kling_api_token", "") or "").strip()
+        if not kling_token:
+            raise ValueError("Kling API token not configured. Go to Settings.")
+        return run_native_kling_video_job(payload, kling_token)
+
+    if provider == "fal":
+        fal_key = (config.get("fal_api_key", "") or "").strip()
+        if not fal_key:
+            raise ValueError("Fal API key not configured. Go to Settings.")
+        if family == "wan-video":
+            return run_fal_wan_video_job(payload, fal_key)
+        return run_fal_kling_video_job(payload, fal_key)
+
+    raise ValueError("Unsupported video provider")
+
+
 @app.route("/api/generate", methods=["POST"])
 @login_required
 def api_generate():
@@ -3208,6 +5749,69 @@ def api_generate():
         return jsonify({"ok": False, "error": str(exc), "debug": exc.debug})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)})
+
+
+@app.route("/api/jobs/generate", methods=["POST"])
+@login_required
+def api_generate_async():
+    body = request.get_json(silent=True) or {}
+    try:
+        job = start_async_generate_job(body)
+        return jsonify(job), 202
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/api/jobs/video", methods=["POST"])
+@login_required
+def api_video_async():
+    body = request.get_json(silent=True) or {}
+    try:
+        job = start_async_video_job(body)
+        return jsonify(job), 202
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/api/upscale", methods=["POST"])
+@login_required
+def api_upscale():
+    config = load_config()
+    fal_key = (config.get("fal_api_key", "") or "").strip()
+    if not fal_key:
+        return jsonify({"ok": False, "error": "Fal API key not configured. Go to Settings."})
+
+    body = request.get_json(silent=True) or {}
+    try:
+        result = run_fal_seedvr_upscale_job(body, fal_key)
+        persist_generation_result(result)
+        return jsonify(result)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+    except TimeoutError as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
+
+@app.route("/api/jobs/upscale", methods=["POST"])
+@login_required
+def api_upscale_async():
+    body = request.get_json(silent=True) or {}
+    try:
+        job = start_async_upscale_job(body)
+        return jsonify(job), 202
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/api/jobs/<job_id>", methods=["GET"])
+@login_required
+def api_async_job_status(job_id):
+    job = get_async_job(str(job_id or "").strip())
+    if not job:
+        return jsonify({"ok": False, "error": "Job not found."}), 404
+    return jsonify(job)
 
 
 @app.route("/api/workbench/run", methods=["POST"])
@@ -3289,8 +5893,7 @@ def api_generations():
                     if not img_path:
                         continue
                     filename = os.path.basename(img_path)
-                    model_id = str(meta.get("model", "") or "")
-                    model_info = MODELS_INFO.get(model_id, {})
+                    params = build_common_asset_params(meta)
                     result.append({
                         "mime_type":    meta.get("mime_type", "image/jpeg"),
                         "url":          f"/generations/{date_str}/{filename}",
@@ -3298,32 +5901,52 @@ def api_generations():
                         "text":         meta.get("text", ""),
                         "gen_date":     date_str,
                         "gen_filename": meta.get("filename", filename),
-                        "params": {
-                            "model":         model_id,
-                            "modelFamily":   meta.get("modelFamily", model_info.get("family", "")),
-                            "model_label":   meta.get("model_label", model_info.get("label", "")),
-                            "provider":      meta.get("provider", model_info.get("provider", "")),
-                            "provider_label": meta.get("provider_label", model_info.get("provider_label", "")),
-                            "imageSize":     meta.get("imageSize", ""),
-                            "aspectRatio":   meta.get("aspectRatio", ""),
-                            "temperature":   meta.get("temperature", 1.0),
-                            "topP":          meta.get("topP", 0.95),
-                            "thinkingLevel": meta.get("thinkingLevel", "Minimal"),
-                            "useSearch":     meta.get("useSearch", False),
-                            "outputMode":    meta.get("outputMode", "images_text"),
-                            "prompt":        meta.get("prompt", ""),
-                            "ref_count":     meta.get("ref_count", 0),
-                            "refArchive":    meta.get("refArchive", []),
-                            "seedMode":      meta.get("seedMode", "random"),
-                            "seedValue":     meta.get("seedValue", 1),
-                            "falSafetyChecker": meta.get("falSafetyChecker", True),
-                            "falSafetyTolerance": meta.get("falSafetyTolerance", 4),
-                            "geminiSafetyPreset": meta.get("geminiSafetyPreset", "default"),
-                            "byteplusSafetyMode": meta.get("byteplusSafetyMode", "platform_default"),
-                        }
+                        "params": params,
                     })
                 except Exception:
                     pass
+    return jsonify(result)
+
+
+@app.route("/api/videos")
+@login_required
+def api_videos():
+    max_load = 40
+    result = []
+    if os.path.isdir(VIDEOS_DIR):
+        date_dirs = sorted(
+            [d for d in os.listdir(VIDEOS_DIR) if os.path.isdir(os.path.join(VIDEOS_DIR, d))],
+            reverse=True,
+        )
+        for date_str in date_dirs:
+            if len(result) >= max_load:
+                break
+            day_path = os.path.join(VIDEOS_DIR, date_str)
+            meta_files = sorted(glob.glob(os.path.join(day_path, "*.json")), reverse=True)
+            for meta_file in meta_files:
+                if len(result) >= max_load:
+                    break
+                try:
+                    with open(meta_file, "r", encoding="utf-8") as fh:
+                        meta = json.load(fh)
+                    filename = str(meta.get("filename") or "").strip()
+                    if not filename:
+                        continue
+                    video_path = os.path.join(day_path, filename)
+                    if not os.path.exists(video_path):
+                        continue
+                    result.append({
+                        "url": f"/videos/{date_str}/{filename}",
+                        "generated_at": meta.get("generated_at", ""),
+                        "gen_date": date_str,
+                        "gen_filename": filename,
+                        "mime_type": meta.get("mime_type", "video/mp4"),
+                        "poster_url": meta.get("poster_url", ""),
+                        "text": meta.get("text", ""),
+                        "params": meta,
+                    })
+                except Exception:
+                    continue
     return jsonify(result)
 
 
@@ -3498,13 +6121,24 @@ def api_models_info():
     return jsonify(MODELS_INFO)
 
 
+@app.route("/api/video-models-info")
+@login_required
+def api_video_models_info():
+    return jsonify(VIDEO_MODELS_INFO)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    migrate_image_assets_layout()
     os.makedirs(LOVED_DIR, exist_ok=True)
     os.makedirs(GENERATIONS_DIR, exist_ok=True)
+    os.makedirs(VIDEOS_DIR, exist_ok=True)
     os.makedirs(REFERENCE_ARCHIVE_DIR, exist_ok=True)
+    os.makedirs(REFERENCE_MASKS_DIR, exist_ok=True)
+    os.makedirs(REFERENCE_RENDERS_DIR, exist_ok=True)
+    os.makedirs(POSE_OUTPUTS_DIR, exist_ok=True)
     init_studio_db()
     # Migrate old published/ folder to loved/ if it exists and loved/ is empty
     _old_pub = os.path.join(BASE_DIR, "published")
@@ -3516,7 +6150,7 @@ if __name__ == "__main__":
                 shutil.copytree(src, dst) if os.path.isdir(src) else shutil.copy2(src, dst)
         print("  Migrated published/ -> loved/")
     print("\n" + "="*52)
-    print(f"  Nano Banana Studio {APP_VERSION}")
+    print(f"  AI API Studio {APP_VERSION}")
     print("  http://localhost:5000")
     print("  Login: admin / banana2024")
     print("  Max ref images: NB=0, Pro=8, NB2=14")

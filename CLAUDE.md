@@ -1,4 +1,4 @@
-# Nano Banana Studio — CLAUDE.md
+# AI API Studio — CLAUDE.md
 > Developer reference · v1.0 beta · Last updated March 2026
 
 This file is the single source of truth for anyone opening this project for the first time — AI agent or human developer. It covers architecture, all Flask routes, CSS system, theme engine, JS conventions, and a full changelog of v1.0 beta work.
@@ -375,7 +375,7 @@ All work completed in the March 2026 session:
 - **`app.py`** — kept as compatibility shim (`runpy.run_path('nbs.py')`)
 - **`start.bat`** — Windows launcher with Python check and error pause
 - **`start.sh`** — macOS/Linux launcher, made executable
-- **Clean distribution folder** — `Nano Banana Studio 1.0 beta/` with 5 curated talent entries, empty data dirs, clean `config.json`, and `INSTALL.md`
+- **Clean distribution folder** — `AI API Studio 1.0 beta/` with 5 curated talent entries, empty data dirs, clean `config.json`, and `INSTALL.md`
 
 ### Template Updates
 All 5 HTML templates (`index`, `loved`, `settings`, `published`, `login`) updated with:

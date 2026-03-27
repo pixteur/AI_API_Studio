@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI API Studio - OpenPose Editor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='pose/embedded-tools.css') }}">
+</head>
+<body class="pose-embed-body">
+  <div class="pose-embed-shell">
+    <div class="pose-embed-toolbar">
+      <div class="pose-embed-toolbar-main">
+        <div class="pose-embed-title">OpenPose Editor</div>
+        <span class="pose-embed-badge" id="openposeSourceBadge">Waiting for source</span>
+        <span class="pose-embed-badge" id="openposeCanvasBadge">512 x 512</span>
+      </div>
+      <div class="pose-embed-toolbar-actions">
+        <button class="pose-embed-btn" id="openposeAddBtn" type="button">Add Person</button>
+        <button class="pose-embed-btn" id="openposeResetBtn" type="button">Reset</button>
+        <button class="pose-embed-btn" id="openposeFitBtn" type="button">Fit</button>
+        <button class="pose-embed-btn" id="openposeLoadJsonBtn" type="button">Load JSON</button>
+        <button class="pose-embed-btn" id="openposeDownloadJsonBtn" type="button">Download JSON</button>
+        <button class="pose-embed-btn" id="openposeUseAsRefBtn" type="button">Use as Ref</button>
+        <button class="pose-embed-btn pose-embed-btn-accent" id="openposeSaveBtn" type="button">Save Output</button>
+      </div>
+    </div>
+
+    <div class="pose-embed-stage">
+      <div class="pose-embed-canvas-wrap">
+        <canvas id="openposeCanvas" class="pose-embed-canvas"></canvas>
+      </div>
+      <div class="pose-embed-empty" id="openposeEmpty">
+        <strong>Waiting for a source image</strong>
+        <span>Select a History image or use the Pose source controls in AI API Studio.</span>
+      </div>
+    </div>
+
+    <div class="pose-embed-footer">
+      <div class="pose-embed-status" id="openposeStatus">
+        Drag joints to pose the skeleton. Mouse wheel zooms, and hold Space to pan around the canvas.
+      </div>
+      <div class="pose-embed-chip-row">
+        <span class="pose-embed-stat" id="openposePeopleStat">1 person</span>
+        <span class="pose-embed-stat" id="openposeZoomStat">100%</span>
+      </div>
+    </div>
+  </div>
+
+  <input class="pose-embed-hidden-input" id="openposeJsonInput" type="file" accept="application/json,.json">
+
+  <script type="module" src="{{ url_for('static', filename='pose/openpose-editor.js') }}"></script>
+</body>
+</html>

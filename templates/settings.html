@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nano Banana Studio - Settings</title>
+<title>AI API Studio - Settings</title>
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -12,13 +12,13 @@
 <!-- NAV -->
 <nav class="navbar">
   <div class="nav-left">
-    <a href="/index" class="nav-logo">Nano Banana Studio <span class="nav-version">1.1 beta</span></a>
+  <a href="/index" class="nav-logo">AI API Studio <span class="nav-version">1.2 beta</span></a>
   </div>
   <div class="nav-links">
     <a href="/index">Generator</a>
+    <a href="/images">Images</a>
     <a href="/workbench">Workbench</a>
     <a href="/reports">Reports</a>
-    <a href="/loved">Loved</a>
     <a href="/settings" class="active">Settings</a>
     <a href="/credits">Credits</a>
     <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">Light</button>
@@ -78,7 +78,7 @@
 
   <section class="settings-card">
     <h2>Fal API Key</h2>
-    <p class="settings-desc">Enter your Fal API key for Fal Nano Banana, Seedream 4.5, and Seedream 5 Lite. Fal acts as the alternate provider for both Nano Banana and Seedream families.</p>
+    <p class="settings-desc">Enter your Fal API key for Fal Nano Banana, Seedream 4.5, Seedream 5 Lite, Kling video, Wan video, and SeedVR upscaling. Fal acts as the alternate provider for both image and video families.</p>
 
     <div class="key-row">
       <div class="input-wrap">
@@ -97,6 +97,31 @@
     {% if has_fal_key %}
     <div class="key-current">
       Current key: <code>{{ masked_fal_key }}</code>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="settings-card">
+    <h2>Kling API Token</h2>
+    <p class="settings-desc">Enter your Kling API bearer token for native Kling video generation. This powers the direct Kling provider in the new Video tab.</p>
+
+    <div class="key-row">
+      <div class="input-wrap">
+        <input type="password" id="klingApiTokenInput" placeholder="kling bearer token" autocomplete="off"
+               value="{{ '*' * 20 if has_kling_token else '' }}">
+        <button class="btn-icon" id="toggleKlingTokenBtn" title="Show/Hide" onclick="toggleKlingTokenVisibility()">Show</button>
+      </div>
+      <button class="btn-verify" id="verifyKlingBtn" onclick="verifyKlingToken()">
+        <span id="verifyKlingLabel">Verify</span>
+      </button>
+      <button class="btn-save" id="saveKlingBtn" onclick="saveKlingToken()">Save</button>
+    </div>
+
+    <div id="klingTokenStatus" class="key-status"></div>
+
+    {% if has_kling_token %}
+    <div class="key-current">
+      Current token: <code>{{ masked_kling_token }}</code>
     </div>
     {% endif %}
   </section>
@@ -499,6 +524,69 @@ async function saveFalKey() {
 
 function showFalKeyStatus(msg, type) {
   const el = document.getElementById("falKeyStatus");
+  el.textContent = msg;
+  el.className = "key-status " + type;
+  el.style.display = "block";
+}
+
+function toggleKlingTokenVisibility() {
+  const inp = document.getElementById("klingApiTokenInput");
+  inp.type = inp.type === "password" ? "text" : "password";
+}
+
+async function verifyKlingToken() {
+  const inp = document.getElementById("klingApiTokenInput");
+  const key = inp.value.trim();
+  if (!key || key.startsWith("*")) {
+    showKlingTokenStatus("Please enter the new Kling token to verify first", "error");
+    return;
+  }
+  const btn = document.getElementById("verifyKlingBtn");
+  const label = document.getElementById("verifyKlingLabel");
+  label.textContent = "Verifying...";
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/verify-kling-token", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({kling_api_token: key})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showKlingTokenStatus("OK: " + (d.message || "Valid token!"), "success");
+    } else {
+      showKlingTokenStatus("Error: " + (d.error || "Invalid token"), "error");
+    }
+  } catch(e) {
+    showKlingTokenStatus("Network error: " + e.message, "error");
+  }
+  label.textContent = "Verify";
+  btn.disabled = false;
+}
+
+async function saveKlingToken() {
+  const inp = document.getElementById("klingApiTokenInput");
+  const key = inp.value.trim();
+  if (!key || key.startsWith("*")) {
+    showKlingTokenStatus("Please enter the new Kling token before saving", "error");
+    return;
+  }
+  const r = await fetch("/api/save-config", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({kling_api_token: key})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showKlingTokenStatus("Kling token saved successfully", "success");
+    inp.type = "password";
+    inp.value = "*".repeat(20);
+    setTimeout(() => location.reload(), 1000);
+  }
+}
+
+function showKlingTokenStatus(msg, type) {
+  const el = document.getElementById("klingTokenStatus");
   el.textContent = msg;
   el.className = "key-status " + type;
   el.style.display = "block";

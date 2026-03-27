@@ -1,7 +1,7 @@
 @echo off
-title Nano Banana Studio
+title AI API Studio
 echo.
-echo   Nano Banana Studio 1.0 beta
+echo   AI API Studio 1.2 beta
 echo   ============================
 echo.
 

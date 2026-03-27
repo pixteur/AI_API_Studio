@@ -1,4 +1,4 @@
-# Nano Banana Studio 1.0 beta — Installation Guide
+# AI API Studio 1.0 beta — Installation Guide
 
 > AI image generator powered by Google Gemini
 > Local web app · Private network only · No cloud account required
@@ -34,14 +34,14 @@
 
 ### 2 — Install Pillow dependency (system-level)
 
-Nano Banana Studio uses Pillow for image processing. On Windows this installs automatically via pip.
+AI API Studio uses Pillow for image processing. On Windows this installs automatically via pip.
 
 ### 3 — Set up the app
 
 Open **Command Prompt** (`Win+R` → type `cmd` → Enter), then run:
 
 ```bat
-cd "C:\path\to\Nano Banana Studio 1.0 beta"
+cd "C:\path\to\AI API Studio 1.0 beta"
 
 python -m venv venv
 venv\Scripts\activate
@@ -112,7 +112,7 @@ brew install python@3.11
 Open **Terminal** and run:
 
 ```bash
-cd "/path/to/Nano Banana Studio 1.0 beta"
+cd "/path/to/AI API Studio 1.0 beta"
 
 python3 -m venv venv
 source venv/bin/activate
@@ -163,7 +163,7 @@ Then double-click it in Finder (right-click → Open) or run `./start.sh` from T
 2. Sign in with a Google account
 3. Click **"Create API key"** → select or create a project
 4. Copy the key (starts with `AIza...`)
-5. Paste it in Nano Banana Studio → **Settings → API Key → Verify → Save**
+5. Paste it in AI API Studio → **Settings → API Key → Verify → Save**
 
 **Free tier:** ~500 image generation requests/day with the Nano Banana (Flash) model.
 **Billing:** Not required for free tier. Enable for Pro models (gemini-3-pro-image-preview).
@@ -173,7 +173,7 @@ Then double-click it in Finder (right-click → Open) or run `./start.sh` from T
 ## Project Structure
 
 ```
-Nano Banana Studio 1.0 beta/
+AI API Studio 1.0 beta/
 ├── app.py                  ← Flask application (main server)
 ├── requirements.txt        ← Python dependencies
 ├── config.json             ← API key + usage stats (auto-generated)
@@ -231,4 +231,4 @@ Change the password to anything you like, save the file, and restart the app.
 
 ---
 
-*Nano Banana Studio 1.0 beta — Built with Flask + Google Gemini*
+*AI API Studio 1.0 beta — Built with Flask + Google Gemini*

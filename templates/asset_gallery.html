@@ -1,0 +1,1739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI API Studio - {{ page_title }}</title>
+<script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .asset-page-main {
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: calc(var(--navbar-h) + 28px) 24px 48px;
+  }
+
+  .asset-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+
+  .asset-page-title {
+    margin: 0 0 6px;
+    font-size: 30px;
+    line-height: 1.05;
+  }
+
+  .asset-page-subtitle {
+    margin: 0;
+    color: var(--text2, var(--text-dim));
+  }
+
+  .asset-page-browser {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 18px;
+    min-height: 65vh;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .asset-page-grid-wrap {
+    min-height: 0;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .asset-browser-grid {
+    display: grid;
+    width: 100%;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(var(--asset-card-width), var(--asset-card-width)));
+    justify-content: start;
+    align-items: flex-start;
+    align-content: start;
+    --asset-card-width: 250px;
+  }
+
+  .asset-browser-card {
+    width: 100%;
+    min-width: 0;
+    align-self: flex-start;
+  }
+
+  .asset-browser-card img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .asset-page-empty {
+    display: none;
+    min-height: 280px;
+    border: 1px dashed var(--border2);
+    border-radius: 18px;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--text2, var(--text-dim));
+    padding: 28px;
+  }
+
+  .asset-page-empty strong {
+    display: block;
+    color: var(--text);
+    margin-bottom: 8px;
+    font-size: 18px;
+  }
+
+  .asset-lightbox-meta {
+    margin-top: 12px;
+    color: var(--text2, var(--text-dim));
+    font-size: 12px;
+  }
+
+  .asset-lightbox-info {
+    display: none;
+    width: min(560px, 92vw);
+    max-height: 48vh;
+    overflow: auto;
+    margin-top: 14px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: rgba(10, 10, 12, 0.72);
+    border: 1px solid var(--border2);
+    color: var(--text2, var(--text-dim));
+    font-size: 13px;
+    line-height: 1.55;
+    backdrop-filter: blur(10px);
+  }
+
+  .asset-lightbox-info-row + .asset-lightbox-info-row {
+    margin-top: 8px;
+  }
+
+  .asset-lightbox-info-row strong {
+    color: var(--text);
+  }
+
+  .mask-editor-panel {
+    width: min(1120px, 96vw);
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  }
+
+  .mask-editor-header,
+  .mask-editor-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mask-editor-footer {
+    border-bottom: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .mask-editor-title {
+    margin: 0;
+    font-size: 20px;
+  }
+
+  .mask-editor-sub {
+    color: var(--text2, var(--text-dim));
+    font-size: 13px;
+  }
+
+  .mask-editor-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mask-editor-mode-btn,
+  .mask-editor-ghost-btn,
+  .mask-editor-primary-btn {
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .mask-editor-mode-btn.active {
+    border-color: rgba(255,59,59,0.58);
+    background: rgba(255,59,59,0.14);
+  }
+
+  .mask-editor-primary-btn {
+    background: var(--accent);
+    color: #fff;
+    border-color: transparent;
+  }
+
+  .mask-editor-brush {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 180px;
+    color: var(--text2, var(--text-dim));
+    font-size: 13px;
+  }
+
+  .mask-editor-brush input[type="range"] {
+    flex: 1 1 auto;
+  }
+
+  .mask-editor-stage-wrap {
+    min-height: 0;
+    flex: 1 1 auto;
+    padding: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%),
+      linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.04) 75%);
+    background-position: 0 0, 12px 12px;
+    background-size: 24px 24px;
+  }
+
+  .mask-editor-stage {
+    position: relative;
+    max-width: 100%;
+    max-height: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: crosshair;
+    isolation: isolate;
+  }
+
+  .mask-editor-stage img,
+  .mask-editor-stage canvas {
+    display: block;
+    max-width: min(84vw, 980px);
+    max-height: min(66vh, 760px);
+    border-radius: 14px;
+  }
+
+  .mask-editor-stage canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: none;
+  }
+
+  .mask-editor-brush-preview {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    border: 1.5px solid rgba(255,255,255,0.9);
+    background: rgba(255,255,255,0.02);
+    box-shadow: 0 0 0 1px rgba(255,59,59,0.9), 0 0 0 1px rgba(0,0,0,0.45) inset;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 3;
+    display: none;
+    mix-blend-mode: normal;
+  }
+
+  .mask-editor-note {
+    color: var(--text2, var(--text-dim));
+    font-size: 12px;
+  }
+
+  .asset-page-toolbar-top .gallery-filter-count {
+    white-space: nowrap;
+  }
+
+  .asset-source-switch {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .asset-source-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 7px 28px 7px 10px;
+    min-height: 32px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8a8a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 10px 6px;
+  }
+
+  .asset-source-select:hover,
+  .asset-source-select:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  @media (max-width: 920px) {
+    .asset-page-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .asset-browser-grid {
+      gap: 12px;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .asset-browser-grid {
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--asset-card-width)), 1fr));
+    }
+  }
+
+  @media (max-width: 640px) {
+    .asset-page-main {
+      padding: calc(var(--navbar-h) + 18px) 14px 32px;
+    }
+  }
+</style>
+</head>
+<body>
+<nav class="navbar">
+  <div class="nav-left">
+    <a href="/index" class="nav-logo">AI API Studio <span class="nav-version">1.2 beta</span></a>
+  </div>
+  <div class="nav-links">
+    <a href="/index">Generator</a>
+    <a href="/images" class="active">Images</a>
+    <a href="/workbench">Workbench</a>
+    <a href="/reports">Reports</a>
+    <a href="/settings">Settings</a>
+    <a href="/credits">Credits</a>
+    <button class="nav-theme-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Switch to Light mode">Light</button>
+    <a href="/logout" class="nav-logout">Logout</a>
+  </div>
+</nav>
+
+<main class="asset-page-main">
+  <div class="asset-page-header">
+    <div>
+      <h1 class="asset-page-title">{{ page_title }}</h1>
+      <p class="asset-page-subtitle">{{ page_subtitle }}</p>
+    </div>
+    <a href="/index" class="btn-new-gen">+ New Generation</a>
+  </div>
+
+  <section class="asset-page-browser">
+    <div class="history-sidebar-top-bar asset-page-toolbar-top">
+      <div class="history-sidebar-heading">
+        <div class="asset-source-switch">
+          <select class="asset-source-select" id="assetSourceSelect" onchange="void setAssetSource(this.value)" aria-label="Choose image source">
+            <option value="history">History</option>
+            <option value="references">References</option>
+            <option value="loved">Loved</option>
+          </select>
+        </div>
+        <span class="gallery-filter-count" id="assetFilterCount">No items yet</span>
+      </div>
+      <div class="history-sidebar-top-actions">
+        <button class="history-filter-toggle" id="assetFilterToggleBtn" type="button" onclick="toggleAssetFilters()" aria-pressed="true">Filter</button>
+        <button class="history-filter-toggle history-select-toggle" id="assetSelectModeBtn" type="button" onclick="toggleAssetSelectionMode()" aria-pressed="false">Select</button>
+        <button class="history-filter-toggle history-bulk-delete-btn" id="assetBulkDeleteBtn" type="button" onclick="deleteSelectedAssets()" style="display:none" disabled>Delete</button>
+      </div>
+    </div>
+
+    <div class="gallery-toolbar" id="assetGalleryToolbar">
+      <div class="gallery-toolbar-filters">
+        <div class="gallery-toolbar-row">
+          <label class="gallery-filter-field">
+            <span>Sort</span>
+            <select id="assetSortSelect">
+              <option value="newest" selected>Newest</option>
+              <option value="oldest">Oldest</option>
+            </select>
+          </label>
+          <label class="gallery-filter-field">
+            <span>Image Size</span>
+            <select id="assetSizeFilter">
+              <option value="all" selected>All sizes</option>
+              <option value="1K">1K</option>
+              <option value="2K">2K</option>
+              <option value="4K">4K</option>
+            </select>
+          </label>
+          <label class="gallery-filter-field gallery-filter-field-model">
+            <span>Model</span>
+            <select id="assetModelFilter">
+              <option value="all" selected>All models</option>
+            </select>
+          </label>
+          <label class="gallery-filter-field gallery-filter-field-provider">
+            <span>Provider</span>
+            <select id="assetProviderFilter">
+              <option value="all" selected>All providers</option>
+            </select>
+          </label>
+          <label class="gallery-filter-field">
+            <span>Date</span>
+            <input type="date" id="assetDateFilter">
+          </label>
+          <label class="gallery-filter-field">
+            <span>Aspect Ratio</span>
+            <select id="assetRatioFilter">
+              <option value="all" selected>All ratios</option>
+              <option value="1:1">1:1</option>
+              <option value="16:9">16:9</option>
+              <option value="9:16">9:16</option>
+              <option value="4:3">4:3</option>
+              <option value="3:4">3:4</option>
+              <option value="3:2">3:2</option>
+              <option value="2:3">2:3</option>
+              <option value="21:9">21:9</option>
+              <option value="5:4">5:4</option>
+            </select>
+          </label>
+          <label class="gallery-filter-field gallery-filter-field-upscaler">
+            <span>Upscaler</span>
+            <select id="assetUpscalerFilter">
+              <option value="all" selected>All images</option>
+              <option value="none">Not upscaled</option>
+              <option value="seedvr2">SeedVR2</option>
+            </select>
+          </label>
+          <button class="gallery-filter-reset gallery-filter-inline-action" type="button" onclick="resetAssetFilters()">Clear</button>
+        </div>
+      </div>
+      <div class="gallery-toolbar-size">
+        <span class="gallery-rail-size-title">Preview Size</span>
+        <div class="gallery-rail-size-control-inline">
+          <span class="gallery-rail-size-label" id="assetDensityLabel">Medium</span>
+          <input type="range" min="1" max="3" step="1" value="2" class="gallery-rail-size-slider" id="assetDensitySlider" oninput="setAssetDensity(this.value)" onchange="setAssetDensity(this.value)">
+        </div>
+      </div>
+    </div>
+
+    <div class="asset-page-grid-wrap">
+      <div class="asset-page-empty" id="assetPageEmpty">
+        <div>
+          <strong>{{ empty_title }}</strong>
+          <span>{{ empty_subtitle }}</span>
+        </div>
+      </div>
+      <div class="asset-browser-grid" id="assetGrid"></div>
+    </div>
+  </section>
+</main>
+
+<div class="lightbox" id="assetLightbox" onclick="closeAssetLightboxOnBg(event)">
+  <button class="lb-close" onclick="closeAssetLightbox()" title="Close (Esc)">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  </button>
+  <div class="lb-inner">
+    <img id="assetLbImg" src="" alt="" onclick="event.stopPropagation()">
+    <div class="lb-actions" id="assetLbActions"></div>
+    <div class="asset-lightbox-meta" id="assetLbMeta"></div>
+    <div class="asset-lightbox-info" id="assetLbInfo"></div>
+  </div>
+</div>
+
+<div class="lightbox" id="assetMaskEditor" onclick="closeAssetMaskEditorOnBg(event)" style="display:none">
+  <div class="mask-editor-panel" onclick="event.stopPropagation()">
+    <div class="mask-editor-header">
+      <div>
+        <h3 class="mask-editor-title">Mask Reference</h3>
+        <div class="mask-editor-sub" id="assetMaskEditorSub">Non-destructive. The original reference stays untouched.</div>
+      </div>
+      <button class="modal-close-btn" type="button" onclick="closeAssetMaskEditor()" title="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="mask-editor-toolbar">
+      <button class="mask-editor-mode-btn active" type="button" id="assetMaskModeMaskBtn" onclick="setAssetMaskTool('mask')">Mask</button>
+      <button class="mask-editor-mode-btn" type="button" id="assetMaskModeEraseBtn" onclick="setAssetMaskTool('erase')">Erase</button>
+      <button class="mask-editor-ghost-btn" type="button" onclick="clearAssetMaskEditor()">Clear</button>
+      <label class="mask-editor-brush">Brush
+        <input type="range" min="8" max="180" step="1" value="42" id="assetMaskBrushRange" oninput="setAssetMaskBrushSize(this.value)">
+      </label>
+    </div>
+    <div class="mask-editor-stage-wrap">
+      <div class="mask-editor-stage" id="assetMaskStage">
+        <img id="assetMaskBaseImage" alt="">
+        <canvas id="assetMaskOverlay"></canvas>
+        <div class="mask-editor-brush-preview" id="assetMaskBrushPreview" aria-hidden="true"></div>
+      </div>
+    </div>
+    <div class="mask-editor-footer">
+      <span class="mask-editor-note">Red areas are hidden in the masked reference preview and can be edited again later.</span>
+      <div class="modal-actions">
+        <button class="pub-btn-cancel" type="button" onclick="closeAssetMaskEditor()">Cancel</button>
+        <button class="mask-editor-primary-btn" type="button" onclick="saveAssetMaskEditor()">Save mask</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const ASSET_KIND = {{ asset_kind | tojson }};
+const ASSET_GALLERY_CONFIG = {{ asset_gallery_config | tojson }};
+const INITIAL_ASSET_ITEMS = {{ initial_asset_items | tojson }};
+let currentAssetKind = normalizeAssetKind(ASSET_KIND);
+const ASSET_FILTER_DEFAULTS = {
+  sort: "newest",
+  size: "all",
+  date: "",
+  ratio: "all",
+  model: "all",
+  provider: "all",
+  upscaler: "all",
+};
+const ASSET_DENSITY_LABELS = { 1: "Large", 2: "Medium", 3: "Small" };
+
+let assetItems = [];
+let assetSelectionMode = false;
+let assetSelectedIds = new Set();
+let assetDensityLevel = 2;
+let assetLightboxItem = null;
+let assetLoadError = "";
+const ASSET_SVG_FOLDER_OPEN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v1"/><path d="M3 11h18"/><path d="M15 13h6"/><path d="m18 10 3 3-3 3"/><path d="M4 20h9a2 2 0 0 0 2-2v-5"/></svg>';
+const ASSET_SVG_MASK = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c4.2 0 7.5 3.2 7.5 7.2 0 4.8-4.1 7.7-7.5 10.8-3.4-3.1-7.5-6-7.5-10.8C4.5 6.2 7.8 3 12 3Z"/><path d="M12 6.5c1.8 1.6 2.8 3.4 2.8 5.4 0 2.2-1.1 4.2-2.8 5.9-1.7-1.7-2.8-3.7-2.8-5.9 0-2 1-3.8 2.8-5.4Z"/></svg>';
+const assetMaskState = {
+  item: null,
+  originalImage: null,
+  maskCanvas: null,
+  isDrawing: false,
+  activePointerId: null,
+  lastPoint: null,
+  tool: "mask",
+  brushSize: 42,
+  renderQueued: false,
+  resizeObserver: null,
+};
+
+function normalizeAssetKind(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(ASSET_GALLERY_CONFIG, key) ? key : "history";
+}
+
+function getCurrentAssetConfig(kind = currentAssetKind) {
+  return ASSET_GALLERY_CONFIG[normalizeAssetKind(kind)] || ASSET_GALLERY_CONFIG.history;
+}
+
+function getCurrentAssetApiUrl(kind = currentAssetKind) {
+  return `/api/asset-gallery/${normalizeAssetKind(kind)}`;
+}
+
+function getLegacyAssetApiUrl(kind = currentAssetKind) {
+  const safeKind = normalizeAssetKind(kind);
+  if (safeKind === "loved") return "/api/loved-list";
+  if (safeKind === "references") return "/api/reference-archive-list";
+  return "/api/generations";
+}
+
+async function fetchAssetJson(url) {
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { "X-Requested-With": "fetch" },
+  });
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  if (!response.ok) {
+    throw new Error(`Request failed (${response.status})`);
+  }
+  if (!contentType.includes("application/json")) {
+    throw new Error("Expected JSON response");
+  }
+  return response.json();
+}
+
+function normalizeLegacyAssetItem(kind, item) {
+  const safeKind = normalizeAssetKind(kind);
+  if (safeKind === "history") {
+    const params = item?.params || {};
+    const date = String(item?.gen_date || item?.date || "").trim();
+    const filename = String(item?.gen_filename || item?.filename || "").trim();
+    return {
+      id: `history:${date}:${filename}`,
+      kind: "history",
+      url: item?.url || "",
+      download_url: item?.url || "",
+      date,
+      filename,
+      generated_at: item?.generated_at || "",
+      sortTimestamp: item?.generated_at || `${date}T00:00:00`,
+      prompt_preview: String(params?.prompt || item?.text || filename).slice(0, 120),
+      text: item?.text || "",
+      params,
+      delete_url: date && filename ? `/api/generations/${encodeURIComponent(date)}/${encodeURIComponent(filename)}` : "",
+      folder_open_payload: date && filename ? { kind: "history", date, filename } : null,
+    };
+  }
+
+  if (safeKind === "loved") {
+    const date = String(item?.date || "").trim();
+    const filename = String(item?.filename || "").trim();
+    const params = {
+      model_label: item?.model_label || "",
+      imageSize: item?.imageSize || "",
+      aspectRatio: item?.aspectRatio || "",
+      prompt: item?.prompt || "",
+    };
+    return {
+      id: `loved:${date}:${filename}`,
+      kind: "loved",
+      url: item?.url || "",
+      download_url: item?.url || "",
+      date,
+      filename,
+      generated_at: `${date}T00:00:00`,
+      sortTimestamp: `${date}T00:00:00`,
+      prompt_preview: String(item?.prompt || filename).slice(0, 120),
+      text: "",
+      params,
+      delete_url: date && filename ? `/api/loved/${encodeURIComponent(date)}/${encodeURIComponent(filename)}` : "",
+      folder_open_payload: date && filename ? { kind: "loved", date, filename } : null,
+    };
+  }
+
+  const date = String(item?.date || "").trim();
+  const filename = String(item?.filename || "").trim();
+  const params = {
+    model_label: item?.model_label || "",
+    imageSize: item?.imageSize || "",
+    aspectRatio: item?.aspectRatio || "",
+    prompt: item?.prompt || "",
+  };
+  return {
+    id: `reference:${date}:${filename}`,
+    kind: "references",
+    url: item?.url || "",
+    download_url: item?.url || "",
+    date,
+    filename,
+    generated_at: `${date}T00:00:00`,
+    sortTimestamp: `${date}T00:00:00`,
+    prompt_preview: String(item?.prompt || filename).slice(0, 120),
+    text: "",
+    params,
+    reference_name: item?.prompt || "",
+    delete_url: date && filename ? `/api/reference-archive/${encodeURIComponent(date)}/${encodeURIComponent(filename)}` : "",
+    folder_open_payload: date && filename ? { kind: "references", date, filename } : null,
+    original_url: item?.original_url || "",
+    masked_url: item?.masked_url || "",
+    mask_url: item?.mask_url || "",
+    has_mask: Boolean(item?.has_mask),
+    mask_edit_payload: item?.mask_edit_payload || (date && filename ? { kind: "references", date, filename } : {}),
+  };
+}
+
+function setAssetPageSubtitle(text) {
+  const node = document.querySelector(".asset-page-subtitle");
+  if (node) node.textContent = text || "";
+}
+
+function syncAssetSourceUi() {
+  const select = document.getElementById("assetSourceSelect");
+  if (select) select.value = currentAssetKind;
+  const cfg = getCurrentAssetConfig();
+  setAssetPageSubtitle(cfg.subtitle || "");
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set("kind", currentAssetKind);
+    window.history.replaceState({}, "", url.toString());
+  } catch (e) {}
+}
+
+async function setAssetSource(kind, options = {}) {
+  const nextKind = normalizeAssetKind(kind);
+  if (nextKind === currentAssetKind && !options.forceReload) {
+    syncAssetSourceUi();
+    return;
+  }
+  currentAssetKind = nextKind;
+  assetItems = [];
+  assetSelectionMode = false;
+  assetSelectedIds.clear();
+  try { localStorage.setItem("nb_images_asset_kind", currentAssetKind); } catch (e) {}
+  syncAssetSourceUi();
+  const toolbar = document.getElementById("assetGalleryToolbar");
+  if (toolbar) {
+    try {
+      const hidden = localStorage.getItem(`nb_asset_filters_hidden_${currentAssetKind}`) === "1";
+      toolbar.classList.toggle("gallery-toolbar-filters-hidden", hidden);
+    } catch (e) {
+      toolbar.classList.remove("gallery-toolbar-filters-hidden");
+    }
+  }
+  try {
+    const savedDensity = parseInt(localStorage.getItem(getAssetDensityStorageKey()) || "2", 10);
+    setAssetDensity(savedDensity, false);
+  } catch (e) {
+    setAssetDensity(2, false);
+  }
+  resetAssetFilters();
+  syncAssetFilterToggleButton();
+  syncAssetSelectionUi();
+  await loadAssetItems();
+}
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Could not load image"));
+    img.src = src;
+  });
+}
+
+function dataUrlToBase64(value) {
+  const raw = String(value || "");
+  const comma = raw.indexOf(",");
+  return comma >= 0 ? raw.slice(comma + 1) : raw;
+}
+
+function getAssetMaskOverlayCanvas() {
+  return document.getElementById("assetMaskOverlay");
+}
+
+function ensureAssetMaskCanvas(width, height) {
+  if (!assetMaskState.maskCanvas || assetMaskState.maskCanvas.width !== width || assetMaskState.maskCanvas.height !== height) {
+    assetMaskState.maskCanvas = document.createElement("canvas");
+    assetMaskState.maskCanvas.width = width;
+    assetMaskState.maskCanvas.height = height;
+  }
+  return assetMaskState.maskCanvas;
+}
+
+function fillAssetMaskCanvas(value = 255) {
+  if (!assetMaskState.maskCanvas) return;
+  const ctx = assetMaskState.maskCanvas.getContext("2d");
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = `rgba(${value},${value},${value},1)`;
+  ctx.fillRect(0, 0, assetMaskState.maskCanvas.width, assetMaskState.maskCanvas.height);
+  ctx.restore();
+}
+
+function getAssetMaskStageMetrics() {
+  const base = document.getElementById("assetMaskBaseImage");
+  const overlay = getAssetMaskOverlayCanvas();
+  if (!base || !overlay || !assetMaskState.originalImage) return null;
+  const rect = base.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  return {
+    rect,
+    displayWidth: Math.max(1, Math.round(rect.width)),
+    displayHeight: Math.max(1, Math.round(rect.height)),
+    sourceWidth: assetMaskState.originalImage.width,
+    sourceHeight: assetMaskState.originalImage.height,
+  };
+}
+
+function renderAssetMaskOverlay() {
+  const overlay = getAssetMaskOverlayCanvas();
+  const metrics = getAssetMaskStageMetrics();
+  if (!overlay || !metrics || !assetMaskState.maskCanvas) return;
+  if (overlay.width !== metrics.displayWidth || overlay.height !== metrics.displayHeight) {
+    overlay.width = metrics.displayWidth;
+    overlay.height = metrics.displayHeight;
+  }
+  const ctx = overlay.getContext("2d");
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  ctx.drawImage(assetMaskState.maskCanvas, 0, 0, overlay.width, overlay.height);
+  const imageData = ctx.getImageData(0, 0, overlay.width, overlay.height);
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const hidden = 255 - data[i];
+    if (hidden <= 2) {
+      data[i + 3] = 0;
+      continue;
+    }
+    data[i] = 255;
+    data[i + 1] = 59;
+    data[i + 2] = 59;
+    data[i + 3] = Math.min(200, Math.round(hidden * 0.46));
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function ensureAssetMaskOverlayRender(attempts = 30) {
+  const metrics = getAssetMaskStageMetrics();
+  if (metrics && metrics.displayWidth && metrics.displayHeight) {
+    renderAssetMaskOverlay();
+    return;
+  }
+  if (attempts <= 0) return;
+  requestAnimationFrame(() => ensureAssetMaskOverlayRender(attempts - 1));
+}
+
+function scheduleAssetMaskOverlayRender() {
+  if (assetMaskState.renderQueued) return;
+  assetMaskState.renderQueued = true;
+  requestAnimationFrame(() => {
+    assetMaskState.renderQueued = false;
+    ensureAssetMaskOverlayRender(30);
+  });
+}
+
+function forceAssetMaskOverlayRefresh() {
+  assetMaskState.renderQueued = false;
+  ensureAssetMaskOverlayRender(30);
+  requestAnimationFrame(() => ensureAssetMaskOverlayRender(30));
+  setTimeout(() => ensureAssetMaskOverlayRender(30), 60);
+  setTimeout(() => ensureAssetMaskOverlayRender(30), 180);
+}
+
+function getAssetMaskPoint(event) {
+  const metrics = getAssetMaskStageMetrics();
+  if (!metrics) return null;
+  const x = ((event.clientX - metrics.rect.left) / metrics.displayWidth) * metrics.sourceWidth;
+  const y = ((event.clientY - metrics.rect.top) / metrics.displayHeight) * metrics.sourceHeight;
+  return {
+    x: Math.max(0, Math.min(metrics.sourceWidth, x)),
+    y: Math.max(0, Math.min(metrics.sourceHeight, y)),
+  };
+}
+
+function drawAssetMaskAt(point, options = {}) {
+  if (!point || !assetMaskState.maskCanvas) return;
+  const ctx = assetMaskState.maskCanvas.getContext("2d");
+  const diameter = Math.max(8, Number(options.radius || assetMaskState.brushSize || 42));
+  const radius = diameter / 2;
+  const fromPoint = options.fromPoint || assetMaskState.lastPoint || point;
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = assetMaskState.tool === "erase" ? "rgba(255,255,255,1)" : "rgba(0,0,0,1)";
+  ctx.strokeStyle = ctx.fillStyle;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = diameter;
+  ctx.beginPath();
+  ctx.moveTo(fromPoint.x, fromPoint.y);
+  ctx.lineTo(point.x, point.y);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  assetMaskState.lastPoint = point;
+  scheduleAssetMaskOverlayRender();
+}
+
+function getAssetMaskBrushPreview() {
+  return document.getElementById("assetMaskBrushPreview");
+}
+
+function updateAssetMaskBrushPreview(point) {
+  const preview = getAssetMaskBrushPreview();
+  const metrics = getAssetMaskStageMetrics();
+  if (!preview || !metrics || !point) return;
+  const scale = metrics.displayWidth / metrics.sourceWidth;
+  const size = Math.max(10, Math.round(assetMaskState.brushSize * scale));
+  preview.style.width = `${size}px`;
+  preview.style.height = `${size}px`;
+  preview.style.left = `${(point.x / metrics.sourceWidth) * metrics.displayWidth}px`;
+  preview.style.top = `${(point.y / metrics.sourceHeight) * metrics.displayHeight}px`;
+  preview.style.display = "block";
+}
+
+function hideAssetMaskBrushPreview() {
+  const preview = getAssetMaskBrushPreview();
+  if (preview) preview.style.display = "none";
+}
+
+function beginAssetMaskDraw(event) {
+  if (event.button !== undefined && event.button !== 0) return;
+  event.preventDefault();
+  assetMaskState.activePointerId = event.pointerId ?? null;
+  assetMaskState.isDrawing = true;
+  const point = getAssetMaskPoint(event);
+  assetMaskState.lastPoint = point;
+  updateAssetMaskBrushPreview(point);
+  drawAssetMaskAt(point, { fromPoint: point });
+}
+
+function moveAssetMaskDraw(event) {
+  if (assetMaskState.activePointerId !== null && event.pointerId !== undefined && event.pointerId !== assetMaskState.activePointerId) return;
+  const point = getAssetMaskPoint(event);
+  updateAssetMaskBrushPreview(point);
+  if (!assetMaskState.isDrawing) return;
+  event.preventDefault();
+  drawAssetMaskAt(point);
+}
+
+function endAssetMaskDraw() {
+  assetMaskState.isDrawing = false;
+  assetMaskState.activePointerId = null;
+  assetMaskState.lastPoint = null;
+}
+
+function setAssetMaskTool(tool) {
+  assetMaskState.tool = tool === "erase" ? "erase" : "mask";
+  document.getElementById("assetMaskModeMaskBtn")?.classList.toggle("active", assetMaskState.tool === "mask");
+  document.getElementById("assetMaskModeEraseBtn")?.classList.toggle("active", assetMaskState.tool === "erase");
+}
+
+function setAssetMaskBrushSize(value) {
+  assetMaskState.brushSize = Math.max(8, Math.min(180, parseInt(value, 10) || 42));
+  const preview = getAssetMaskBrushPreview();
+  if (preview && preview.style.display !== "none") {
+    const left = parseFloat(preview.style.left || "0");
+    const top = parseFloat(preview.style.top || "0");
+    const metrics = getAssetMaskStageMetrics();
+    if (metrics && left && top) {
+      updateAssetMaskBrushPreview({
+        x: (left / metrics.displayWidth) * metrics.sourceWidth,
+        y: (top / metrics.displayHeight) * metrics.sourceHeight,
+      });
+    }
+  }
+}
+
+function clearAssetMaskEditor() {
+  fillAssetMaskCanvas(255);
+  scheduleAssetMaskOverlayRender();
+}
+
+function assetMaskHasHiddenPixels() {
+  if (!assetMaskState.maskCanvas) return false;
+  const ctx = assetMaskState.maskCanvas.getContext("2d");
+  const { data } = ctx.getImageData(0, 0, assetMaskState.maskCanvas.width, assetMaskState.maskCanvas.height);
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] < 250) return true;
+  }
+  return false;
+}
+
+function applyReferenceMaskBundleToItem(target, bundle) {
+  if (!target || !bundle) return;
+  target.url = bundle.display_url || bundle.original_url || target.url;
+  target.download_url = bundle.display_url || bundle.original_url || target.download_url || target.url;
+  target.original_url = bundle.original_url || target.original_url || "";
+  target.masked_url = bundle.masked_url || "";
+  target.mask_url = bundle.mask_url || "";
+  target.has_mask = Boolean(bundle.has_mask);
+  target.mask_edit_payload = bundle.mask_edit_payload || target.mask_edit_payload || {};
+}
+
+async function openAssetMaskEditor(item) {
+  if (currentAssetKind !== "references" || !item) return;
+  assetMaskState.item = item;
+  assetMaskState.renderQueued = false;
+  assetMaskState.resizeObserver?.disconnect?.();
+  assetMaskState.resizeObserver = null;
+  setAssetMaskTool("mask");
+  setAssetMaskBrushSize(document.getElementById("assetMaskBrushRange")?.value || 42);
+  const assetMaskEditor = document.getElementById("assetMaskEditor");
+  document.getElementById("assetMaskEditorSub").textContent = item.reference_name ? `${item.reference_name} • non-destructive mask` : "Non-destructive. The original reference stays untouched.";
+
+  const originalSrc = item.original_url || item.url;
+  const originalImage = await loadImageElement(originalSrc);
+  assetMaskState.originalImage = originalImage;
+  const base = document.getElementById("assetMaskBaseImage");
+  const existingOverlayCanvas = getAssetMaskOverlayCanvas();
+  base.onload = null;
+  base.removeAttribute("src");
+  if (existingOverlayCanvas) {
+    const overlayCtx = existingOverlayCanvas.getContext("2d");
+    overlayCtx?.clearRect(0, 0, existingOverlayCanvas.width || 0, existingOverlayCanvas.height || 0);
+  }
+  base.style.width = "";
+  base.style.height = "";
+
+  ensureAssetMaskCanvas(originalImage.width, originalImage.height);
+  fillAssetMaskCanvas(255);
+  if (item.mask_url) {
+    try {
+      const maskImage = await loadImageElement(item.mask_url);
+      const ctx = assetMaskState.maskCanvas.getContext("2d");
+      ctx.clearRect(0, 0, assetMaskState.maskCanvas.width, assetMaskState.maskCanvas.height);
+      ctx.drawImage(maskImage, 0, 0, assetMaskState.maskCanvas.width, assetMaskState.maskCanvas.height);
+      forceAssetMaskOverlayRefresh();
+    } catch (error) {}
+  }
+
+  assetMaskEditor.style.display = "flex";
+  base.onload = () => forceAssetMaskOverlayRefresh();
+  base.src = originalSrc;
+  if (base.complete) forceAssetMaskOverlayRefresh();
+
+  const stage = document.getElementById("assetMaskStage");
+  if (stage && typeof ResizeObserver !== "undefined") {
+    assetMaskState.resizeObserver = new ResizeObserver(() => {
+      forceAssetMaskOverlayRefresh();
+    });
+    assetMaskState.resizeObserver.observe(stage);
+    assetMaskState.resizeObserver.observe(base);
+  }
+
+  const overlayCanvas = getAssetMaskOverlayCanvas();
+  overlayCanvas.onpointerdown = (event) => {
+    overlayCanvas.setPointerCapture?.(event.pointerId);
+    beginAssetMaskDraw(event);
+  };
+  overlayCanvas.onpointermove = moveAssetMaskDraw;
+  overlayCanvas.onpointerup = (event) => {
+    overlayCanvas.releasePointerCapture?.(event.pointerId);
+    endAssetMaskDraw();
+  };
+  overlayCanvas.onpointercancel = (event) => {
+    overlayCanvas.releasePointerCapture?.(event.pointerId);
+    endAssetMaskDraw();
+    hideAssetMaskBrushPreview();
+  };
+  overlayCanvas.onpointerleave = () => {
+    if (!assetMaskState.isDrawing) hideAssetMaskBrushPreview();
+  };
+  overlayCanvas.onpointerenter = moveAssetMaskDraw;
+  overlayCanvas.oncontextmenu = (event) => event.preventDefault();
+  forceAssetMaskOverlayRefresh();
+}
+
+function closeAssetMaskEditor() {
+  document.getElementById("assetMaskEditor").style.display = "none";
+  assetMaskState.item = null;
+  assetMaskState.originalImage = null;
+  assetMaskState.maskCanvas = null;
+  assetMaskState.isDrawing = false;
+  assetMaskState.activePointerId = null;
+  assetMaskState.lastPoint = null;
+  assetMaskState.renderQueued = false;
+  assetMaskState.resizeObserver?.disconnect?.();
+  assetMaskState.resizeObserver = null;
+  const base = document.getElementById("assetMaskBaseImage");
+  if (base) {
+    base.onload = null;
+    base.removeAttribute("src");
+  }
+  const overlay = getAssetMaskOverlayCanvas();
+  if (overlay) {
+    const overlayCtx = overlay.getContext("2d");
+    overlayCtx?.clearRect(0, 0, overlay.width || 0, overlay.height || 0);
+  }
+  hideAssetMaskBrushPreview();
+}
+
+function closeAssetMaskEditorOnBg(event) {
+  if (event.target === document.getElementById("assetMaskEditor")) closeAssetMaskEditor();
+}
+
+async function saveAssetMaskEditor() {
+  const item = assetMaskState.item;
+  if (!item?.mask_edit_payload?.date || !item?.mask_edit_payload?.filename || !assetMaskState.maskCanvas) return;
+  const maskData = dataUrlToBase64(assetMaskState.maskCanvas.toDataURL("image/png"));
+  const hasHidden = assetMaskHasHiddenPixels();
+  try {
+    const response = await fetch(`/api/reference-mask/${encodeURIComponent(item.mask_edit_payload.date)}/${encodeURIComponent(item.mask_edit_payload.filename)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(hasHidden ? { mask_data: maskData } : { clear: true }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.error || "Could not save mask");
+    applyReferenceMaskBundleToItem(item, data.bundle || {});
+    assetItems = assetItems.map(entry => entry.id === item.id ? { ...entry, ...item } : entry);
+    if (assetLightboxItem && assetLightboxItem.id === item.id) {
+      assetLightboxItem = item;
+      document.getElementById("assetLbImg").src = item.url;
+    }
+    renderAssetItems();
+    closeAssetMaskEditor();
+  } catch (error) {
+    alert(error.message || "Could not save mask");
+  }
+}
+
+function toggleTheme() {
+  const root = document.documentElement;
+  const light = root.getAttribute("data-theme") === "light";
+  if (light) root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", "light");
+  try { localStorage.setItem("nb-theme", light ? "dark" : "light"); } catch (e) {}
+  syncThemeToggleLabel();
+}
+
+function syncThemeToggleLabel() {
+  const btn = document.getElementById("themeToggleBtn");
+  if (!btn) return;
+  const light = document.documentElement.getAttribute("data-theme") === "light";
+  btn.textContent = light ? "Dark" : "Light";
+  btn.title = light ? "Switch to Dark mode" : "Switch to Light mode";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function getAssetDensityStorageKey() {
+  return `nb_asset_density_${currentAssetKind}`;
+}
+
+function getDensityCardMin(level) {
+  const safe = Math.max(1, Math.min(3, parseInt(level, 10) || 2));
+  if (safe === 1) return 340;
+  if (safe === 2) return 220;
+  return 170;
+}
+
+function syncAssetFilterToggleButton() {
+  const toolbar = document.getElementById("assetGalleryToolbar");
+  const btn = document.getElementById("assetFilterToggleBtn");
+  if (!toolbar || !btn) return;
+  const hidden = toolbar.classList.contains("gallery-toolbar-filters-hidden");
+  btn.classList.toggle("active", !hidden);
+  btn.setAttribute("aria-pressed", hidden ? "false" : "true");
+}
+
+function toggleAssetFilters() {
+  const toolbar = document.getElementById("assetGalleryToolbar");
+  if (!toolbar) return;
+  const hidden = toolbar.classList.toggle("gallery-toolbar-filters-hidden");
+  try { localStorage.setItem(`nb_asset_filters_hidden_${currentAssetKind}`, hidden ? "1" : "0"); } catch (e) {}
+  syncAssetFilterToggleButton();
+}
+
+function updateAssetCount(visibleCount, totalCount) {
+  const el = document.getElementById("assetFilterCount");
+  if (!el) return;
+  if (assetLoadError) {
+    el.textContent = "Load failed";
+    return;
+  }
+  const cfg = getCurrentAssetConfig();
+  if (!totalCount) {
+    el.textContent = cfg.empty_title || "No items yet";
+    return;
+  }
+  el.textContent = visibleCount === totalCount ? `${totalCount} items` : `${visibleCount} of ${totalCount} items`;
+}
+
+function populateAssetFilterOptions() {
+  const modelSelect = document.getElementById("assetModelFilter");
+  const providerSelect = document.getElementById("assetProviderFilter");
+  const upscalerSelect = document.getElementById("assetUpscalerFilter");
+  if (modelSelect) {
+    modelSelect.innerHTML = '<option value="all" selected>All models</option>';
+  }
+  if (providerSelect) {
+    providerSelect.innerHTML = '<option value="all" selected>All providers</option>';
+  }
+  if (upscalerSelect) {
+    upscalerSelect.innerHTML = '<option value="all" selected>All images</option><option value="none">Not upscaled</option><option value="seedvr2">SeedVR2</option>';
+  }
+  if (modelSelect && modelSelect.options.length <= 1) {
+    const seenModels = new Set();
+    assetItems.forEach(item => {
+      const family = String(item.params?.modelFamily || item.params?.model || "").trim();
+      const label = String(item.params?.model_label || family).trim();
+      if (!family || seenModels.has(family)) return;
+      seenModels.add(family);
+      const option = document.createElement("option");
+      option.value = family;
+      option.textContent = label || family;
+      modelSelect.appendChild(option);
+    });
+  }
+  if (providerSelect && providerSelect.options.length <= 1) {
+    const seenProviders = new Set();
+    assetItems.forEach(item => {
+      const provider = String(item.params?.provider || "").trim();
+      const label = String(item.params?.provider_label || provider).trim();
+      if (!provider || seenProviders.has(provider)) return;
+      seenProviders.add(provider);
+      const option = document.createElement("option");
+      option.value = provider;
+      option.textContent = label || provider;
+      providerSelect.appendChild(option);
+    });
+  }
+}
+
+function readAssetFilters() {
+  return {
+    sort: document.getElementById("assetSortSelect").value || ASSET_FILTER_DEFAULTS.sort,
+    size: document.getElementById("assetSizeFilter").value || ASSET_FILTER_DEFAULTS.size,
+    date: document.getElementById("assetDateFilter").value || ASSET_FILTER_DEFAULTS.date,
+    ratio: document.getElementById("assetRatioFilter").value || ASSET_FILTER_DEFAULTS.ratio,
+    model: document.getElementById("assetModelFilter").value || ASSET_FILTER_DEFAULTS.model,
+    provider: document.getElementById("assetProviderFilter").value || ASSET_FILTER_DEFAULTS.provider,
+    upscaler: document.getElementById("assetUpscalerFilter").value || ASSET_FILTER_DEFAULTS.upscaler,
+  };
+}
+
+function getFilteredAssetItems() {
+  const filters = readAssetFilters();
+  const filtered = assetItems.filter(item => {
+    const params = item.params || {};
+    if (filters.size !== "all" && params.imageSize !== filters.size) return false;
+    if (filters.date && item.date !== filters.date) return false;
+    if (filters.ratio !== "all" && params.aspectRatio !== filters.ratio) return false;
+    if (filters.model !== "all" && (params.modelFamily || params.model) !== filters.model) return false;
+    if (filters.provider !== "all" && params.provider !== filters.provider) return false;
+    if (filters.upscaler === "none" && params.upscalerType) return false;
+    if (filters.upscaler !== "all" && filters.upscaler !== "none" && params.upscalerType !== filters.upscaler) return false;
+    return true;
+  });
+  filtered.sort((a, b) => {
+    const dir = filters.sort === "oldest" ? 1 : -1;
+    const aTs = Date.parse(a.sortTimestamp || a.generated_at || "") || 0;
+    const bTs = Date.parse(b.sortTimestamp || b.generated_at || "") || 0;
+    if (aTs !== bTs) return (aTs - bTs) * dir;
+    return String(a.id).localeCompare(String(b.id)) * dir;
+  });
+  return filtered;
+}
+
+function syncAssetGridLayout() {
+  const grid = document.getElementById("assetGrid");
+  if (!grid) return;
+  const targetWidth = assetDensityLevel === 1 ? 320 : assetDensityLevel === 2 ? 250 : 180;
+  const width = Math.max(grid.clientWidth, 1);
+  const safeWidth = Math.max(150, Math.min(targetWidth, width));
+  grid.style.setProperty("--asset-card-width", `${safeWidth}px`);
+}
+
+function setAssetDensity(level, persist = true) {
+  assetDensityLevel = Math.max(1, Math.min(3, parseInt(level, 10) || 2));
+  const slider = document.getElementById("assetDensitySlider");
+  const label = document.getElementById("assetDensityLabel");
+  if (slider) slider.value = String(assetDensityLevel);
+  if (label) label.textContent = ASSET_DENSITY_LABELS[assetDensityLevel] || "Medium";
+  if (persist) {
+    try { localStorage.setItem(getAssetDensityStorageKey(), String(assetDensityLevel)); } catch (e) {}
+  }
+  syncAssetGridLayout();
+}
+
+function syncAssetSelectionUi() {
+  const selectBtn = document.getElementById("assetSelectModeBtn");
+  const deleteBtn = document.getElementById("assetBulkDeleteBtn");
+  const visibleIds = new Set(getFilteredAssetItems().map(item => item.id));
+  assetSelectedIds = new Set(Array.from(assetSelectedIds).filter(id => visibleIds.has(id)));
+  const selectedCount = assetSelectedIds.size;
+
+  if (selectBtn) {
+    selectBtn.classList.toggle("active", assetSelectionMode);
+    selectBtn.setAttribute("aria-pressed", assetSelectionMode ? "true" : "false");
+    selectBtn.textContent = assetSelectionMode ? "Done" : "Select";
+  }
+  if (deleteBtn) {
+    deleteBtn.style.display = assetSelectionMode ? "inline-flex" : "none";
+    deleteBtn.disabled = selectedCount === 0;
+    deleteBtn.textContent = selectedCount > 0 ? `Delete ${selectedCount}` : "Delete";
+  }
+}
+
+function toggleAssetSelectionMode(forceState) {
+  assetSelectionMode = typeof forceState === "boolean" ? forceState : !assetSelectionMode;
+  if (!assetSelectionMode) assetSelectedIds.clear();
+  syncAssetSelectionUi();
+  renderAssetItems();
+}
+
+function toggleAssetItemSelection(id) {
+  if (assetSelectedIds.has(id)) assetSelectedIds.delete(id);
+  else assetSelectedIds.add(id);
+  syncAssetSelectionUi();
+  renderAssetItems();
+}
+</script>
+<script>
+function buildBadgeValues(item) {
+  const params = item.params || {};
+  const resolution = params.upscaled ? (params.upscaleDisplaySize || params.imageSize || "") : (params.imageSize || "");
+  const model = params.model_label || "";
+  return [resolution, model].filter(Boolean);
+}
+
+async function ensureAssetImagePayload(item) {
+  const response = await fetch(item.url, { credentials: "same-origin" });
+  if (!response.ok) throw new Error("Unable to read image");
+  const blob = await response.blob();
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+  const comma = String(dataUrl).indexOf(",");
+  return {
+    mime_type: blob.type || item.params?.mime_type || "image/png",
+    data: comma >= 0 ? String(dataUrl).slice(comma + 1) : "",
+  };
+}
+
+async function loveAsset(item, btn) {
+  if (currentAssetKind !== "history") return;
+  try {
+    btn.disabled = true;
+    const payload = await ensureAssetImagePayload(item);
+    const response = await fetch("/api/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        data: payload.data,
+        mime_type: payload.mime_type,
+        meta: item.params || {},
+      }),
+    });
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.error || "Unable to save to Loved");
+    btn.classList.add("fav-active");
+  } catch (error) {
+    btn.disabled = false;
+    alert(error.message || "Unable to save to Loved");
+  }
+}
+
+function reuseAsset(item) {
+  const params = item.params || {};
+  const payload = {
+    prompt: params.prompt || "",
+    model: params.model || "",
+    aspectRatio: params.aspectRatio || "",
+    imageSize: params.imageSize || "",
+    temperature: params.temperature,
+    thinkingLevel: params.thinkingLevel || "Minimal",
+    useSearch: params.useSearch || false,
+    topP: params.topP,
+    outputMode: params.outputMode || "images_text",
+    refArchive: params.refArchive || [],
+    seedMode: params.seedMode || "random",
+    seedValue: params.seedValue,
+    provider: params.provider || "",
+    providerLabel: params.provider_label || "",
+    modelFamily: params.modelFamily || "",
+    falSafetyChecker: params.falSafetyChecker,
+    falSafetyTolerance: params.falSafetyTolerance,
+    geminiSafetyPreset: params.geminiSafetyPreset,
+    byteplusSafetyMode: params.byteplusSafetyMode,
+  };
+  try { sessionStorage.setItem("nb_reuse_params", JSON.stringify(payload)); } catch (e) {}
+  window.location.href = "/index";
+}
+
+async function openAssetFolder(item) {
+  const payload = item?.folder_open_payload;
+  if (!payload?.kind || !payload?.date || !payload?.filename) {
+    alert("This item does not have a saved file location.");
+    return;
+  }
+  try {
+    const response = await fetch("/api/assets/open-folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Could not open folder");
+  } catch (error) {
+    alert(error.message || "Could not open folder");
+  }
+}
+
+function showAssetInfo(item) {
+  const info = document.getElementById("assetLbInfo");
+  const params = item.params || {};
+  const rows = [];
+  const push = (label, value) => {
+    if (value === undefined || value === null || value === "") return;
+    rows.push(`<div class="asset-lightbox-info-row"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>`);
+  };
+  push("Prompt", params.prompt || item.prompt_preview || "");
+  push("Model", params.model_label || "");
+  push("Provider", params.provider_label || params.provider || "");
+  push("Image size", params.imageSize || "");
+  push("Aspect ratio", params.aspectRatio || "");
+  push("Upscaler", params.upscaleDisplaySize || params.upscalerLabel || params.upscalerType || "");
+  if (currentAssetKind === "references") push("Reference name", item.reference_name || "");
+  if (currentAssetKind === "references") push("Source generation", [item.source_generation_date, item.source_generation_filename].filter(Boolean).join(" / "));
+  push("Date", item.date || "");
+  info.innerHTML = rows.join("");
+  info.style.display = rows.length ? "block" : "none";
+}
+
+function closeAssetInfo() {
+  const info = document.getElementById("assetLbInfo");
+  if (info) info.style.display = "none";
+}
+
+function openAssetLightbox(item) {
+  assetLightboxItem = item;
+  document.getElementById("assetLbImg").src = item.url;
+  document.getElementById("assetLightbox").style.display = "flex";
+  document.getElementById("assetLbMeta").textContent = [
+    item.params?.model_label || "",
+    item.params?.provider_label || "",
+    item.params?.imageSize || "",
+    item.params?.aspectRatio || "",
+  ].filter(Boolean).join(" | ");
+
+  const actions = document.getElementById("assetLbActions");
+  actions.innerHTML = "";
+
+  if (currentAssetKind === "history") {
+    const loveBtn = document.createElement("button");
+    loveBtn.className = "img-action-btn";
+    loveBtn.title = "Love";
+    loveBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+    loveBtn.onclick = (event) => { event.stopPropagation(); loveAsset(item, loveBtn); };
+    actions.appendChild(loveBtn);
+  }
+
+  const download = document.createElement("a");
+  download.className = "img-action-btn";
+  download.href = item.download_url || item.url;
+  download.download = item.filename || "";
+  download.title = "Download";
+  download.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  actions.appendChild(download);
+
+  if (item.params?.prompt) {
+    const reuse = document.createElement("button");
+    reuse.className = "img-action-btn";
+    reuse.title = "Reuse prompt";
+    reuse.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>';
+    reuse.onclick = (event) => { event.stopPropagation(); reuseAsset(item); };
+    actions.appendChild(reuse);
+  }
+
+  if (currentAssetKind === "references") {
+    const maskBtn = document.createElement("button");
+    maskBtn.className = "img-action-btn";
+    maskBtn.title = "Mask reference";
+    maskBtn.innerHTML = ASSET_SVG_MASK;
+    maskBtn.onclick = (event) => { event.stopPropagation(); openAssetMaskEditor(item); };
+    actions.appendChild(maskBtn);
+  }
+
+  const infoBtn = document.createElement("button");
+  infoBtn.className = "img-action-btn";
+  infoBtn.title = "Show info";
+  infoBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+  infoBtn.onclick = (event) => { event.stopPropagation(); showAssetInfo(item); };
+  actions.appendChild(infoBtn);
+
+  if (item.folder_open_payload) {
+    const folderBtn = document.createElement("button");
+    folderBtn.className = "img-action-btn";
+    folderBtn.title = "Show file in folder";
+    folderBtn.innerHTML = ASSET_SVG_FOLDER_OPEN;
+    folderBtn.onclick = (event) => { event.stopPropagation(); openAssetFolder(item); };
+    actions.appendChild(folderBtn);
+  }
+
+  const del = document.createElement("button");
+  del.className = "img-action-btn lb-delete-btn";
+  del.title = "Delete";
+  del.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+  del.onclick = async (event) => { event.stopPropagation(); await deleteAssetItem(item); closeAssetLightbox(); };
+  actions.appendChild(del);
+  closeAssetInfo();
+}
+
+function closeAssetLightbox() {
+  document.getElementById("assetLightbox").style.display = "none";
+  closeAssetInfo();
+  assetLightboxItem = null;
+}
+
+function closeAssetLightboxOnBg(event) {
+  if (event.target === document.getElementById("assetLightbox")) closeAssetLightbox();
+}
+</script>
+<script>
+function buildAssetCard(item) {
+  const card = document.createElement("div");
+  card.className = "img-card img-card-rail asset-browser-card";
+  card.dataset.id = item.id;
+  card.onclick = () => assetSelectionMode ? toggleAssetItemSelection(item.id) : openAssetLightbox(item);
+  if (assetSelectedIds.has(item.id)) card.classList.add("img-card-multi-selected");
+  if (assetSelectionMode) card.classList.add("img-card-selection-mode");
+
+  const img = document.createElement("img");
+  img.className = "img-card-image";
+  img.src = item.url;
+  img.alt = item.prompt_preview || item.filename || "";
+  img.loading = "lazy";
+  img.decoding = "async";
+  card.appendChild(img);
+
+  if (assetSelectionMode) {
+    const selectToggle = document.createElement("button");
+    selectToggle.className = "img-card-select-toggle" + (assetSelectedIds.has(item.id) ? " active" : "");
+    selectToggle.innerHTML = assetSelectedIds.has(item.id) ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' : "";
+    selectToggle.onclick = (event) => { event.stopPropagation(); toggleAssetItemSelection(item.id); };
+    card.appendChild(selectToggle);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "img-actions";
+
+  if (currentAssetKind === "history") {
+    const loveBtn = document.createElement("button");
+    loveBtn.className = "img-action-btn";
+    loveBtn.title = "Love";
+    loveBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+    loveBtn.onclick = (event) => { event.stopPropagation(); loveAsset(item, loveBtn); };
+    actions.appendChild(loveBtn);
+  }
+
+  const download = document.createElement("a");
+  download.className = "img-action-btn";
+  download.href = item.download_url || item.url;
+  download.download = item.filename || "";
+  download.title = "Download";
+  download.onclick = (event) => event.stopPropagation();
+  download.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  actions.appendChild(download);
+
+  if (item.params?.prompt) {
+    const reuse = document.createElement("button");
+    reuse.className = "img-action-btn";
+    reuse.title = "Reuse prompt";
+    reuse.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>';
+    reuse.onclick = (event) => { event.stopPropagation(); reuseAsset(item); };
+    actions.appendChild(reuse);
+  }
+
+  if (currentAssetKind === "references") {
+    const maskBtn = document.createElement("button");
+    maskBtn.className = "img-action-btn";
+    maskBtn.title = "Mask reference";
+    maskBtn.innerHTML = ASSET_SVG_MASK;
+    maskBtn.onclick = (event) => { event.stopPropagation(); openAssetMaskEditor(item); };
+    actions.appendChild(maskBtn);
+  }
+
+  const info = document.createElement("button");
+  info.className = "img-action-btn";
+  info.title = "Show info";
+  info.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+  info.onclick = (event) => { event.stopPropagation(); openAssetLightbox(item); showAssetInfo(item); };
+  actions.appendChild(info);
+
+  if (item.folder_open_payload) {
+    const folderBtn = document.createElement("button");
+    folderBtn.className = "img-action-btn";
+    folderBtn.title = "Show file in folder";
+    folderBtn.innerHTML = ASSET_SVG_FOLDER_OPEN;
+    folderBtn.onclick = (event) => { event.stopPropagation(); openAssetFolder(item); };
+    actions.appendChild(folderBtn);
+  }
+
+  const del = document.createElement("button");
+  del.className = "img-action-btn";
+  del.title = "Delete";
+  del.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>';
+  del.onclick = async (event) => { event.stopPropagation(); await deleteAssetItem(item); };
+  actions.appendChild(del);
+
+  card.appendChild(actions);
+
+  const badgesWrap = document.createElement("div");
+  badgesWrap.className = "img-card-badges";
+  buildBadgeValues(item).forEach(value => {
+    const badge = document.createElement("div");
+    badge.className = "img-card-badge";
+    badge.textContent = String(value).toUpperCase();
+    badgesWrap.appendChild(badge);
+  });
+  card.appendChild(badgesWrap);
+  return card;
+}
+
+function renderAssetItems() {
+  const empty = document.getElementById("assetPageEmpty");
+  const grid = document.getElementById("assetGrid");
+  const filtered = getFilteredAssetItems();
+  const cfg = getCurrentAssetConfig();
+  updateAssetCount(filtered.length, assetItems.length);
+  syncAssetSelectionUi();
+
+  grid.innerHTML = "";
+  if (assetLoadError) {
+    empty.style.display = "flex";
+    empty.innerHTML = `<div><strong>Could not load images</strong><span>${escapeHtml(assetLoadError)}</span></div>`;
+    grid.style.display = "none";
+    return;
+  }
+  if (!assetItems.length) {
+    empty.style.display = "flex";
+    empty.innerHTML = `<div><strong>${escapeHtml(cfg.empty_title || "No items yet.")}</strong><span>${escapeHtml(cfg.empty_subtitle || "")}</span></div>`;
+    grid.style.display = "none";
+    return;
+  }
+
+  if (!filtered.length) {
+    empty.style.display = "flex";
+    empty.innerHTML = `<div><strong>No items match these filters</strong><span>Try a different date, model, size, provider, or clear the filters.</span></div>`;
+    grid.style.display = "none";
+    return;
+  }
+
+  empty.style.display = "none";
+  grid.style.display = "grid";
+  filtered.forEach(item => grid.appendChild(buildAssetCard(item)));
+  syncAssetGridLayout();
+}
+
+function resetAssetFilters() {
+  document.getElementById("assetSortSelect").value = ASSET_FILTER_DEFAULTS.sort;
+  document.getElementById("assetSizeFilter").value = ASSET_FILTER_DEFAULTS.size;
+  document.getElementById("assetDateFilter").value = ASSET_FILTER_DEFAULTS.date;
+  document.getElementById("assetRatioFilter").value = ASSET_FILTER_DEFAULTS.ratio;
+  document.getElementById("assetModelFilter").value = ASSET_FILTER_DEFAULTS.model;
+  document.getElementById("assetProviderFilter").value = ASSET_FILTER_DEFAULTS.provider;
+  document.getElementById("assetUpscalerFilter").value = ASSET_FILTER_DEFAULTS.upscaler;
+  renderAssetItems();
+}
+
+function bindAssetFilters() {
+  [
+    "assetSortSelect",
+    "assetSizeFilter",
+    "assetDateFilter",
+    "assetRatioFilter",
+    "assetModelFilter",
+    "assetProviderFilter",
+    "assetUpscalerFilter",
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("change", renderAssetItems);
+    el.addEventListener("input", renderAssetItems);
+  });
+}
+
+async function deleteAssetItem(item) {
+  if (!item?.delete_url) return;
+  const confirmed = window.confirm("Are you sure you want to delete this image?");
+  if (!confirmed) return;
+  try {
+    const response = await fetch(item.delete_url, { method: "DELETE" });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Delete failed");
+    assetItems = assetItems.filter(entry => entry.id !== item.id);
+    assetSelectedIds.delete(item.id);
+    renderAssetItems();
+  } catch (error) {
+    alert(error.message || "Delete failed");
+  }
+}
+
+async function deleteSelectedAssets() {
+  const selected = getFilteredAssetItems().filter(item => assetSelectedIds.has(item.id));
+  const count = selected.length;
+  if (!count) return;
+  const confirmed = window.confirm(`Delete ${count} selected image${count === 1 ? "" : "s"} permanently?`);
+  if (!confirmed) return;
+  for (const item of selected) {
+    try {
+      const response = await fetch(item.delete_url, { method: "DELETE" });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "Delete failed");
+      assetItems = assetItems.filter(entry => entry.id !== item.id);
+    } catch (error) {
+      alert(error.message || "Delete failed");
+      break;
+    }
+  }
+  assetSelectedIds.clear();
+  renderAssetItems();
+}
+
+async function loadAssetItems() {
+  assetLoadError = "";
+  try {
+    const data = await fetchAssetJson(getCurrentAssetApiUrl());
+    assetItems = Array.isArray(data?.items) ? data.items : [];
+    populateAssetFilterOptions();
+    renderAssetItems();
+    return;
+  } catch (primaryError) {
+    try {
+      const legacyData = await fetchAssetJson(getLegacyAssetApiUrl());
+      assetItems = Array.isArray(legacyData)
+        ? legacyData.map(item => normalizeLegacyAssetItem(currentAssetKind, item)).filter(Boolean)
+        : [];
+      populateAssetFilterOptions();
+      renderAssetItems();
+      return;
+    } catch (legacyError) {
+      assetItems = [];
+      assetLoadError = legacyError?.message || primaryError?.message || "The image library could not be loaded.";
+      populateAssetFilterOptions();
+      renderAssetItems();
+    }
+  }
+}
+
+document.addEventListener("keydown", event => {
+  const lb = document.getElementById("assetLightbox");
+  if (!lb || lb.style.display === "none") return;
+  if (event.key === "Escape") closeAssetLightbox();
+});
+
+window.addEventListener("resize", syncAssetGridLayout);
+
+(function initAssetGallery() {
+  currentAssetKind = normalizeAssetKind(ASSET_KIND);
+  assetItems = Array.isArray(INITIAL_ASSET_ITEMS) ? INITIAL_ASSET_ITEMS.slice() : [];
+  syncAssetSourceUi();
+  syncThemeToggleLabel();
+  try {
+    if (localStorage.getItem(`nb_asset_filters_hidden_${currentAssetKind}`) === "1") {
+      document.getElementById("assetGalleryToolbar").classList.add("gallery-toolbar-filters-hidden");
+    }
+  } catch (e) {}
+  syncAssetFilterToggleButton();
+  try {
+    const savedDensity = parseInt(localStorage.getItem(getAssetDensityStorageKey()) || "2", 10);
+    setAssetDensity(savedDensity, false);
+  } catch (e) {
+    setAssetDensity(2, false);
+  }
+  bindAssetFilters();
+  populateAssetFilterOptions();
+  renderAssetItems();
+  loadAssetItems();
+})();
+</script>
+</body>
+</html>

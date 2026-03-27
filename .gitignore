@@ -4,14 +4,22 @@ __pycache__/
 *.pyc
 
 # Generated user data
-generations/*
-!generations/.gitkeep
-loved/*
-!loved/.gitkeep
+Image_assets/generations/*
+!Image_assets/generations/.gitkeep
+Image_assets/loved/*
+!Image_assets/loved/.gitkeep
 published/*
 !published/.gitkeep
-reference_archive/*
-!reference_archive/.gitkeep
+Image_assets/reference_archive/*
+!Image_assets/reference_archive/.gitkeep
+Image_assets/reference_masks/*
+!Image_assets/reference_masks/.gitkeep
+Image_assets/reference_renders/*
+!Image_assets/reference_renders/.gitkeep
+Image_assets/pose_outputs/*
+!Image_assets/pose_outputs/.gitkeep
+Image_assets/videos/*
+!Image_assets/videos/.gitkeep
 
 # OS/editor noise
 .DS_Store
