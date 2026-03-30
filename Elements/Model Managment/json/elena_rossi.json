@@ -1,0 +1,34 @@
+{
+  "id": "elena_rossi",
+  "name": "Elena Rossi",
+  "gender": "female",
+  "ethnicity": "caucasian",
+  "age_group": "young_adult",
+  "skin_tone": "fair",
+  "hair_color": "auburn",
+  "hair_style": "medium_curly",
+  "eye_color": "green",
+  "body_type": "slender",
+  "description": "An oval-faced woman with fair, freckled skin and striking green almond-shaped eyes. Her voluminous auburn curls frame a face featuring a straight nose, full natural lips, and a soft yet defined jawline.",
+  "tags": [
+    "freckles",
+    "curly-hair",
+    "natural-beauty",
+    "portrait",
+    "green-eyes",
+    "editorial"
+  ],
+  "profile": {},
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "elena_rossi_001.jpg",
+      "path": "elena_rossi_001.jpg",
+      "added_at": "2026-03-29T12:24:13.572431",
+      "is_primary": true,
+      "analyzed": true
+    }
+  ],
+  "created_at": "2026-03-29T12:24:13.572431",
+  "updated_at": "2026-03-29T12:24:13.572431"
+}

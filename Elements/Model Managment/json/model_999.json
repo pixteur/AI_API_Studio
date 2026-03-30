@@ -1,0 +1,57 @@
+{
+  "id": "model_999",
+  "name": "Elara Vance",
+  "gender": "female",
+  "ethnicity": "caucasian",
+  "age_group": "young_adult",
+  "skin_tone": "light_warm_freckled",
+  "hair_color": "copper_red",
+  "hair_style": "short_voluminous_curly_bob",
+  "eye_color": "green_hazel",
+  "body_type": "slim",
+  "description": "A fresh-faced young woman with rich copper-red curls styled in a soft, voluminous bob framing her jawline. Her luminous skin features natural freckles across the nose and cheeks, complemented by subtle studio makeup that enhances her green-hazel eyes. Captured in both front and clean side profile, her look is calm, confident, and highly versatile. Styled in a minimal white tank top against a seamless white studio background, she embodies modern beauty casting standards with strong facial structure and excellent symmetry, ideal for high-end beauty, skincare, and AI-driven editorial workflows.",
+  "tags": [
+    "editorial",
+    "beauty",
+    "runway",
+    "advertising"
+  ],
+  "profile": {
+    "height": "approx. 170–177 cm (visual estimate; portrait only)",
+    "hair": "black, long box braids",
+    "eyes": "light hazel",
+    "size": "not visible",
+    "measurements": "not visible",
+    "overall_look": "minimal styling, clean background, strong presence",
+    "skills": [
+      "beauty close-up",
+      "expressive eye contact",
+      "poised stillness"
+    ],
+    "languages": [],
+    "personality": "professional, composed, focused on set",
+    "recommended_usage": [
+      "editorial photography",
+      "beauty close-up",
+      "runway/show packages",
+      "advertising campaigns",
+      "fashion film",
+      "e-commerce beauty/haircare",
+      "skincare",
+      "haircare",
+      "cosmetics"
+    ]
+  },
+  "is_favorite": true,
+  "images": [
+    {
+      "filename": "model_999.png",
+      "path": "images/model_999.png",
+      "added_at": "2026-03-29T10:12:14.112300",
+      "is_primary": true,
+      "analyzed": false
+    },
+  ],
+  "created_at": "2026-03-29T10:12:14.112300",
+  "updated_at": "2026-03-29T10:18:52.441900"
+}

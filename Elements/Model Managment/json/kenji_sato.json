@@ -1,0 +1,34 @@
+{
+  "id": "kenji_sato",
+  "name": "Kenji Sato",
+  "gender": "male",
+  "ethnicity": "east_asian",
+  "age_group": "mature",
+  "skin_tone": "medium",
+  "hair_color": "salt_and_pepper",
+  "hair_style": "short_crop",
+  "eye_color": "dark_brown",
+  "body_type": "lean_athletic",
+  "description": "A mature man with an oval face, weathered skin featuring fine lines and sun-kissed freckles, and a strong, defined jawline. He has deep-set dark brown eyes with a calm, steady gaze and a light dusting of salt-and-pepper stubble across his chin and upper lip.",
+  "tags": [
+    "mature",
+    "athletic",
+    "weathered",
+    "portrait",
+    "natural",
+    "east-asian"
+  ],
+  "profile": {},
+  "is_favorite": false,
+  "images": [
+    {
+      "filename": "kenji_sato_001.jpg",
+      "path": "kenji_sato_001.jpg",
+      "added_at": "2026-03-29T16:30:12.589520",
+      "is_primary": true,
+      "analyzed": true
+    }
+  ],
+  "created_at": "2026-03-29T16:30:12.589520",
+  "updated_at": "2026-03-29T16:30:12.589520"
+}
