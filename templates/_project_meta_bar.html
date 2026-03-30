@@ -1,0 +1,41 @@
+{% set _meta_options = asset_meta_bootstrap.options if asset_meta_bootstrap and asset_meta_bootstrap.options else {} %}
+{% set _client_options = _meta_options.clients if _meta_options.clients else ['-'] %}
+{% set _project_options = _meta_options.projects if _meta_options.projects else ['-'] %}
+{% set _shot_options = _meta_options.shots if _meta_options.shots else ['-'] %}
+{% set _filename_options = _meta_options.filenames if _meta_options.filenames else [] %}
+<div class="project-meta-bar" id="projectMetaBar">
+  <span class="project-meta-group-label">Scope</span>
+  <label class="project-meta-field">
+    <span class="project-meta-label">Client</span>
+    <select class="project-meta-select" id="projectMetaClient" aria-label="Client">
+      {% for value in _client_options %}
+      <option value="{{ value }}">{{ value }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="project-meta-field">
+    <span class="project-meta-label">Project</span>
+    <select class="project-meta-select" id="projectMetaProject" aria-label="Project">
+      {% for value in _project_options %}
+      <option value="{{ value }}">{{ value }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="project-meta-field">
+    <span class="project-meta-label">Shot</span>
+    <select class="project-meta-select" id="projectMetaShot" aria-label="Shot">
+      {% for value in _shot_options %}
+      <option value="{{ value }}">{{ value }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="project-meta-field">
+    <span class="project-meta-label">Filename</span>
+    <input class="project-meta-input" id="projectMetaFilename" list="projectMetaFilenames" autocomplete="off" placeholder="Filename" aria-label="Filename" />
+  </label>
+  <datalist id="projectMetaFilenames">
+    {% for value in _filename_options %}
+    <option value="{{ value }}"></option>
+    {% endfor %}
+  </datalist>
+</div>

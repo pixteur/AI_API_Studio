@@ -7,13 +7,16 @@
 <title>AI API Studio - Loved</title>
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
 <link rel="stylesheet" href="/static/style.css">
+<script>window.__ASSET_META_BOOTSTRAP__ = {{ asset_meta_bootstrap | tojson }};</script>
+<script defer src="/static/project_meta.js?v=20260330b"></script>
 </head>
 <body>
 
 <!-- NAV -->
 <nav class="navbar">
   <div class="nav-left">
-  <a href="/index" class="nav-logo">AI API Studio <span class="nav-version">1.2 beta</span></a>
+    <a href="/index" class="nav-logo">AI API Studio <span class="nav-version">1.2 beta</span></a>
+    {% include "_project_meta_bar.html" %}
   </div>
   <div class="nav-links">
     <a href="/index">Generator</a>

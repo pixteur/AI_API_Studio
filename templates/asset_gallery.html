@@ -7,6 +7,8 @@
 <title>AI API Studio - {{ page_title }}</title>
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
 <link rel="stylesheet" href="/static/style.css">
+<script>window.__ASSET_META_BOOTSTRAP__ = {{ asset_meta_bootstrap | tojson }};</script>
+<script defer src="/static/project_meta.js?v=20260330b"></script>
 <style>
   .asset-page-main {
     max-width: 1480px;
@@ -73,6 +75,47 @@
     display: block;
     width: 100%;
     height: auto;
+  }
+
+  .asset-browser-card video {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    background: #050505;
+  }
+
+  .asset-video-card {
+    position: relative;
+  }
+
+  .asset-video-play {
+    position: absolute;
+    inset: auto auto 12px 12px;
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(0,0,0,0.58);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+  }
+
+  .asset-video-play svg {
+    margin-left: 1px;
+  }
+
+  #assetLbVideo {
+    max-width: 90vw;
+    max-height: 82vh;
+    border-radius: 8px;
+    background: #050505;
   }
 
   .asset-page-empty {
@@ -335,10 +378,11 @@
 <nav class="navbar">
   <div class="nav-left">
     <a href="/index" class="nav-logo">AI API Studio <span class="nav-version">1.2 beta</span></a>
+    {% include "_project_meta_bar.html" %}
   </div>
   <div class="nav-links">
     <a href="/index">Generator</a>
-    <a href="/images" class="active">Images</a>
+    <a href="/images" class="active">Assets</a>
     <a href="/workbench">Workbench</a>
     <a href="/reports">Reports</a>
     <a href="/settings">Settings</a>
@@ -361,10 +405,11 @@
     <div class="history-sidebar-top-bar asset-page-toolbar-top">
       <div class="history-sidebar-heading">
         <div class="asset-source-switch">
-          <select class="asset-source-select" id="assetSourceSelect" onchange="void setAssetSource(this.value)" aria-label="Choose image source">
+          <select class="asset-source-select" id="assetSourceSelect" onchange="void setAssetSource(this.value)" aria-label="Choose asset source">
             <option value="history">History</option>
             <option value="references">References</option>
             <option value="loved">Loved</option>
+            <option value="videos">Videos</option>
           </select>
         </div>
         <span class="gallery-filter-count" id="assetFilterCount">No items yet</span>
@@ -387,7 +432,7 @@
             </select>
           </label>
           <label class="gallery-filter-field">
-            <span>Image Size</span>
+            <span id="assetSizeFilterLabel">Image Size</span>
             <select id="assetSizeFilter">
               <option value="all" selected>All sizes</option>
               <option value="1K">1K</option>
@@ -406,6 +451,28 @@
             <select id="assetProviderFilter">
               <option value="all" selected>All providers</option>
             </select>
+          </label>
+          <label class="gallery-filter-field">
+            <span>Client</span>
+            <select id="assetClientFilter">
+              <option value="all" selected>All clients</option>
+            </select>
+          </label>
+          <label class="gallery-filter-field">
+            <span>Project</span>
+            <select id="assetProjectFilter">
+              <option value="all" selected>All projects</option>
+            </select>
+          </label>
+          <label class="gallery-filter-field">
+            <span>Shot</span>
+            <select id="assetShotFilter">
+              <option value="all" selected>All shots</option>
+            </select>
+          </label>
+          <label class="gallery-filter-field gallery-filter-field-filename">
+            <span>Filename</span>
+            <input type="text" id="assetFilenameFilter" placeholder="Search filename">
           </label>
           <label class="gallery-filter-field">
             <span>Date</span>
@@ -427,7 +494,7 @@
             </select>
           </label>
           <label class="gallery-filter-field gallery-filter-field-upscaler">
-            <span>Upscaler</span>
+            <span id="assetUpscalerFilterLabel">Upscaler</span>
             <select id="assetUpscalerFilter">
               <option value="all" selected>All images</option>
               <option value="none">Not upscaled</option>
@@ -464,6 +531,7 @@
   </button>
   <div class="lb-inner">
     <img id="assetLbImg" src="" alt="" onclick="event.stopPropagation()">
+    <video id="assetLbVideo" style="display:none" controls playsinline onclick="event.stopPropagation()"></video>
     <div class="lb-actions" id="assetLbActions"></div>
     <div class="asset-lightbox-meta" id="assetLbMeta"></div>
     <div class="asset-lightbox-info" id="assetLbInfo"></div>
@@ -518,6 +586,10 @@ const ASSET_FILTER_DEFAULTS = {
   model: "all",
   provider: "all",
   upscaler: "all",
+  client: "all",
+  project: "all",
+  shot: "all",
+  filename: "",
 };
 const ASSET_DENSITY_LABELS = { 1: "Large", 2: "Medium", 3: "Small" };
 
@@ -551,12 +623,17 @@ function getCurrentAssetConfig(kind = currentAssetKind) {
   return ASSET_GALLERY_CONFIG[normalizeAssetKind(kind)] || ASSET_GALLERY_CONFIG.history;
 }
 
+function isVideoAssetKind(kind = currentAssetKind) {
+  return normalizeAssetKind(kind) === "videos";
+}
+
 function getCurrentAssetApiUrl(kind = currentAssetKind) {
   return `/api/asset-gallery/${normalizeAssetKind(kind)}`;
 }
 
 function getLegacyAssetApiUrl(kind = currentAssetKind) {
   const safeKind = normalizeAssetKind(kind);
+  if (safeKind === "videos") return "/api/videos";
   if (safeKind === "loved") return "/api/loved-list";
   if (safeKind === "references") return "/api/reference-archive-list";
   return "/api/generations";
@@ -580,6 +657,28 @@ async function fetchAssetJson(url) {
 
 function normalizeLegacyAssetItem(kind, item) {
   const safeKind = normalizeAssetKind(kind);
+  if (safeKind === "videos") {
+    const params = item?.params || {};
+    const date = String(item?.gen_date || item?.date || "").trim();
+    const filename = String(item?.gen_filename || item?.filename || "").trim();
+    return {
+      id: `videos:${date}:${filename}`,
+      kind: "videos",
+      url: item?.url || "",
+      download_url: item?.url || "",
+      date,
+      filename,
+      generated_at: item?.generated_at || "",
+      sortTimestamp: item?.generated_at || `${date}T00:00:00`,
+      prompt_preview: String(params?.prompt || item?.text || filename).slice(0, 120),
+      text: item?.text || params?.prompt || "",
+      params,
+      mime_type: item?.mime_type || "video/mp4",
+      poster_url: item?.poster_url || "",
+      delete_url: date && filename ? `/api/videos/${encodeURIComponent(date)}/${encodeURIComponent(filename)}` : "",
+      folder_open_payload: date && filename ? { kind: "videos", date, filename } : null,
+    };
+  }
   if (safeKind === "history") {
     const params = item?.params || {};
     const date = String(item?.gen_date || item?.date || "").trim();
@@ -1143,29 +1242,110 @@ function updateAssetCount(visibleCount, totalCount) {
   el.textContent = visibleCount === totalCount ? `${totalCount} items` : `${visibleCount} of ${totalCount} items`;
 }
 
+function getAssetVideoInputModeLabel(params) {
+  const inputMode = String((params || {}).videoInputMode || (params || {}).inputMode || "").trim().toLowerCase();
+  if (inputMode === "image") return "Image to Video";
+  if (inputMode === "reference") return "Reference to Video";
+  if (inputMode === "text") return "Text to Video";
+  return inputMode;
+}
+
+function getAssetVideoDurationLabel(params) {
+  const raw = String((params || {}).duration || "").trim();
+  if (!raw) return "";
+  return raw.endsWith("s") ? raw : `${raw}s`;
+}
+
+function syncAssetFilterSchema() {
+  const sizeLabel = document.getElementById("assetSizeFilterLabel");
+  const sizeSelect = document.getElementById("assetSizeFilter");
+  const upscalerLabel = document.getElementById("assetUpscalerFilterLabel");
+  const upscalerSelect = document.getElementById("assetUpscalerFilter");
+  const isVideo = isVideoAssetKind();
+
+  if (sizeLabel) sizeLabel.textContent = isVideo ? "Duration" : "Image Size";
+  if (upscalerLabel) upscalerLabel.textContent = isVideo ? "Input mode" : "Upscaler";
+
+  if (sizeSelect) {
+    const currentValue = sizeSelect.value || "all";
+    const options = isVideo
+      ? [
+          { value: "all", label: "All durations" },
+          ...Array.from(new Set(assetItems.map(item => getAssetVideoDurationLabel(item.params)).filter(Boolean)))
+            .sort((a, b) => parseInt(a, 10) - parseInt(b, 10))
+            .map(value => ({ value, label: value })),
+        ]
+      : [
+          { value: "all", label: "All sizes" },
+          { value: "1K", label: "1K" },
+          { value: "2K", label: "2K" },
+          { value: "4K", label: "4K" },
+        ];
+    sizeSelect.innerHTML = options.map(opt => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</option>`).join("");
+    sizeSelect.value = options.some(opt => opt.value === currentValue) ? currentValue : "all";
+  }
+
+  if (upscalerSelect) {
+    const currentValue = upscalerSelect.value || "all";
+    const options = isVideo
+      ? [
+          { value: "all", label: "All modes" },
+          ...Array.from(
+            new Set(
+              assetItems
+                .map(item => String(item?.params?.videoInputMode || item?.params?.inputMode || "").trim().toLowerCase())
+                .filter(Boolean)
+            )
+          ).map(value => ({ value, label: getAssetVideoInputModeLabel({ videoInputMode: value }) || value })),
+        ]
+      : [
+          { value: "all", label: "All images" },
+          { value: "none", label: "Not upscaled" },
+          { value: "seedvr2", label: "SeedVR2" },
+        ];
+    upscalerSelect.innerHTML = options.map(opt => `<option value="${escapeHtml(opt.value)}">${escapeHtml(opt.label)}</option>`).join("");
+    upscalerSelect.value = options.some(opt => opt.value === currentValue) ? currentValue : "all";
+  }
+}
+
 function populateAssetFilterOptions() {
   const modelSelect = document.getElementById("assetModelFilter");
   const providerSelect = document.getElementById("assetProviderFilter");
-  const upscalerSelect = document.getElementById("assetUpscalerFilter");
+  const clientSelect = document.getElementById("assetClientFilter");
+  const projectSelect = document.getElementById("assetProjectFilter");
+  const shotSelect = document.getElementById("assetShotFilter");
+  const modelValue = modelSelect?.value || ASSET_FILTER_DEFAULTS.model;
+  const providerValue = providerSelect?.value || ASSET_FILTER_DEFAULTS.provider;
+  const clientValue = clientSelect?.value || ASSET_FILTER_DEFAULTS.client;
+  const projectValue = projectSelect?.value || ASSET_FILTER_DEFAULTS.project;
+  const shotValue = shotSelect?.value || ASSET_FILTER_DEFAULTS.shot;
   if (modelSelect) {
     modelSelect.innerHTML = '<option value="all" selected>All models</option>';
   }
   if (providerSelect) {
     providerSelect.innerHTML = '<option value="all" selected>All providers</option>';
   }
-  if (upscalerSelect) {
-    upscalerSelect.innerHTML = '<option value="all" selected>All images</option><option value="none">Not upscaled</option><option value="seedvr2">SeedVR2</option>';
+  if (clientSelect) {
+    clientSelect.innerHTML = '<option value="all" selected>All clients</option>';
+  }
+  if (projectSelect) {
+    projectSelect.innerHTML = '<option value="all" selected>All projects</option>';
+  }
+  if (shotSelect) {
+    shotSelect.innerHTML = '<option value="all" selected>All shots</option>';
   }
   if (modelSelect && modelSelect.options.length <= 1) {
     const seenModels = new Set();
     assetItems.forEach(item => {
-      const family = String(item.params?.modelFamily || item.params?.model || "").trim();
-      const label = String(item.params?.model_label || family).trim();
-      if (!family || seenModels.has(family)) return;
-      seenModels.add(family);
+      const modelValue = isVideoAssetKind()
+        ? String(item.params?.model || item.params?.videoModel || item.params?.modelFamily || "").trim()
+        : String(item.params?.modelFamily || item.params?.model || "").trim();
+      const label = String(item.params?.model_label || modelValue).trim();
+      if (!modelValue || seenModels.has(modelValue)) return;
+      seenModels.add(modelValue);
       const option = document.createElement("option");
-      option.value = family;
-      option.textContent = label || family;
+      option.value = modelValue;
+      option.textContent = label || modelValue;
       modelSelect.appendChild(option);
     });
   }
@@ -1182,6 +1362,28 @@ function populateAssetFilterOptions() {
       providerSelect.appendChild(option);
     });
   }
+  const appendMetaOptions = (select, key) => {
+    if (!select || select.options.length > 1) return;
+    const seen = new Set();
+    assetItems.forEach(item => {
+      const value = String(item?.params?.[key] || "-").trim() || "-";
+      if (seen.has(value)) return;
+      seen.add(value);
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value === "-" ? "Uncategorized" : value;
+      select.appendChild(option);
+    });
+  };
+  appendMetaOptions(clientSelect, "assetClient");
+  appendMetaOptions(projectSelect, "assetProject");
+  appendMetaOptions(shotSelect, "assetShot");
+  if (modelSelect) modelSelect.value = Array.from(modelSelect.options).some(option => option.value === modelValue) ? modelValue : ASSET_FILTER_DEFAULTS.model;
+  if (providerSelect) providerSelect.value = Array.from(providerSelect.options).some(option => option.value === providerValue) ? providerValue : ASSET_FILTER_DEFAULTS.provider;
+  if (clientSelect) clientSelect.value = Array.from(clientSelect.options).some(option => option.value === clientValue) ? clientValue : ASSET_FILTER_DEFAULTS.client;
+  if (projectSelect) projectSelect.value = Array.from(projectSelect.options).some(option => option.value === projectValue) ? projectValue : ASSET_FILTER_DEFAULTS.project;
+  if (shotSelect) shotSelect.value = Array.from(shotSelect.options).some(option => option.value === shotValue) ? shotValue : ASSET_FILTER_DEFAULTS.shot;
+  syncAssetFilterSchema();
 }
 
 function readAssetFilters() {
@@ -1193,20 +1395,62 @@ function readAssetFilters() {
     model: document.getElementById("assetModelFilter").value || ASSET_FILTER_DEFAULTS.model,
     provider: document.getElementById("assetProviderFilter").value || ASSET_FILTER_DEFAULTS.provider,
     upscaler: document.getElementById("assetUpscalerFilter").value || ASSET_FILTER_DEFAULTS.upscaler,
+    client: document.getElementById("assetClientFilter").value || ASSET_FILTER_DEFAULTS.client,
+    project: document.getElementById("assetProjectFilter").value || ASSET_FILTER_DEFAULTS.project,
+    shot: document.getElementById("assetShotFilter").value || ASSET_FILTER_DEFAULTS.shot,
+    filename: document.getElementById("assetFilenameFilter").value || ASSET_FILTER_DEFAULTS.filename,
   };
+}
+
+function normalizeAssetMetaDisplayValue(value) {
+  const normalized = String(value || "-").trim();
+  return normalized || "-";
+}
+
+function getAssetMetaDisplayLine(params = {}, fallbackFilename = "") {
+  return [
+    normalizeAssetMetaDisplayValue(params.assetClient),
+    normalizeAssetMetaDisplayValue(params.assetProject),
+    normalizeAssetMetaDisplayValue(params.assetShot),
+    String(params.assetFilename || fallbackFilename || "").trim() || "-",
+  ].join(" / ");
 }
 
 function getFilteredAssetItems() {
   const filters = readAssetFilters();
+  const isVideo = isVideoAssetKind();
   const filtered = assetItems.filter(item => {
     const params = item.params || {};
-    if (filters.size !== "all" && params.imageSize !== filters.size) return false;
+    if (filters.size !== "all") {
+      if (isVideo) {
+        if (getAssetVideoDurationLabel(params) !== filters.size) return false;
+      } else if (params.imageSize !== filters.size) {
+        return false;
+      }
+    }
     if (filters.date && item.date !== filters.date) return false;
     if (filters.ratio !== "all" && params.aspectRatio !== filters.ratio) return false;
-    if (filters.model !== "all" && (params.modelFamily || params.model) !== filters.model) return false;
+    if (filters.model !== "all") {
+      const modelValue = isVideo
+        ? String(params.model || params.videoModel || params.modelFamily || "").trim()
+        : String(params.modelFamily || params.model || "").trim();
+      if (modelValue !== filters.model) return false;
+    }
     if (filters.provider !== "all" && params.provider !== filters.provider) return false;
+    if (filters.filename) {
+      const filenameHaystack = String(params.assetFilename || item.filename || "").toLowerCase();
+      if (!filenameHaystack.includes(String(filters.filename || "").toLowerCase())) return false;
+    }
+    if (isVideo) {
+      const inputMode = String(params.videoInputMode || params.inputMode || "").trim().toLowerCase();
+      if (filters.upscaler !== "all" && inputMode !== filters.upscaler) return false;
+    } else {
     if (filters.upscaler === "none" && params.upscalerType) return false;
     if (filters.upscaler !== "all" && filters.upscaler !== "none" && params.upscalerType !== filters.upscaler) return false;
+  }
+    if (filters.client !== "all" && String(params.assetClient || "-").trim() !== filters.client) return false;
+    if (filters.project !== "all" && String(params.assetProject || "-").trim() !== filters.project) return false;
+    if (filters.shot !== "all" && String(params.assetShot || "-").trim() !== filters.shot) return false;
     return true;
   });
   filtered.sort((a, b) => {
@@ -1276,6 +1520,13 @@ function toggleAssetItemSelection(id) {
 <script>
 function buildBadgeValues(item) {
   const params = item.params || {};
+  if (isVideoAssetKind(item.kind || currentAssetKind)) {
+    return [
+      getAssetVideoDurationLabel(params),
+      params.model_label || "",
+      getAssetVideoInputModeLabel(params),
+    ].filter(Boolean);
+  }
   const resolution = params.upscaled ? (params.upscaleDisplaySize || params.imageSize || "") : (params.imageSize || "");
   const model = params.model_label || "";
   return [resolution, model].filter(Boolean);
@@ -1323,6 +1574,11 @@ async function loveAsset(item, btn) {
 
 function reuseAsset(item) {
   const params = item.params || {};
+  if (item?.kind === "videos") {
+    try { sessionStorage.setItem("nb_reuse_video_params", JSON.stringify(params)); } catch (e) {}
+    window.location.href = "/index";
+    return;
+  }
   const payload = {
     prompt: params.prompt || "",
     model: params.model || "",
@@ -1343,6 +1599,10 @@ function reuseAsset(item) {
     falSafetyTolerance: params.falSafetyTolerance,
     geminiSafetyPreset: params.geminiSafetyPreset,
     byteplusSafetyMode: params.byteplusSafetyMode,
+    assetClient: params.assetClient || "-",
+    assetProject: params.assetProject || "-",
+    assetShot: params.assetShot || "-",
+    assetFilename: params.assetFilename || "",
   };
   try { sessionStorage.setItem("nb_reuse_params", JSON.stringify(payload)); } catch (e) {}
   window.location.href = "/index";
@@ -1378,9 +1638,19 @@ function showAssetInfo(item) {
   push("Prompt", params.prompt || item.prompt_preview || "");
   push("Model", params.model_label || "");
   push("Provider", params.provider_label || params.provider || "");
-  push("Image size", params.imageSize || "");
+  push("Client", params.assetClient || "");
+  push("Project", params.assetProject || "");
+  push("Shot", params.assetShot || "");
+  push("Filename", params.assetFilename || "");
+  if (item?.kind === "videos") {
+    push("Duration", getAssetVideoDurationLabel(params));
+    push("Input mode", getAssetVideoInputModeLabel(params));
+    push("Resolution", params.resolution || "");
+  } else {
+    push("Image size", params.imageSize || "");
+    push("Upscaler", params.upscaleDisplaySize || params.upscalerLabel || params.upscalerType || "");
+  }
   push("Aspect ratio", params.aspectRatio || "");
-  push("Upscaler", params.upscaleDisplaySize || params.upscalerLabel || params.upscalerType || "");
   if (currentAssetKind === "references") push("Reference name", item.reference_name || "");
   if (currentAssetKind === "references") push("Source generation", [item.source_generation_date, item.source_generation_filename].filter(Boolean).join(" / "));
   push("Date", item.date || "");
@@ -1395,13 +1665,31 @@ function closeAssetInfo() {
 
 function openAssetLightbox(item) {
   assetLightboxItem = item;
-  document.getElementById("assetLbImg").src = item.url;
+  const lightboxImg = document.getElementById("assetLbImg");
+  const lightboxVideo = document.getElementById("assetLbVideo");
+  const isVideo = item?.kind === "videos" || String(item?.mime_type || "").toLowerCase().startsWith("video/");
+  if (isVideo) {
+    lightboxImg.style.display = "none";
+    lightboxImg.removeAttribute("src");
+    lightboxVideo.style.display = "block";
+    lightboxVideo.src = item.url;
+    if (item.poster_url) lightboxVideo.poster = item.poster_url;
+    lightboxVideo.load();
+  } else {
+    lightboxVideo.pause();
+    lightboxVideo.style.display = "none";
+    lightboxVideo.removeAttribute("src");
+    lightboxVideo.removeAttribute("poster");
+    lightboxImg.style.display = "block";
+    lightboxImg.src = item.url;
+  }
   document.getElementById("assetLightbox").style.display = "flex";
   document.getElementById("assetLbMeta").textContent = [
     item.params?.model_label || "",
     item.params?.provider_label || "",
-    item.params?.imageSize || "",
+    item.kind === "videos" ? getAssetVideoDurationLabel(item.params || {}) : (item.params?.imageSize || ""),
     item.params?.aspectRatio || "",
+    item.kind === "videos" ? getAssetVideoInputModeLabel(item.params || {}) : "",
   ].filter(Boolean).join(" | ");
 
   const actions = document.getElementById("assetLbActions");
@@ -1468,6 +1756,13 @@ function openAssetLightbox(item) {
 }
 
 function closeAssetLightbox() {
+  const lightboxVideo = document.getElementById("assetLbVideo");
+  if (lightboxVideo) {
+    lightboxVideo.pause();
+    lightboxVideo.removeAttribute("src");
+    lightboxVideo.removeAttribute("poster");
+    lightboxVideo.style.display = "none";
+  }
   document.getElementById("assetLightbox").style.display = "none";
   closeAssetInfo();
   assetLightboxItem = null;
@@ -1481,18 +1776,45 @@ function closeAssetLightboxOnBg(event) {
 function buildAssetCard(item) {
   const card = document.createElement("div");
   card.className = "img-card img-card-rail asset-browser-card";
+  const isVideo = item?.kind === "videos" || String(item?.mime_type || "").toLowerCase().startsWith("video/");
+  if (isVideo) card.classList.add("asset-video-card");
   card.dataset.id = item.id;
   card.onclick = () => assetSelectionMode ? toggleAssetItemSelection(item.id) : openAssetLightbox(item);
   if (assetSelectedIds.has(item.id)) card.classList.add("img-card-multi-selected");
   if (assetSelectionMode) card.classList.add("img-card-selection-mode");
 
-  const img = document.createElement("img");
-  img.className = "img-card-image";
-  img.src = item.url;
-  img.alt = item.prompt_preview || item.filename || "";
-  img.loading = "lazy";
-  img.decoding = "async";
-  card.appendChild(img);
+  if (isVideo) {
+    if (item.poster_url) {
+      const poster = document.createElement("img");
+      poster.className = "img-card-image";
+      poster.src = item.poster_url;
+      poster.alt = item.prompt_preview || item.filename || "";
+      poster.loading = "lazy";
+      poster.decoding = "async";
+      card.appendChild(poster);
+    } else {
+      const video = document.createElement("video");
+      video.className = "video-card-player-rail";
+      video.src = item.url;
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      card.appendChild(video);
+    }
+    const playBadge = document.createElement("div");
+    playBadge.className = "asset-video-play";
+    playBadge.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l10-6.5z"/></svg>';
+    card.appendChild(playBadge);
+  } else {
+    const img = document.createElement("img");
+    img.className = "img-card-image";
+    img.src = item.url;
+    img.alt = item.prompt_preview || item.filename || "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    card.appendChild(img);
+  }
 
   if (assetSelectionMode) {
     const selectToggle = document.createElement("button");
@@ -1575,6 +1897,13 @@ function buildAssetCard(item) {
     badgesWrap.appendChild(badge);
   });
   card.appendChild(badgesWrap);
+
+  const metaLine = String(item.params?.assetFilename || item.filename || "-").trim() || "-";
+  const metaEl = document.createElement("div");
+  metaEl.className = "img-card-meta-line";
+  metaEl.textContent = metaLine;
+  metaEl.title = getAssetMetaDisplayLine(item.params || {}, item.filename || "");
+  card.appendChild(metaEl);
   return card;
 }
 
@@ -1589,7 +1918,7 @@ function renderAssetItems() {
   grid.innerHTML = "";
   if (assetLoadError) {
     empty.style.display = "flex";
-    empty.innerHTML = `<div><strong>Could not load images</strong><span>${escapeHtml(assetLoadError)}</span></div>`;
+    empty.innerHTML = `<div><strong>Could not load assets</strong><span>${escapeHtml(assetLoadError)}</span></div>`;
     grid.style.display = "none";
     return;
   }
@@ -1602,7 +1931,7 @@ function renderAssetItems() {
 
   if (!filtered.length) {
     empty.style.display = "flex";
-    empty.innerHTML = `<div><strong>No items match these filters</strong><span>Try a different date, model, size, provider, or clear the filters.</span></div>`;
+    empty.innerHTML = `<div><strong>No items match these filters</strong><span>${isVideoAssetKind() ? "Try a different date, model, duration, provider, input mode, or clear the filters." : "Try a different date, model, size, provider, or clear the filters."}</span></div>`;
     grid.style.display = "none";
     return;
   }
@@ -1621,6 +1950,10 @@ function resetAssetFilters() {
   document.getElementById("assetModelFilter").value = ASSET_FILTER_DEFAULTS.model;
   document.getElementById("assetProviderFilter").value = ASSET_FILTER_DEFAULTS.provider;
   document.getElementById("assetUpscalerFilter").value = ASSET_FILTER_DEFAULTS.upscaler;
+  document.getElementById("assetClientFilter").value = ASSET_FILTER_DEFAULTS.client;
+  document.getElementById("assetProjectFilter").value = ASSET_FILTER_DEFAULTS.project;
+  document.getElementById("assetShotFilter").value = ASSET_FILTER_DEFAULTS.shot;
+  document.getElementById("assetFilenameFilter").value = ASSET_FILTER_DEFAULTS.filename;
   renderAssetItems();
 }
 
@@ -1633,6 +1966,10 @@ function bindAssetFilters() {
     "assetModelFilter",
     "assetProviderFilter",
     "assetUpscalerFilter",
+    "assetClientFilter",
+    "assetProjectFilter",
+    "assetShotFilter",
+    "assetFilenameFilter",
   ].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -1643,7 +1980,8 @@ function bindAssetFilters() {
 
 async function deleteAssetItem(item) {
   if (!item?.delete_url) return;
-  const confirmed = window.confirm("Are you sure you want to delete this image?");
+  const assetLabel = item?.kind === "videos" ? "video" : "image";
+  const confirmed = window.confirm(`Are you sure you want to delete this ${assetLabel}?`);
   if (!confirmed) return;
   try {
     const response = await fetch(item.delete_url, { method: "DELETE" });
@@ -1711,7 +2049,6 @@ document.addEventListener("keydown", event => {
 });
 
 window.addEventListener("resize", syncAssetGridLayout);
-
 (function initAssetGallery() {
   currentAssetKind = normalizeAssetKind(ASSET_KIND);
   assetItems = Array.isArray(INITIAL_ASSET_ITEMS) ? INITIAL_ASSET_ITEMS.slice() : [];

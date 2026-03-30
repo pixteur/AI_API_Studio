@@ -7,6 +7,8 @@
 <title>AI API Studio - Workbench</title>
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
 <link rel="stylesheet" href="/static/style.css">
+<script>window.__ASSET_META_BOOTSTRAP__ = {{ asset_meta_bootstrap | tojson }};</script>
+<script defer src="/static/project_meta.js?v=20260330b"></script>
 <style>
   .wb-main { max-width: 1280px; margin: 0 auto; padding: 84px 24px 56px; }
   .wb-hero { display:flex; justify-content:space-between; align-items:flex-end; gap:24px; margin-bottom:24px; }
@@ -95,11 +97,12 @@
 <body>
 <nav class="navbar">
   <div class="nav-left">
-  <a href="/index" class="nav-logo">AI API Studio <span class="nav-version">1.2 beta</span></a>
+    <a href="/index" class="nav-logo">AI API Studio <span class="nav-version">1.2 beta</span></a>
+    {% include "_project_meta_bar.html" %}
   </div>
   <div class="nav-links">
     <a href="/index">Generator</a>
-    <a href="/images">Images</a>
+<a href="/images">Assets</a>
     <a href="/workbench" class="active">Workbench</a>
     <a href="/reports">Reports</a>
     <a href="/settings">Settings</a>

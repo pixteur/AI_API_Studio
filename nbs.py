@@ -20,6 +20,7 @@ def _bootstrap():
         ("flask",    "flask>=3.0.0"),
         ("PIL",      "Pillow"),
         ("requests", "requests>=2.31.0"),
+        ("fal_client", "fal-client>=0.7.0"),
     ]
     missing = [(mod, pkg) for mod, pkg in deps if importlib.util.find_spec(mod) is None]
     if not missing:
@@ -56,6 +57,7 @@ import re
 import shutil
 import sqlite3
 import threading
+import tempfile
 import unicodedata
 import requests
 from datetime import datetime, timezone
@@ -65,6 +67,7 @@ from uuid import uuid4
 from flask import (Flask, render_template, request, redirect,
                    url_for, session, jsonify, send_from_directory)
 from PIL import Image, ImageOps
+import fal_client
 
 app = Flask(__name__)
 app.secret_key = "nb-studio-secret-2024-change-me"
@@ -96,6 +99,9 @@ REFERENCE_ARCHIVE_INDEX_FILE = os.path.join(REFERENCE_ARCHIVE_DIR, "_index.json"
 REFERENCE_MASKS_DIR = os.path.join(IMAGE_ASSETS_DIR, "reference_masks")
 REFERENCE_RENDERS_DIR = os.path.join(IMAGE_ASSETS_DIR, "reference_renders")
 POSE_OUTPUTS_DIR = os.path.join(IMAGE_ASSETS_DIR, "pose_outputs")
+ASSET_UNCATEGORIZED_VALUE = "-"
+ASSET_UNCATEGORIZED_FOLDER = "uncategorized"
+ASSET_META_FIELDS = ("assetClient", "assetProject", "assetShot", "assetFilename")
 
 
 def move_tree_contents(src_dir: str, dst_dir: str) -> None:
@@ -115,6 +121,314 @@ def move_tree_contents(src_dir: str, dst_dir: str) -> None:
                     os.rmdir(src)
             continue
         shutil.move(src, dst)
+
+
+def sanitize_asset_meta_text(value) -> str:
+    text = str(value or "").strip()
+    text = text.replace("\\", " ").replace("/", " ")
+    text = re.sub(r"[\x00-\x1f]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def sanitize_asset_path_segment(value: str, fallback: str = ASSET_UNCATEGORIZED_FOLDER) -> str:
+    text = sanitize_asset_meta_text(value)
+    if not text or text == ASSET_UNCATEGORIZED_VALUE:
+        return fallback
+    text = re.sub(r'[<>:"/\\\\|?*]+', "_", text)
+    text = text.rstrip(". ").strip()
+    return text[:120] or fallback
+
+
+def sanitize_asset_filename_stem(value: str, fallback: str = "untitled") -> str:
+    text = os.path.splitext(sanitize_asset_meta_text(value))[0]
+    text = re.sub(r'[<>:"/\\\\|?*]+', "_", text)
+    text = re.sub(r"\s+", "_", text).strip("._- ")
+    return text[:120] or fallback
+
+
+def normalize_asset_metadata(raw: dict | None, *, require_filename: bool = False, fallback_filename: str = "") -> dict:
+    raw = raw or {}
+    relpath = str(raw.get("assetRelpath", "") or "").replace("\\", "/").strip("/")
+    rel_parts = [part for part in relpath.split("/") if part]
+    inferred_client = rel_parts[0] if len(rel_parts) >= 4 else ""
+    inferred_project = rel_parts[1] if len(rel_parts) >= 4 else ""
+    inferred_shot = rel_parts[2] if len(rel_parts) >= 4 else ""
+    inferred_filename = os.path.splitext(rel_parts[3])[0] if len(rel_parts) >= 4 else ""
+    client = sanitize_asset_meta_text(raw.get("assetClient", raw.get("client", inferred_client))) or ASSET_UNCATEGORIZED_VALUE
+    project = sanitize_asset_meta_text(raw.get("assetProject", raw.get("project", inferred_project))) or ASSET_UNCATEGORIZED_VALUE
+    shot = sanitize_asset_meta_text(raw.get("assetShot", raw.get("shot", inferred_shot))) or ASSET_UNCATEGORIZED_VALUE
+    filename_seed = raw.get("assetFilename", raw.get("filename_stem", raw.get("filenameStem", inferred_filename or fallback_filename)))
+    filename = sanitize_asset_filename_stem(filename_seed, fallback=fallback_filename or "untitled") if (require_filename or str(filename_seed or "").strip()) else ""
+    return {
+        "assetClient": client,
+        "assetProject": project,
+        "assetShot": shot,
+        "assetFilename": filename,
+    }
+
+
+def merge_asset_metadata(params_meta: dict | None, payload: dict | None = None, *, fallback_source: dict | None = None) -> dict:
+    merged = dict(params_meta or {})
+    source = {}
+    if isinstance(fallback_source, dict):
+        source.update(fallback_source)
+    if isinstance(payload, dict):
+        source.update(payload)
+    merged.update(normalize_asset_metadata(source, require_filename=False))
+    return merged
+
+
+SAFE_REQUEST_SETTING_KEYS = {
+    "imageSize",
+    "aspectRatio",
+    "numberOfImages",
+    "temperature",
+    "topP",
+    "thinkingLevel",
+    "useSearch",
+    "outputMode",
+    "falSafetyChecker",
+    "falSafetyTolerance",
+    "geminiSafetyPreset",
+    "byteplusSafetyMode",
+    "seedMode",
+    "seedValue",
+    "videoInputMode",
+    "duration",
+    "resolution",
+    "negativePrompt",
+    "videoSafetyChecker",
+    "videoUpscaleMode",
+    "videoUpscaleFactor",
+    "videoUpscaleTargetResolution",
+    "videoUpscaleNoiseScale",
+    "videoUpscaleOutputFormat",
+    "videoUpscaleOutputQuality",
+    "videoUpscaleOutputWriteMode",
+    "videoUpscaleSeed",
+    "videoUpscaleSyncMode",
+    "upscaleModel",
+    "upscalePreset",
+    "upscaleMode",
+    "upscaleFactor",
+    "upscaleTargetResolution",
+    "upscaleTargetWidth",
+    "upscaleTargetHeight",
+    "upscaleTargetAnchor",
+    "upscaleDisplaySize",
+    "upscaleOutputWidth",
+    "upscaleOutputHeight",
+    "upscaleSourceDate",
+    "upscaleSourceFilename",
+}
+
+
+def merge_request_settings(params_meta: dict | None, payload: dict | None = None) -> dict:
+    merged = dict(params_meta or {})
+    if not isinstance(payload, dict):
+        return merged
+    for key in SAFE_REQUEST_SETTING_KEYS:
+        if key not in payload:
+            continue
+        value = payload.get(key)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            merged[key] = value
+    return merged
+
+
+def build_asset_storage_relative_dir(asset_meta: dict) -> str:
+    return os.path.join(
+        sanitize_asset_path_segment(asset_meta.get("assetClient")),
+        sanitize_asset_path_segment(asset_meta.get("assetProject")),
+        sanitize_asset_path_segment(asset_meta.get("assetShot")),
+    )
+
+
+def build_asset_storage_file_prefix(asset_meta: dict) -> str:
+    prefix_parts = []
+    for key in ("assetClient", "assetProject", "assetShot"):
+        value = sanitize_asset_meta_text(asset_meta.get(key, ""))
+        if value and value != ASSET_UNCATEGORIZED_VALUE:
+            prefix_parts.append(sanitize_asset_filename_stem(value))
+    prefix_parts.append(sanitize_asset_filename_stem(asset_meta.get("assetFilename", ""), fallback="untitled"))
+    return "_".join([part for part in prefix_parts if part]) or "untitled"
+
+
+def build_asset_storage_paths(root_dir: str, asset_meta: dict, extension: str, *, variant_suffix: str = "") -> tuple[str, str, str]:
+    rel_dir = build_asset_storage_relative_dir(asset_meta)
+    abs_dir = os.path.join(root_dir, rel_dir)
+    os.makedirs(abs_dir, exist_ok=True)
+    ext = str(extension or "").lower().lstrip(".") or "bin"
+    base_stem = build_asset_storage_file_prefix(asset_meta)
+    if variant_suffix:
+        base_stem = f"{base_stem}_{variant_suffix}"
+    candidate = base_stem
+    counter = 2
+    while (
+        os.path.exists(os.path.join(abs_dir, f"{candidate}.{ext}"))
+        or os.path.exists(os.path.join(abs_dir, f"{candidate}.json"))
+    ):
+        candidate = f"{base_stem}_{counter}"
+        counter += 1
+    filename = f"{candidate}.{ext}"
+    rel_path = os.path.join(rel_dir, filename)
+    return abs_dir, rel_path.replace("\\", "/"), candidate
+
+
+def asset_meta_value_matches(selected: str, actual: str) -> bool:
+    selected_text = sanitize_asset_meta_text(selected)
+    actual_text = sanitize_asset_meta_text(actual)
+    if not selected_text:
+        return True
+    if selected_text == ASSET_UNCATEGORIZED_VALUE:
+        return not actual_text or actual_text == ASSET_UNCATEGORIZED_VALUE
+    return actual_text == selected_text
+
+
+def ensure_asset_metadata_memory_shape(memory: dict | None) -> dict:
+    memory = dict(memory or {})
+    return {
+        "clients": list(memory.get("clients")) if isinstance(memory.get("clients"), list) and memory.get("clients") else [ASSET_UNCATEGORIZED_VALUE],
+        "projects": list(memory.get("projects")) if isinstance(memory.get("projects"), list) and memory.get("projects") else [ASSET_UNCATEGORIZED_VALUE],
+        "shots": list(memory.get("shots")) if isinstance(memory.get("shots"), list) and memory.get("shots") else [ASSET_UNCATEGORIZED_VALUE],
+        "filenames": list(memory.get("filenames")) if isinstance(memory.get("filenames"), list) else [],
+    }
+
+
+def update_asset_metadata_memory(config: dict, asset_meta: dict | None) -> dict:
+    asset_meta = normalize_asset_metadata(asset_meta, require_filename=False)
+    memory = ensure_asset_metadata_memory_shape(config.get("asset_metadata_memory"))
+
+    def _upsert(bucket: list[str], value: str, *, allow_uncategorized: bool) -> list[str]:
+        clean_value = sanitize_asset_meta_text(value)
+        if not clean_value:
+            clean_value = ASSET_UNCATEGORIZED_VALUE if allow_uncategorized else ""
+        if not clean_value:
+            return bucket
+        deduped = [item for item in bucket if sanitize_asset_meta_text(item) != clean_value]
+        deduped.insert(0, clean_value)
+        return deduped[:200]
+
+    memory["clients"] = _upsert(memory.get("clients", []), asset_meta.get("assetClient", ""), allow_uncategorized=True)
+    memory["projects"] = _upsert(memory.get("projects", []), asset_meta.get("assetProject", ""), allow_uncategorized=True)
+    memory["shots"] = _upsert(memory.get("shots", []), asset_meta.get("assetShot", ""), allow_uncategorized=True)
+    if asset_meta.get("assetFilename"):
+        memory["filenames"] = _upsert(memory.get("filenames", []), asset_meta.get("assetFilename", ""), allow_uncategorized=False)
+
+    for key in ("clients", "projects", "shots"):
+        unique_values = []
+        for value in memory.get(key, []):
+            clean_value = sanitize_asset_meta_text(value) or ASSET_UNCATEGORIZED_VALUE
+            if clean_value not in unique_values:
+                unique_values.append(clean_value)
+        if ASSET_UNCATEGORIZED_VALUE not in unique_values:
+            unique_values.insert(0, ASSET_UNCATEGORIZED_VALUE)
+        memory[key] = unique_values[:200]
+
+    filename_values = []
+    for value in memory.get("filenames", []):
+        clean_value = sanitize_asset_filename_stem(value, fallback="")
+        if clean_value and clean_value not in filename_values:
+            filename_values.append(clean_value)
+    memory["filenames"] = filename_values[:400]
+
+    config["asset_metadata_memory"] = memory
+    return memory
+
+
+def resolve_asset_relpath(relpath: str = "", date_str: str = "", filename: str = "") -> str:
+    raw = str(relpath or "").strip().replace("\\", "/")
+    if raw:
+        parts = [part for part in raw.split("/") if part not in ("", ".", "..")]
+        return "/".join(parts)
+    safe_date = str(date_str or "").strip().replace("\\", "/").strip("/")
+    safe_filename = os.path.basename(str(filename or "").strip())
+    if safe_date and safe_filename:
+        return f"{safe_date}/{safe_filename}"
+    raise ValueError("Missing asset file.")
+
+
+def safe_asset_path(root_dir: str, relpath: str) -> str:
+    safe_root = os.path.realpath(root_dir)
+    local_path = os.path.realpath(os.path.join(root_dir, relpath.replace("/", os.sep)))
+    if not local_path.startswith(safe_root + os.sep):
+        raise ValueError("Invalid path.")
+    if not os.path.exists(local_path):
+        raise FileNotFoundError("File not found.")
+    return local_path
+
+
+def list_meta_files_recursive(root_dir: str) -> list[str]:
+    meta_files: list[str] = []
+    if not os.path.isdir(root_dir):
+        return meta_files
+    for current_root, _, filenames in os.walk(root_dir):
+        for name in filenames:
+            if name.lower().endswith(".json"):
+                meta_files.append(os.path.join(current_root, name))
+    meta_files.sort(key=lambda path: os.path.getmtime(path), reverse=True)
+    return meta_files
+
+
+def find_existing_binary_for_meta(meta_file: str, extensions: tuple[str, ...]) -> tuple[str | None, str | None]:
+    base = meta_file[:-5]
+    for ext in extensions:
+        candidate = base + ext
+        if os.path.exists(candidate):
+            return candidate, os.path.basename(candidate)
+    return None, None
+
+
+def build_asset_public_url(prefix: str, relpath: str) -> str:
+    clean_relpath = resolve_asset_relpath(relpath=relpath)
+    return f"/{prefix}/{clean_relpath}"
+
+
+def derive_asset_date_key(relpath: str, generated_at: str = "") -> str:
+    rel_parts = [part for part in str(relpath or "").replace("\\", "/").split("/") if part]
+    if rel_parts and re.fullmatch(r"\d{4}-\d{2}-\d{2}", rel_parts[0]):
+        return rel_parts[0]
+    generated = str(generated_at or "").strip()
+    if generated:
+        return generated[:10]
+    return ""
+
+
+def find_generation_relpath_by_filename(filename: str, *, preferred_dir: str = "", preferred_date: str = "") -> str:
+    safe_name = os.path.basename(str(filename or "").strip())
+    if not safe_name or not os.path.isdir(GENERATIONS_DIR):
+        return ""
+    preferred_dir = str(preferred_dir or "").replace("\\", "/").strip("/")
+    preferred_date = str(preferred_date or "").strip()
+
+    candidates: list[str] = []
+    if preferred_dir:
+        candidates.append(f"{preferred_dir}/{safe_name}")
+    if preferred_date:
+        candidates.append(f"{preferred_date}/{safe_name}")
+
+    for relpath in candidates:
+        try:
+            local_path = safe_asset_path(GENERATIONS_DIR, relpath)
+        except Exception:
+            continue
+        if os.path.exists(local_path):
+            return relpath
+
+    for root, _, files in os.walk(GENERATIONS_DIR):
+        if safe_name not in files:
+            continue
+        full_path = os.path.join(root, safe_name)
+        try:
+            relpath = os.path.relpath(full_path, GENERATIONS_DIR).replace("\\", "/")
+        except Exception:
+            continue
+        if preferred_dir and relpath.startswith(preferred_dir + "/"):
+            return relpath
+        if preferred_date and relpath.startswith(preferred_date + "/"):
+            return relpath
+        return relpath
+    return ""
     if os.path.isdir(src_dir) and not os.listdir(src_dir):
         os.rmdir(src_dir)
 
@@ -152,6 +466,12 @@ DEFAULT_CONFIG = {
     "byteplus_api_key": "",
     "kling_api_token": "",
     "comfyui_url": "http://127.0.0.1:8188",
+    "asset_metadata_memory": {
+        "clients": [ASSET_UNCATEGORIZED_VALUE],
+        "projects": [ASSET_UNCATEGORIZED_VALUE],
+        "shots": [ASSET_UNCATEGORIZED_VALUE],
+        "filenames": [],
+    },
     "stats": {
         "total_requests":   0,
         "total_images":     0,
@@ -232,16 +552,28 @@ def compact_generation_result(result: dict) -> dict:
     for img in result.get("images", []) or []:
         gen_date = str(img.get("gen_date") or params.get("gen_date") or "").strip()
         gen_filename = str(img.get("gen_filename") or "").strip()
-        img_url = f"/generations/{gen_date}/{gen_filename}" if gen_date and gen_filename else ""
+        gen_relpath = str(img.get("gen_relpath") or params.get("gen_relpath") or "").strip()
+        img_url = build_asset_public_url("generations", gen_relpath) if gen_relpath else (f"/generations/{gen_date}/{gen_filename}" if gen_date and gen_filename else "")
         compact_images.append({
             "gen_date": gen_date,
             "gen_filename": gen_filename,
+            "gen_relpath": gen_relpath,
             "mime_type": str(img.get("mime_type") or "image/png"),
             "url": img_url,
         })
+    first_image = compact_images[0] if compact_images else {}
+    if first_image:
+        params.setdefault("assetUrl", first_image.get("url", ""))
+        params.setdefault("gen_filename", first_image.get("gen_filename", ""))
+        params.setdefault("gen_relpath", first_image.get("gen_relpath", ""))
     return {
         "params": params,
         "images": compact_images,
+        "url": first_image.get("url", ""),
+        "filename": first_image.get("gen_filename", ""),
+        "gen_filename": first_image.get("gen_filename", ""),
+        "gen_relpath": first_image.get("gen_relpath", ""),
+        "mime_type": first_image.get("mime_type", "image/png"),
         "text": str(result.get("text") or ""),
         "cost": round(float(result.get("cost") or 0.0), 6),
         "model_label": str(result.get("model_label") or ""),
@@ -254,10 +586,12 @@ def compact_video_result(result: dict) -> dict:
     for item in result.get("videos", []) or []:
         gen_date = str(item.get("gen_date") or params.get("gen_date") or "").strip()
         gen_filename = str(item.get("gen_filename") or "").strip()
-        video_url = f"/videos/{gen_date}/{gen_filename}" if gen_date and gen_filename else ""
+        gen_relpath = str(item.get("gen_relpath") or params.get("gen_relpath") or "").strip()
+        video_url = build_asset_public_url("videos", gen_relpath) if gen_relpath else (f"/videos/{gen_date}/{gen_filename}" if gen_date and gen_filename else "")
         compact_videos.append({
             "gen_date": gen_date,
             "gen_filename": gen_filename,
+            "gen_relpath": gen_relpath,
             "mime_type": str(item.get("mime_type") or "video/mp4"),
             "url": video_url,
             "poster_url": str(item.get("poster_url") or ""),
@@ -311,13 +645,25 @@ def _run_upscale_async_job(job_id: str, payload: dict) -> None:
         fal_key = (config.get("fal_api_key", "") or "").strip()
         if not fal_key:
             raise ValueError("Fal API key not configured. Go to Settings.")
-        result = run_fal_seedvr_upscale_job(clone_jsonable(payload) or {}, fal_key)
-        persist_generation_result(result)
+        request_payload = clone_jsonable(payload) or {}
+        is_video_upscale = bool(
+            str(request_payload.get("assetType") or "").strip().lower() == "video"
+            or str((request_payload.get("modelFamily") or "")).strip().lower() == "seedvr-video"
+            or isinstance(request_payload.get("sourceVideo"), dict)
+        )
+        if is_video_upscale:
+            result = run_fal_seedvr_video_job(request_payload, fal_key)
+            persist_video_result(result)
+            compact_result = compact_video_result(result)
+        else:
+            result = run_fal_seedvr_upscale_job(request_payload, fal_key)
+            persist_generation_result(result)
+            compact_result = compact_generation_result(result)
         update_async_job(
             job_id,
             status="completed",
             completed_at=utc_now_iso(),
-            result=compact_generation_result(result),
+            result=compact_result,
             error="",
             debug=None,
         )
@@ -451,12 +797,55 @@ FAL_SEEDREAM_45_EDIT_ID         = "fal-ai/bytedance/seedream/v4.5/edit"
 FAL_SEEDREAM_5_TEXT_ID          = "fal-ai/bytedance/seedream/v5/lite/text-to-image"
 FAL_SEEDREAM_5_EDIT_ID          = "fal-ai/bytedance/seedream/v5/lite/edit"
 FAL_SEEDVR_UPSCALE_ID           = "fal-ai/seedvr/upscale/image"
-FAL_KLING_T2V_ID                = "fal-ai/kling-video/v2.1/master/text-to-video"
-FAL_KLING_I2V_ID                = "fal-ai/kling-video/v2.1/master/image-to-video"
+FAL_SEEDVR_VIDEO_ID             = "fal-ai/seedvr/upscale/video"
+FAL_KLING_V1_STD_T2V_ID         = "fal-ai/kling-video/v1/standard/text-to-video"
+FAL_KLING_V1_STD_I2V_ID         = "fal-ai/kling-video/v1/standard/image-to-video"
+FAL_KLING_V15_PRO_T2V_ID        = "fal-ai/kling-video/v1.5/pro/text-to-video"
+FAL_KLING_V15_PRO_I2V_ID        = "fal-ai/kling-video/v1.5/pro/image-to-video"
+FAL_KLING_V16_STD_T2V_ID        = "fal-ai/kling-video/v1.6/standard/text-to-video"
+FAL_KLING_V16_STD_I2V_ID        = "fal-ai/kling-video/v1.6/standard/image-to-video"
+FAL_KLING_V16_STD_ELEMENTS_ID   = "fal-ai/kling-video/v1.6/standard/elements"
+FAL_KLING_V16_PRO_T2V_ID        = "fal-ai/kling-video/v1.6/pro/text-to-video"
+FAL_KLING_V16_PRO_I2V_ID        = "fal-ai/kling-video/v1.6/pro/image-to-video"
+FAL_KLING_V16_PRO_ELEMENTS_ID   = "fal-ai/kling-video/v1.6/pro/elements"
+FAL_KLING_V2_MASTER_T2V_ID      = "fal-ai/kling-video/v2/master/text-to-video"
+FAL_KLING_V2_MASTER_I2V_ID      = "fal-ai/kling-video/v2/master/image-to-video"
+FAL_KLING_V21_STD_I2V_ID        = "fal-ai/kling-video/v2.1/standard/image-to-video"
+FAL_KLING_V21_PRO_I2V_ID        = "fal-ai/kling-video/v2.1/pro/image-to-video"
+FAL_KLING_V21_MASTER_T2V_ID     = "fal-ai/kling-video/v2.1/master/text-to-video"
+FAL_KLING_V21_MASTER_I2V_ID     = "fal-ai/kling-video/v2.1/master/image-to-video"
+FAL_KLING_V25_TURBO_PRO_T2V_ID  = "fal-ai/kling-video/v2.5-turbo/pro/text-to-video"
+FAL_KLING_V25_TURBO_STD_I2V_ID  = "fal-ai/kling-video/v2.5-turbo/standard/image-to-video"
+FAL_KLING_V25_TURBO_PRO_I2V_ID  = "fal-ai/kling-video/v2.5-turbo/pro/image-to-video"
+FAL_KLING_V26_PRO_T2V_ID        = "fal-ai/kling-video/v2.6/pro/text-to-video"
+FAL_KLING_V26_PRO_I2V_ID        = "fal-ai/kling-video/v2.6/pro/image-to-video"
+FAL_KLING_V30_STD_T2V_ID        = "fal-ai/kling-video/v3/standard/text-to-video"
+FAL_KLING_V30_STD_I2V_ID        = "fal-ai/kling-video/v3/standard/image-to-video"
+FAL_KLING_V30_PRO_T2V_ID        = "fal-ai/kling-video/v3/pro/text-to-video"
+FAL_KLING_V30_PRO_I2V_ID        = "fal-ai/kling-video/v3/pro/image-to-video"
+FAL_KLING_O1_STD_I2V_ID         = "fal-ai/kling-video/o1/standard/image-to-video"
+FAL_KLING_O1_REF_I2V_ID         = "fal-ai/kling-video/o1/standard/reference-to-video"
+FAL_KLING_O1_PRO_I2V_ID         = "fal-ai/kling-video/o1/image-to-video"
+FAL_KLING_O1_PRO_REF_I2V_ID     = "fal-ai/kling-video/o1/reference-to-video"
+FAL_KLING_O3_STD_T2V_ID         = "fal-ai/kling-video/o3/standard/text-to-video"
+FAL_KLING_O3_STD_I2V_ID         = "fal-ai/kling-video/o3/standard/image-to-video"
+FAL_KLING_O3_REF_I2V_ID         = "fal-ai/kling-video/o3/standard/reference-to-video"
+FAL_KLING_O3_PRO_T2V_ID         = "fal-ai/kling-video/o3/pro/text-to-video"
+FAL_KLING_O3_PRO_I2V_ID         = "fal-ai/kling-video/o3/pro/image-to-video"
+FAL_KLING_O3_PRO_REF_I2V_ID     = "fal-ai/kling-video/o3/pro/reference-to-video"
+FAL_SEEDANCE_V1_LITE_T2V_ID     = "fal-ai/bytedance/seedance/v1/lite/text-to-video"
+FAL_SEEDANCE_V1_LITE_I2V_ID     = "fal-ai/bytedance/seedance/v1/lite/image-to-video"
+FAL_SEEDANCE_V1_LITE_REF_ID     = "fal-ai/bytedance/seedance/v1/lite/reference-to-video"
+FAL_SEEDANCE_V1_PRO_T2V_ID      = "fal-ai/bytedance/seedance/v1/pro/text-to-video"
+FAL_SEEDANCE_V1_PRO_I2V_ID      = "fal-ai/bytedance/seedance/v1/pro/image-to-video"
+FAL_SEEDANCE_V1_PRO_FAST_T2V_ID = "fal-ai/bytedance/seedance/v1/pro/fast/text-to-video"
+FAL_SEEDANCE_V1_PRO_FAST_I2V_ID = "fal-ai/bytedance/seedance/v1/pro/fast/image-to-video"
+FAL_SEEDANCE_V15_PRO_T2V_ID     = "fal-ai/bytedance/seedance/v1.5/pro/text-to-video"
+FAL_SEEDANCE_V15_PRO_I2V_ID     = "fal-ai/bytedance/seedance/v1.5/pro/image-to-video"
 FAL_WAN_T2V_ID                  = "fal-ai/wan/v2.2-a14b/text-to-video"
 FAL_WAN_I2V_ID                  = "fal-ai/wan/v2.2-a14b/image-to-video"
-KLING_DIRECT_TEXT_DEFAULT_ID    = "kling-v2-6"
-KLING_DIRECT_IMAGE_DEFAULT_ID   = "kling-v2-6"
+KLING_DIRECT_TEXT_DEFAULT_ID    = "kling-v3-pro"
+KLING_DIRECT_IMAGE_DEFAULT_ID   = "kling-v3-pro"
 UPSCALER_MODELS = {
     "seedvr2": {"id": FAL_SEEDVR_UPSCALE_ID, "label": "SeedVR2"},
 }
@@ -664,32 +1053,56 @@ def normalize_generation_request(body: dict | None) -> dict:
     payload["provider"] = provider_key
     payload["modelLabel"] = model_info.get("label", model_id)
     payload["providerLabel"] = model_info.get("provider_label", PROVIDER_LABELS.get(provider_key, provider_key.title()))
+    payload.update(normalize_asset_metadata(payload, require_filename=False))
     return payload
 
 
-def resolve_video_model_selection(requested_model: str = "", requested_family: str = "", requested_provider: str = "") -> tuple[str, str, str, dict]:
+def resolve_video_model_selection(
+    requested_model: str = "",
+    requested_family: str = "",
+    requested_provider: str = "",
+    requested_input_mode: str = "text",
+) -> tuple[str, str, str, dict]:
     model_id = str(requested_model or "").strip()
     family_key = str(requested_family or "").strip()
     provider_key = str(requested_provider or "").strip().lower()
-
-    if family_key in VIDEO_MODEL_FAMILIES:
-        family_info = VIDEO_MODEL_FAMILIES[family_key]
-        available = family_info.get("providers", {})
-        if provider_key not in available:
-            provider_key = family_info.get("default_provider", "") or next(iter(available.keys()), "")
-        model_id = available.get(provider_key, model_id)
-        model_info = VIDEO_MODELS_INFO.get(model_id)
-        if model_info:
-            return model_id, family_key, provider_key, model_info
+    input_mode = str(requested_input_mode or "").strip().lower()
 
     if model_id in VIDEO_MODELS_INFO:
         model_info = VIDEO_MODELS_INFO[model_id]
-        return model_id, model_info.get("family", family_key or "kling"), model_info.get("provider", provider_key or "kling"), model_info
+        return (
+            model_id,
+            model_info.get("family", family_key or "kling"),
+            model_info.get("provider", provider_key or "kling"),
+            model_info,
+        )
+
+    if family_key in VIDEO_MODEL_FAMILIES:
+        family_info = VIDEO_MODEL_FAMILIES[family_key]
+        providers = list(family_info.get("provider_order", [])) or list((family_info.get("providers") or {}).keys())
+        if provider_key and provider_key in providers:
+            ordered_providers = [provider_key] + [prov for prov in providers if prov != provider_key]
+        elif provider_key:
+            ordered_providers = [provider_key] + providers
+        else:
+            default_provider = family_info.get("default_provider", "") or (providers[0] if providers else "")
+            ordered_providers = [default_provider] + [prov for prov in providers if prov != default_provider]
+        for provider_name in ordered_providers:
+            candidates = get_video_model_candidates(family_key, provider_name, input_mode)
+            if not candidates:
+                candidates = get_video_model_candidates(family_key, provider_name, "")
+            if candidates:
+                resolved_model_id, resolved_model_info = candidates[0]
+                return resolved_model_id, family_key, provider_name, resolved_model_info
 
     fallback_family = "kling"
-    fallback_provider = VIDEO_MODEL_FAMILIES[fallback_family]["default_provider"]
-    fallback_model = VIDEO_MODEL_FAMILIES[fallback_family]["providers"][fallback_provider]
-    return fallback_model, fallback_family, fallback_provider, VIDEO_MODELS_INFO[fallback_model]
+    fallback_family_info = VIDEO_MODEL_FAMILIES[fallback_family]
+    fallback_provider = fallback_family_info["default_provider"]
+    fallback_candidates = get_video_model_candidates(fallback_family, fallback_provider, input_mode)
+    if not fallback_candidates:
+        fallback_candidates = get_video_model_candidates(fallback_family, fallback_provider, "")
+    fallback_model, fallback_info = fallback_candidates[0]
+    return fallback_model, fallback_family, fallback_provider, fallback_info
 
 
 def normalize_video_duration(value, default: int = 5) -> int:
@@ -697,32 +1110,141 @@ def normalize_video_duration(value, default: int = 5) -> int:
         duration = int(str(value or default).strip())
     except Exception:
         duration = default
-    return duration if duration in VIDEO_DURATION_OPTIONS else default
+    return duration if duration in VIDEO_DURATION_ALL_OPTIONS else default
 
 
 def normalize_video_resolution(value: str) -> str:
     resolution = str(value or "720p").strip().lower()
-    return resolution if resolution in {"720p", "1080p"} else "720p"
+    return resolution if resolution in {"480p", "720p", "1080p", "1440p", "2160p"} else "720p"
 
 
 def normalize_video_input_mode(value: str) -> str:
     mode = str(value or "text").strip().lower()
-    return mode if mode in {"text", "image"} else "text"
+    return mode if mode in {"text", "image", "reference", "video"} else "text"
+
+
+def normalize_video_image_payload(image: dict | None, default_name: str) -> dict:
+    if not isinstance(image, dict):
+        image = {}
+    payload = {
+        "mime_type": str(image.get("mime_type") or "image/png"),
+        "data": str(image.get("data") or ""),
+        "name": str(image.get("name") or default_name),
+        "original_data": str(image.get("original_data") or ""),
+        "original_mime_type": str(image.get("original_mime_type") or ""),
+        "mask_png_data": str(image.get("mask_png_data") or ""),
+        "archive_date": str(image.get("archive_date") or ""),
+        "archive_filename": os.path.basename(str(image.get("archive_filename") or "")),
+        "original_url": str(image.get("original_url") or ""),
+        "masked_url": str(image.get("masked_url") or ""),
+        "mask_url": str(image.get("mask_url") or ""),
+        "has_mask": bool(image.get("has_mask")),
+    }
+    if payload["data"]:
+        try:
+            safe_b64, safe_mime = compress_video_input_image(payload["data"], payload["mime_type"])
+            payload["data"] = safe_b64
+            payload["mime_type"] = safe_mime
+        except Exception:
+            pass
+    return payload
+
+
+def normalize_video_image_payloads(items) -> list[dict]:
+    if not isinstance(items, list):
+        return []
+    normalized = []
+    for idx, item in enumerate(items, start=1):
+        payload = normalize_video_image_payload(item, f"video-reference-{idx}.png")
+        if payload.get("data"):
+            normalized.append(payload)
+    return normalized
+
+
+def normalize_video_file_payload(video: dict | None, default_name: str) -> dict:
+    if not isinstance(video, dict):
+        video = {}
+    mime_type = str(video.get("mime_type") or "video/mp4").split(";", 1)[0].strip().lower() or "video/mp4"
+    payload = {
+        "mime_type": mime_type,
+        "data": str(video.get("data") or ""),
+        "name": os.path.basename(str(video.get("name") or default_name)) or default_name,
+        "url": str(video.get("url") or ""),
+    }
+    return payload
+
+
+def normalize_video_upscale_mode(value: str | None) -> str:
+    mode = str(value or "factor").strip().lower()
+    return mode if mode in {"factor", "target"} else "factor"
+
+
+def normalize_video_upscale_factor(value, default: float = 2.0) -> float:
+    try:
+        factor = float(value)
+    except Exception:
+        factor = default
+    return max(1.0, min(10.0, round(factor, 3)))
+
+
+def normalize_video_upscale_target_resolution(value: str | None) -> str:
+    resolution = str(value or "1080p").strip().lower()
+    return resolution if resolution in {"720p", "1080p", "1440p", "2160p"} else "1080p"
+
+
+def normalize_video_upscale_noise_scale(value, default: float = 0.1) -> float:
+    try:
+        noise = float(value)
+    except Exception:
+        noise = default
+    return max(0.0, min(1.0, round(noise, 3)))
+
+
+def normalize_video_upscale_write_mode(value: str | None) -> str:
+    write_mode = str(value or "balanced").strip().lower()
+    return write_mode if write_mode in {"fast", "balanced", "small"} else "balanced"
+
+
+def normalize_video_upscale_output_quality(value: str | None) -> str:
+    quality = str(value or "high").strip().lower()
+    return quality if quality in {"low", "medium", "high", "maximum"} else "high"
+
+
+def normalize_video_upscale_output_format(value: str | None) -> str:
+    fmt = str(value or "X264 (.mp4)").strip()
+    allowed = {"X264 (.mp4)", "VP9 (.webm)", "PRORES4444 (.mov)", "GIF (.gif)"}
+    return fmt if fmt in allowed else "X264 (.mp4)"
+
+
+def normalize_optional_int(value):
+    if value in (None, "", False):
+        return None
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return None
 
 
 def normalize_video_request(body: dict | None) -> dict:
     payload = dict(body or {})
+    requested_input_mode = normalize_video_input_mode(payload.get("videoInputMode", "text"))
     model_id, family_key, provider_key, model_info = resolve_video_model_selection(
         payload.get("model", ""),
         payload.get("modelFamily", ""),
         payload.get("provider", ""),
+        requested_input_mode,
     )
     payload["model"] = model_id
     payload["modelFamily"] = family_key
     payload["provider"] = provider_key
     payload["modelLabel"] = model_info.get("label", model_id)
     payload["providerLabel"] = model_info.get("provider_label", PROVIDER_LABELS.get(provider_key, provider_key.title()))
-    payload["videoInputMode"] = normalize_video_input_mode(payload.get("videoInputMode", "text"))
+    supported_modes = [str(mode).strip().lower() for mode in model_info.get("input_modes", [])]
+    payload["videoInputMode"] = requested_input_mode if requested_input_mode in supported_modes or not supported_modes else supported_modes[0]
+    input_mode = payload["videoInputMode"]
+    supports_start_image = bool(model_info.get("supports_start_image")) and input_mode != "text"
+    supports_reference_images = bool(model_info.get("supports_reference_images")) and input_mode == "reference"
+    supports_source_video = bool(model_info.get("supports_source_video")) and input_mode == "video"
     payload["duration"] = normalize_video_duration(payload.get("duration", 5))
     payload["aspectRatio"] = str(payload.get("aspectRatio", "16:9") or "16:9").strip()
     if payload["aspectRatio"] not in VIDEO_ASPECT_RATIOS:
@@ -730,14 +1252,24 @@ def normalize_video_request(body: dict | None) -> dict:
     payload["resolution"] = normalize_video_resolution(payload.get("resolution", "720p"))
     payload["negativePrompt"] = str(payload.get("negativePrompt", "") or "").strip()
     payload["videoSafetyChecker"] = bool(payload.get("videoSafetyChecker", True))
-    source_image = payload.get("sourceImage")
-    if not isinstance(source_image, dict):
-        source_image = {}
-    payload["sourceImage"] = {
-        "mime_type": str(source_image.get("mime_type") or "image/png"),
-        "data": str(source_image.get("data") or ""),
-        "name": str(source_image.get("name") or "video-source.png"),
-    }
+    payload["sourceImage"] = normalize_video_image_payload(payload.get("sourceImage"), "video-source.png") if supports_start_image else {}
+    payload["sourceVideo"] = normalize_video_file_payload(payload.get("sourceVideo"), "video-source.mp4") if supports_source_video else {}
+    payload["referenceImages"] = normalize_video_image_payloads(payload.get("referenceImages")) if supports_reference_images else []
+    if not supports_reference_images:
+        payload["referenceImages"] = []
+    else:
+        max_refs = max(0, int(model_info.get("max_reference_images", 0) or 0))
+        if max_refs:
+            payload["referenceImages"] = payload["referenceImages"][:max_refs]
+    payload["videoUpscaleMode"] = normalize_video_upscale_mode(payload.get("videoUpscaleMode", "factor"))
+    payload["videoUpscaleFactor"] = normalize_video_upscale_factor(payload.get("videoUpscaleFactor", 2))
+    payload["videoUpscaleTargetResolution"] = normalize_video_upscale_target_resolution(payload.get("videoUpscaleTargetResolution", payload.get("resolution", "1080p")))
+    payload["videoUpscaleNoiseScale"] = normalize_video_upscale_noise_scale(payload.get("videoUpscaleNoiseScale", 0.1))
+    payload["videoUpscaleOutputWriteMode"] = normalize_video_upscale_write_mode(payload.get("videoUpscaleOutputWriteMode", "balanced"))
+    payload["videoUpscaleOutputFormat"] = normalize_video_upscale_output_format(payload.get("videoUpscaleOutputFormat", "X264 (.mp4)"))
+    payload["videoUpscaleOutputQuality"] = normalize_video_upscale_output_quality(payload.get("videoUpscaleOutputQuality", "high"))
+    payload["videoUpscaleSeed"] = normalize_optional_int(payload.get("videoUpscaleSeed"))
+    payload.update(normalize_asset_metadata(payload, require_filename=False))
     return payload
 
 # ---------------------------------------------------------------------------
@@ -1443,6 +1975,9 @@ JPEG_QUALITY   = 90     # JPG output quality %
 SEEDREAM_MAX_INPUT_PIXELS = 36_000_000
 SEEDREAM_MAX_INPUT_BYTES = 10 * 1024 * 1024
 SEEDREAM_TARGET_INPUT_BYTES = int(SEEDREAM_MAX_INPUT_BYTES * 0.92)
+VIDEO_MAX_INPUT_PIXELS = 36_000_000
+VIDEO_MAX_INPUT_BYTES = 10 * 1024 * 1024
+VIDEO_TARGET_INPUT_BYTES = int(VIDEO_MAX_INPUT_BYTES * 0.92)
 REMOTE_REF_FETCH_MAX_BYTES = 30 * 1024 * 1024
 
 
@@ -1668,30 +2203,55 @@ def remove_reference_archive_index_entries(date_str: str, filename: str, index: 
         save_reference_archive_index(current_index)
 
 
+def meta_uses_reference_archive_entry(meta: dict, date_str: str, filename: str) -> bool:
+    if not isinstance(meta, dict):
+        return False
+    safe_date = str(date_str or "").strip()
+    safe_filename = os.path.basename(str(filename or "").strip())
+    if not safe_date or not safe_filename:
+        return False
+
+    archive_groups = []
+    ref_archive = meta.get("refArchive")
+    if isinstance(ref_archive, list):
+        archive_groups.append(ref_archive)
+    video_ref_archive = meta.get("videoRefArchive")
+    if isinstance(video_ref_archive, list):
+        archive_groups.append(video_ref_archive)
+    video_source_archive = meta.get("videoSourceArchive")
+    if isinstance(video_source_archive, dict):
+        archive_groups.append([video_source_archive])
+
+    for group in archive_groups:
+        for ref in group:
+            if not isinstance(ref, dict):
+                continue
+            ref_date = str(ref.get("date", "") or "").strip()
+            ref_name = os.path.basename(str(ref.get("filename", "") or "").strip())
+            if ref_date == safe_date and ref_name == safe_filename:
+                return True
+    return False
+
+
 def is_reference_archive_entry_still_used(date_str: str, filename: str) -> bool:
     safe_date = str(date_str or "").strip()
     safe_filename = os.path.basename(str(filename or "").strip())
-    if not safe_date or not safe_filename or not os.path.isdir(GENERATIONS_DIR):
+    if not safe_date or not safe_filename:
         return False
-    for gen_date in os.listdir(GENERATIONS_DIR):
-        day_path = os.path.join(GENERATIONS_DIR, gen_date)
-        if not os.path.isdir(day_path):
+    for root_dir in (GENERATIONS_DIR, VIDEOS_DIR):
+        if not os.path.isdir(root_dir):
             continue
-        for meta_file in glob.glob(os.path.join(day_path, "*.json")):
-            try:
-                with open(meta_file, encoding="utf-8") as fh:
-                    meta = json.load(fh)
-            except Exception:
+        for item_date in os.listdir(root_dir):
+            day_path = os.path.join(root_dir, item_date)
+            if not os.path.isdir(day_path):
                 continue
-            refs = meta.get("refArchive") or []
-            if not isinstance(refs, list):
-                continue
-            for ref in refs:
-                if not isinstance(ref, dict):
+            for meta_file in glob.glob(os.path.join(day_path, "*.json")):
+                try:
+                    with open(meta_file, encoding="utf-8") as fh:
+                        meta = json.load(fh)
+                except Exception:
                     continue
-                ref_date = str(ref.get("date", "") or "").strip()
-                ref_name = os.path.basename(str(ref.get("filename", "") or "").strip())
-                if ref_date == safe_date and ref_name == safe_filename:
+                if meta_uses_reference_archive_entry(meta, safe_date, safe_filename):
                     return True
     return False
 
@@ -2075,6 +2635,53 @@ def compress_seedream_ref_image(image_b64: str, mime_type: str) -> tuple[str, st
         working.save(buf, **save_kwargs)
         payload = buf.getvalue()
         if len(payload) <= SEEDREAM_TARGET_INPUT_BYTES:
+            return base64.b64encode(payload).decode("utf-8"), "image/jpeg"
+
+        if quality > 50:
+            quality -= 8
+            continue
+        if max_side > 1536:
+            max_side = int(max_side * 0.82)
+            quality = 82
+            continue
+        return base64.b64encode(payload).decode("utf-8"), "image/jpeg"
+
+
+def compress_video_input_image(image_b64: str, mime_type: str) -> tuple[str, str]:
+    """Clamp/compress video start/reference images to provider-safe pixel and byte limits."""
+    raw = base64.b64decode(image_b64)
+    img, info = open_base64_image(image_b64)
+    orig_width, orig_height = img.size
+    needs_pixel_clamp = (orig_width * orig_height) > VIDEO_MAX_INPUT_PIXELS
+    if not needs_pixel_clamp and len(raw) <= VIDEO_TARGET_INPUT_BYTES:
+        return image_b64, mime_type
+
+    img = flatten_image_for_jpeg(img)
+    clamped_width, clamped_height = constrain_image_to_max_pixels(orig_width, orig_height, VIDEO_MAX_INPUT_PIXELS)
+    if (clamped_width, clamped_height) != img.size:
+        img = img.resize((clamped_width, clamped_height), Image.LANCZOS)
+
+    width, height = img.size
+    quality = 88
+    max_side = max(width, height)
+
+    while True:
+        working = img.copy()
+        current_max = max(working.size)
+        if current_max > max_side:
+            scale = max_side / float(current_max)
+            new_w = max(256, int(working.size[0] * scale))
+            new_h = max(256, int(working.size[1] * scale))
+            working = working.resize((new_w, new_h), Image.LANCZOS)
+
+        buf = io.BytesIO()
+        save_kwargs = {"format": "JPEG", "quality": quality, "optimize": True}
+        icc_profile = info.get("icc_profile")
+        if icc_profile:
+            save_kwargs["icc_profile"] = icc_profile
+        working.save(buf, **save_kwargs)
+        payload = buf.getvalue()
+        if len(payload) <= VIDEO_TARGET_INPUT_BYTES:
             return base64.b64encode(payload).decode("utf-8"), "image/jpeg"
 
         if quality > 50:
@@ -2785,15 +3392,75 @@ def normalize_video_extension(mime_type: str, fallback_url: str = "") -> tuple[s
         return "webm", "video/webm"
     if mime in {"video/quicktime"}:
         return "mov", "video/quicktime"
+    if mime in {"image/gif", "video/gif"}:
+        return "gif", "image/gif"
     parsed_path = os.path.basename(urlparse(str(fallback_url or "")).path or "")
     ext = os.path.splitext(parsed_path)[1].lower()
-    if ext in {".mp4", ".webm", ".mov"}:
+    if ext in {".mp4", ".webm", ".mov", ".gif"}:
         return ext.lstrip("."), mime or {
             ".mp4": "video/mp4",
             ".webm": "video/webm",
             ".mov": "video/quicktime",
+            ".gif": "image/gif",
         }[ext]
     return "mp4", "video/mp4"
+
+
+def get_video_extension_for_payload(mime_type: str = "", filename: str = "") -> str:
+    _, normalized_mime = normalize_video_extension(mime_type, filename)
+    ext, _ = normalize_video_extension(normalized_mime, filename)
+    return ext or "mp4"
+
+
+def resolve_local_video_url_to_path(video_url: str) -> str:
+    parsed = urlparse(str(video_url or "").strip())
+    path = unquote(parsed.path or "")
+    if not path.startswith("/videos/"):
+        return ""
+    relpath = "/".join([part for part in path.split("/") if part][1:])
+    if not relpath:
+        return ""
+    try:
+        local_path = safe_asset_path(VIDEOS_DIR, relpath)
+    except Exception:
+        return ""
+    return local_path if os.path.exists(local_path) else ""
+
+
+def upload_video_payload_to_fal(client: fal_client.SyncClient, video_payload: dict) -> str:
+    if not isinstance(video_payload, dict):
+        raise ValueError("Choose or drop a source video for this model.")
+    data_b64 = str(video_payload.get("data") or "").strip()
+    direct_url = str(video_payload.get("url") or "").strip()
+    mime_type = str(video_payload.get("mime_type") or "video/mp4").strip() or "video/mp4"
+    name = os.path.basename(str(video_payload.get("name") or "video-source.mp4")) or "video-source.mp4"
+
+    if direct_url.startswith("http://") or direct_url.startswith("https://"):
+        return direct_url
+
+    local_path = resolve_local_video_url_to_path(direct_url)
+    if local_path:
+        return str(client.upload_file(local_path))
+
+    if not data_b64:
+        raise ValueError("Choose or drop a source video for this model.")
+
+    suffix = f".{get_video_extension_for_payload(mime_type, name)}"
+    temp_path = ""
+    try:
+        raw_bytes = base64.b64decode(data_b64, validate=False)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(raw_bytes)
+            temp_path = temp_file.name
+        return str(client.upload_file(temp_path))
+    except Exception as exc:
+        raise RuntimeError(f"Could not upload the selected source video: {exc}") from exc
+    finally:
+        if temp_path:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -2962,52 +3629,913 @@ ASSET_GALLERY_PAGE_CONFIG = {
         "empty_title": "No history images yet.",
         "empty_subtitle": "Generate images and they will appear here automatically.",
     },
+    "videos": {
+        "title": "Videos",
+        "subtitle": "Saved generated videos with the same filters, selection, and scaling flow as the Generator sidebar.",
+        "empty_title": "No videos yet.",
+        "empty_subtitle": "Generate videos and they will appear here automatically.",
+    },
 }
 
 VIDEO_ASPECT_RATIOS = ["16:9", "9:16", "1:1"]
 VIDEO_DURATION_OPTIONS = [5, 10]
+VIDEO_DURATION_EXTENDED_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+VIDEO_DURATION_OMNI_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10]
+VIDEO_DURATION_ALL_OPTIONS = sorted({*VIDEO_DURATION_OPTIONS, *VIDEO_DURATION_EXTENDED_OPTIONS})
 WAN_RESOLUTION_OPTIONS = ["720p", "1080p"]
+SEEDANCE_RESOLUTION_OPTIONS = ["480p", "720p", "1080p"]
 
-VIDEO_MODELS_INFO = {
-    KLING_DIRECT_TEXT_DEFAULT_ID: {
-        "provider": "kling",
-        "provider_label": "Kling",
-        "family": "kling",
-        "label": "Kling",
+KLING_DIRECT_MODEL_SPECS = [
+    {
+        "id": "kling-v1-std",
+        "native_model_name": "kling-v1",
+        "label": "Kling 1.0 Standard",
         "input_modes": ["text", "image"],
-        "durations": VIDEO_DURATION_OPTIONS,
-        "aspect_ratios": VIDEO_ASPECT_RATIOS,
-        "supports_negative_prompt": True,
-        "supports_safety_checker": False,
-        "supports_resolution": False,
-        "direct_image_limit_mb": 10,
+        "durations": [5, 10],
+        "sort_order": 10,
+        "kling_mode": "std",
+        "supports_start_image": True,
+        "start_image_required": True,
     },
-    FAL_KLING_T2V_ID: {
-        "provider": "fal",
-        "provider_label": "Fal",
-        "family": "kling",
-        "label": "Kling",
+    {
+        "id": "kling-v1-pro",
+        "native_model_name": "kling-v1",
+        "label": "Kling 1.0 Pro",
         "input_modes": ["text", "image"],
-        "durations": VIDEO_DURATION_OPTIONS,
-        "aspect_ratios": VIDEO_ASPECT_RATIOS,
-        "supports_negative_prompt": True,
-        "supports_safety_checker": False,
-        "supports_resolution": False,
+        "durations": [5, 10],
+        "sort_order": 11,
+        "kling_mode": "pro",
+        "supports_start_image": True,
+        "start_image_required": True,
     },
-    FAL_WAN_T2V_ID: {
+    {
+        "id": "kling-v1-5-std",
+        "native_model_name": "kling-v1-5",
+        "label": "Kling 1.5 Standard",
+        "input_modes": ["image"],
+        "durations": [5, 10],
+        "sort_order": 20,
+        "kling_mode": "std",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v1-5-pro",
+        "native_model_name": "kling-v1-5",
+        "label": "Kling 1.5 Pro",
+        "input_modes": ["image"],
+        "durations": [5, 10],
+        "sort_order": 21,
+        "kling_mode": "pro",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v1-6-std",
+        "native_model_name": "kling-v1-6",
+        "label": "Kling 1.6 Standard",
+        "input_modes": ["text", "image"],
+        "durations": [5, 10],
+        "sort_order": 30,
+        "kling_mode": "std",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v1-6-pro",
+        "native_model_name": "kling-v1-6",
+        "label": "Kling 1.6 Pro",
+        "input_modes": ["text", "image"],
+        "durations": [5, 10],
+        "sort_order": 31,
+        "kling_mode": "pro",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v1-6-reference-std",
+        "native_model_name": "kling-v1-6",
+        "label": "Kling 1.6 Reference Standard",
+        "input_modes": ["reference"],
+        "durations": [5, 10],
+        "sort_order": 32,
+        "kling_mode": "std",
+        "video_mode_kind": "reference_to_video",
+        "native_video_endpoint": "/v1/videos/multi-image2video",
+        "native_reference_item_key": "image",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "max_reference_images": 4,
+    },
+    {
+        "id": "kling-v1-6-reference-pro",
+        "native_model_name": "kling-v1-6",
+        "label": "Kling 1.6 Reference Pro",
+        "input_modes": ["reference"],
+        "durations": [5, 10],
+        "sort_order": 33,
+        "kling_mode": "pro",
+        "video_mode_kind": "reference_to_video",
+        "native_video_endpoint": "/v1/videos/multi-image2video",
+        "native_reference_item_key": "image",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "max_reference_images": 4,
+    },
+    {
+        "id": "kling-v2-master",
+        "native_model_name": "kling-v2-master",
+        "label": "Kling 2.0 Master",
+        "input_modes": ["text", "image"],
+        "durations": [5, 10],
+        "sort_order": 40,
+        "kling_mode": "pro",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v2-1-std",
+        "native_model_name": "kling-v2-1",
+        "label": "Kling 2.1 Standard",
+        "input_modes": ["image"],
+        "durations": [5, 10],
+        "sort_order": 50,
+        "kling_mode": "std",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v2-1-pro",
+        "native_model_name": "kling-v2-1",
+        "label": "Kling 2.1 Pro",
+        "input_modes": ["image"],
+        "durations": [5, 10],
+        "sort_order": 51,
+        "kling_mode": "pro",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v2-1-master",
+        "native_model_name": "kling-v2-1-master",
+        "label": "Kling 2.1 Master",
+        "input_modes": ["text", "image"],
+        "durations": [5, 10],
+        "sort_order": 52,
+        "kling_mode": "pro",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v2-5-turbo-std",
+        "native_model_name": "kling-v2-5-turbo",
+        "label": "Kling 2.5 Turbo Standard",
+        "input_modes": ["text", "image"],
+        "durations": [5, 10],
+        "sort_order": 60,
+        "kling_mode": "std",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v2-5-turbo-pro",
+        "native_model_name": "kling-v2-5-turbo",
+        "label": "Kling 2.5 Turbo Pro",
+        "input_modes": ["text", "image"],
+        "durations": [5, 10],
+        "sort_order": 61,
+        "kling_mode": "pro",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v2-6-std",
+        "native_model_name": "kling-v2-6",
+        "label": "Kling 2.6 Standard",
+        "input_modes": ["text", "image"],
+        "durations": [5, 10],
+        "sort_order": 70,
+        "kling_mode": "std",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v2-6-pro",
+        "native_model_name": "kling-v2-6",
+        "label": "Kling 2.6 Pro",
+        "input_modes": ["text", "image"],
+        "durations": [5, 10],
+        "sort_order": 71,
+        "kling_mode": "pro",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v3-std",
+        "native_model_name": "kling-v3",
+        "label": "Kling 3.0 Standard",
+        "input_modes": ["text", "image"],
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "sort_order": 80,
+        "kling_mode": "std",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-v3-pro",
+        "native_model_name": "kling-v3",
+        "label": "Kling 3.0 Pro",
+        "input_modes": ["text", "image"],
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "sort_order": 81,
+        "kling_mode": "pro",
+        "supports_start_image": True,
+        "start_image_required": True,
+    },
+    {
+        "id": "kling-video-o1-std",
+        "native_model_name": "kling-video-o1",
+        "label": "Kling O1 Standard",
+        "input_modes": ["text", "reference"],
+        "durations": VIDEO_DURATION_OMNI_OPTIONS,
+        "sort_order": 90,
+        "kling_mode": "std",
+        "video_mode_kind": "omni_video",
+        "native_video_endpoint": "/v1/videos/omni-video",
+        "native_reference_item_key": "image_url",
+        "supports_start_image": True,
+        "start_image_required": False,
+        "supports_reference_images": True,
+        "reference_images_required": False,
+        "max_reference_images": 7,
+    },
+    {
+        "id": "kling-video-o1-pro",
+        "native_model_name": "kling-video-o1",
+        "label": "Kling O1 Pro",
+        "input_modes": ["text", "reference"],
+        "durations": VIDEO_DURATION_OMNI_OPTIONS,
+        "sort_order": 91,
+        "kling_mode": "pro",
+        "video_mode_kind": "omni_video",
+        "native_video_endpoint": "/v1/videos/omni-video",
+        "native_reference_item_key": "image_url",
+        "supports_start_image": True,
+        "start_image_required": False,
+        "supports_reference_images": True,
+        "reference_images_required": False,
+        "max_reference_images": 7,
+    },
+    {
+        "id": "kling-v3-omni-std",
+        "native_model_name": "kling-v3-omni",
+        "label": "Kling 3.0 Omni Standard",
+        "input_modes": ["text", "reference"],
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "sort_order": 100,
+        "kling_mode": "std",
+        "video_mode_kind": "omni_video",
+        "native_video_endpoint": "/v1/videos/omni-video",
+        "native_reference_item_key": "image_url",
+        "supports_start_image": True,
+        "start_image_required": False,
+        "supports_reference_images": True,
+        "reference_images_required": False,
+        "max_reference_images": 7,
+    },
+    {
+        "id": "kling-v3-omni-pro",
+        "native_model_name": "kling-v3-omni",
+        "label": "Kling 3.0 Omni Pro",
+        "input_modes": ["text", "reference"],
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "sort_order": 101,
+        "kling_mode": "pro",
+        "video_mode_kind": "omni_video",
+        "native_video_endpoint": "/v1/videos/omni-video",
+        "native_reference_item_key": "image_url",
+        "supports_start_image": True,
+        "start_image_required": False,
+        "supports_reference_images": True,
+        "reference_images_required": False,
+        "max_reference_images": 7,
+    },
+]
+
+FAL_KLING_MODEL_SPECS = [
+    {
+        "id": FAL_KLING_V1_STD_T2V_ID,
+        "label": "Kling 1.0 Standard",
+        "input_modes": ["text"],
+        "durations": [5, 10],
+        "sort_order": 80,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_V1_STD_I2V_ID,
+        "label": "Kling 1.0 Standard",
+        "input_modes": ["image"],
+        "durations": [5, 10],
+        "sort_order": 81,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_V15_PRO_T2V_ID,
+        "label": "Kling 1.5 Pro",
+        "durations": [5, 10],
+        "input_modes": ["text"],
+        "sort_order": 90,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_V15_PRO_I2V_ID,
+        "label": "Kling 1.5 Pro",
+        "durations": [5, 10],
+        "input_modes": ["image"],
+        "sort_order": 91,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_V16_STD_T2V_ID,
+        "label": "Kling 1.6 Standard",
+        "durations": [5, 10],
+        "input_modes": ["text"],
+        "sort_order": 100,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_V16_STD_I2V_ID,
+        "label": "Kling 1.6 Standard",
+        "durations": [5, 10],
+        "input_modes": ["image"],
+        "sort_order": 101,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_V16_STD_ELEMENTS_ID,
+        "label": "Kling 1.6 Elements Standard",
+        "durations": [5, 10],
+        "input_modes": ["reference"],
+        "sort_order": 102,
+        "video_mode_kind": "reference_to_video",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "reference_images_field": "input_image_urls",
+        "max_reference_images": 4,
+    },
+    {
+        "id": FAL_KLING_V16_PRO_T2V_ID,
+        "label": "Kling 1.6 Pro",
+        "durations": [5, 10],
+        "input_modes": ["text"],
+        "sort_order": 110,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_V16_PRO_I2V_ID,
+        "label": "Kling 1.6 Pro",
+        "durations": [5, 10],
+        "input_modes": ["image"],
+        "sort_order": 111,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_V16_PRO_ELEMENTS_ID,
+        "label": "Kling 1.6 Elements Pro",
+        "durations": [5, 10],
+        "input_modes": ["reference"],
+        "sort_order": 112,
+        "video_mode_kind": "reference_to_video",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "reference_images_field": "input_image_urls",
+        "max_reference_images": 4,
+    },
+    {
+        "id": FAL_KLING_V2_MASTER_T2V_ID,
+        "label": "Kling 2.0 Master",
+        "durations": [5, 10],
+        "input_modes": ["text"],
+        "sort_order": 115,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_V2_MASTER_I2V_ID,
+        "label": "Kling 2.0 Master",
+        "durations": [5, 10],
+        "input_modes": ["image"],
+        "sort_order": 116,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_V21_STD_I2V_ID,
+        "label": "Kling 2.1 Standard",
+        "durations": [5, 10],
+        "input_modes": ["image"],
+        "sort_order": 118,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_V21_PRO_I2V_ID,
+        "label": "Kling 2.1 Pro",
+        "durations": [5, 10],
+        "input_modes": ["image"],
+        "sort_order": 119,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_V21_MASTER_T2V_ID,
+        "label": "Kling 2.1 Master",
+        "durations": [5, 10],
+        "input_modes": ["text"],
+        "sort_order": 120,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_V21_MASTER_I2V_ID,
+        "label": "Kling 2.1 Master",
+        "durations": [5, 10],
+        "input_modes": ["image"],
+        "sort_order": 121,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_V25_TURBO_PRO_T2V_ID,
+        "label": "Kling 2.5 Turbo Pro",
+        "durations": [5, 10],
+        "input_modes": ["text"],
+        "sort_order": 125,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_V25_TURBO_STD_I2V_ID,
+        "label": "Kling 2.5 Turbo Standard",
+        "durations": [5, 10],
+        "input_modes": ["image"],
+        "sort_order": 126,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_V25_TURBO_PRO_I2V_ID,
+        "label": "Kling 2.5 Turbo Pro",
+        "durations": [5, 10],
+        "input_modes": ["image"],
+        "sort_order": 127,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_V26_PRO_T2V_ID,
+        "label": "Kling 2.6 Pro",
+        "durations": [5, 10],
+        "input_modes": ["text"],
+        "sort_order": 130,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_V26_PRO_I2V_ID,
+        "label": "Kling 2.6 Pro",
+        "durations": [5, 10],
+        "input_modes": ["image"],
+        "sort_order": 131,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "start_image_url",
+    },
+    {
+        "id": FAL_KLING_V30_STD_T2V_ID,
+        "label": "Kling 3.0 Standard",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["text"],
+        "sort_order": 140,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_V30_STD_I2V_ID,
+        "label": "Kling 3.0 Standard",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["image"],
+        "sort_order": 141,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "start_image_url",
+    },
+    {
+        "id": FAL_KLING_V30_PRO_T2V_ID,
+        "label": "Kling 3.0 Pro",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["text"],
+        "sort_order": 150,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_V30_PRO_I2V_ID,
+        "label": "Kling 3.0 Pro",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["image"],
+        "sort_order": 151,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "start_image_url",
+    },
+    {
+        "id": FAL_KLING_O1_STD_I2V_ID,
+        "label": "Kling O1 Standard",
+        "durations": [3, 4, 5, 6, 7, 8, 9, 10],
+        "input_modes": ["image"],
+        "sort_order": 158,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "start_image_url",
+    },
+    {
+        "id": FAL_KLING_O1_REF_I2V_ID,
+        "label": "Kling O1 Standard Reference",
+        "durations": [3, 4, 5, 6, 7, 8, 9, 10],
+        "input_modes": ["reference"],
+        "sort_order": 160,
+        "video_mode_kind": "reference_to_video",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "reference_images_field": "image_urls",
+        "max_reference_images": 7,
+    },
+    {
+        "id": FAL_KLING_O1_PRO_I2V_ID,
+        "label": "Kling O1 Pro",
+        "durations": [3, 4, 5, 6, 7, 8, 9, 10],
+        "input_modes": ["image"],
+        "sort_order": 165,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "start_image_url",
+    },
+    {
+        "id": FAL_KLING_O1_PRO_REF_I2V_ID,
+        "label": "Kling O1 Pro Reference",
+        "durations": [3, 4, 5, 6, 7, 8, 9, 10],
+        "input_modes": ["reference"],
+        "sort_order": 166,
+        "video_mode_kind": "reference_to_video",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "reference_images_field": "image_urls",
+        "max_reference_images": 7,
+    },
+    {
+        "id": FAL_KLING_O3_STD_T2V_ID,
+        "label": "Kling O3 Standard",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["text"],
+        "sort_order": 170,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_O3_STD_I2V_ID,
+        "label": "Kling O3 Standard",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["image"],
+        "sort_order": 171,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_O3_REF_I2V_ID,
+        "label": "Kling O3 Reference",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["reference"],
+        "sort_order": 172,
+        "video_mode_kind": "reference_to_video",
+        "supports_start_image": True,
+        "start_image_required": False,
+        "start_image_field": "start_image_url",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "reference_images_field": "image_urls",
+        "max_reference_images": 4,
+    },
+    {
+        "id": FAL_KLING_O3_PRO_T2V_ID,
+        "label": "Kling O3 Pro",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["text"],
+        "sort_order": 175,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_KLING_O3_PRO_I2V_ID,
+        "label": "Kling O3 Pro",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["image"],
+        "sort_order": 176,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_KLING_O3_PRO_REF_I2V_ID,
+        "label": "Kling O3 Pro Reference",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["reference"],
+        "sort_order": 177,
+        "video_mode_kind": "reference_to_video",
+        "supports_start_image": True,
+        "start_image_required": False,
+        "start_image_field": "start_image_url",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "reference_images_field": "image_urls",
+        "max_reference_images": 4,
+    },
+]
+
+FAL_SEEDANCE_MODEL_SPECS = [
+    {
+        "id": FAL_SEEDANCE_V1_LITE_T2V_ID,
+        "label": "Seedance 1.0 Lite",
+        "input_modes": ["text"],
+        "durations": [5, 10],
+        "resolutions": SEEDANCE_RESOLUTION_OPTIONS,
+        "sort_order": 220,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_SEEDANCE_V1_LITE_I2V_ID,
+        "label": "Seedance 1.0 Lite",
+        "input_modes": ["image"],
+        "durations": [5, 10],
+        "resolutions": SEEDANCE_RESOLUTION_OPTIONS,
+        "sort_order": 221,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_SEEDANCE_V1_LITE_REF_ID,
+        "label": "Seedance 1.0 Lite Reference",
+        "input_modes": ["reference"],
+        "durations": [5, 10],
+        "resolutions": SEEDANCE_RESOLUTION_OPTIONS,
+        "sort_order": 222,
+        "video_mode_kind": "reference_to_video",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "reference_images_field": "reference_image_urls",
+        "max_reference_images": 4,
+    },
+    {
+        "id": FAL_SEEDANCE_V1_PRO_T2V_ID,
+        "label": "Seedance 1.0 Pro",
+        "input_modes": ["text"],
+        "durations": [5, 10],
+        "resolutions": SEEDANCE_RESOLUTION_OPTIONS,
+        "sort_order": 225,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_SEEDANCE_V1_PRO_I2V_ID,
+        "label": "Seedance 1.0 Pro",
+        "input_modes": ["image"],
+        "durations": [5, 10],
+        "resolutions": SEEDANCE_RESOLUTION_OPTIONS,
+        "sort_order": 226,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_SEEDANCE_V1_PRO_FAST_T2V_ID,
+        "label": "Seedance 1.0 Pro Fast",
+        "input_modes": ["text"],
+        "durations": [5, 10],
+        "resolutions": SEEDANCE_RESOLUTION_OPTIONS,
+        "sort_order": 230,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_SEEDANCE_V1_PRO_FAST_I2V_ID,
+        "label": "Seedance 1.0 Pro Fast",
+        "input_modes": ["image"],
+        "durations": [5, 10],
+        "resolutions": SEEDANCE_RESOLUTION_OPTIONS,
+        "sort_order": 231,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+    {
+        "id": FAL_SEEDANCE_V15_PRO_T2V_ID,
+        "label": "Seedance 1.5 Pro",
+        "input_modes": ["text"],
+        "durations": [5, 10],
+        "resolutions": SEEDANCE_RESOLUTION_OPTIONS,
+        "sort_order": 240,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_SEEDANCE_V15_PRO_I2V_ID,
+        "label": "Seedance 1.5 Pro",
+        "input_modes": ["image"],
+        "durations": [5, 10],
+        "resolutions": SEEDANCE_RESOLUTION_OPTIONS,
+        "sort_order": 241,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+    },
+]
+
+
+def _build_video_models_info() -> dict:
+    info: dict[str, dict] = {}
+    for spec in KLING_DIRECT_MODEL_SPECS:
+        info[spec["id"]] = {
+            "provider": "kling",
+            "provider_label": "Kling",
+            "family": "kling",
+            "label": spec["label"],
+            "input_modes": list(spec.get("input_modes", ["text"])),
+            "durations": list(spec.get("durations", VIDEO_DURATION_OPTIONS)),
+            "aspect_ratios": list(spec.get("aspect_ratios", VIDEO_ASPECT_RATIOS)),
+            "supports_negative_prompt": True,
+            "supports_safety_checker": False,
+            "supports_resolution": False,
+            "supports_start_image": bool(spec.get("supports_start_image", False)),
+            "start_image_required": bool(spec.get("start_image_required", False)),
+            "supports_reference_images": bool(spec.get("supports_reference_images", False)),
+            "reference_images_required": bool(spec.get("reference_images_required", False)),
+            "max_reference_images": int(spec.get("max_reference_images", 0) or 0),
+            "direct_image_limit_mb": 10,
+            "sort_order": int(spec.get("sort_order", 999)),
+            "video_mode_kind": spec.get("video_mode_kind", "hybrid"),
+            "native_model_name": str(spec.get("native_model_name") or spec["id"]),
+            "native_video_endpoint": str(spec.get("native_video_endpoint") or ""),
+            "kling_mode": str(spec.get("kling_mode") or "pro"),
+            "native_reference_item_key": str(spec.get("native_reference_item_key") or "image"),
+        }
+
+    for spec in FAL_KLING_MODEL_SPECS:
+        info[spec["id"]] = {
+            "provider": "fal",
+            "provider_label": "Fal",
+            "family": "kling",
+            "label": spec["label"],
+            "input_modes": list(spec.get("input_modes", ["text"])),
+            "durations": list(spec.get("durations", VIDEO_DURATION_OPTIONS)),
+            "aspect_ratios": list(spec.get("aspect_ratios", VIDEO_ASPECT_RATIOS)),
+            "supports_negative_prompt": True,
+            "supports_safety_checker": False,
+            "supports_resolution": False,
+            "supports_start_image": bool(spec.get("supports_start_image", False)),
+            "start_image_required": bool(spec.get("start_image_required", False)),
+            "start_image_field": spec.get("start_image_field", "image_url"),
+            "supports_reference_images": bool(spec.get("supports_reference_images", False)),
+            "reference_images_required": bool(spec.get("reference_images_required", False)),
+            "reference_images_field": spec.get("reference_images_field", "image_urls"),
+            "max_reference_images": int(spec.get("max_reference_images", 0) or 0),
+            "sort_order": int(spec.get("sort_order", 999)),
+            "video_mode_kind": spec.get("video_mode_kind", "text_to_video"),
+        }
+
+    for spec in FAL_SEEDANCE_MODEL_SPECS:
+        info[spec["id"]] = {
+            "provider": "fal",
+            "provider_label": "Fal",
+            "family": "seedance",
+            "label": spec["label"],
+            "input_modes": list(spec.get("input_modes", ["text"])),
+            "durations": list(spec.get("durations", VIDEO_DURATION_OPTIONS)),
+            "aspect_ratios": list(spec.get("aspect_ratios", VIDEO_ASPECT_RATIOS)),
+            "supports_negative_prompt": True,
+            "supports_safety_checker": False,
+            "supports_resolution": True,
+            "resolutions": list(spec.get("resolutions", SEEDANCE_RESOLUTION_OPTIONS)),
+            "supports_start_image": bool(spec.get("supports_start_image", False)),
+            "start_image_required": bool(spec.get("start_image_required", False)),
+            "start_image_field": spec.get("start_image_field", "image_url"),
+            "supports_reference_images": bool(spec.get("supports_reference_images", False)),
+            "reference_images_required": bool(spec.get("reference_images_required", False)),
+            "reference_images_field": spec.get("reference_images_field", "reference_image_urls"),
+            "max_reference_images": int(spec.get("max_reference_images", 0) or 0),
+            "sort_order": int(spec.get("sort_order", 999)),
+            "video_mode_kind": spec.get("video_mode_kind", "text_to_video"),
+        }
+
+    info[FAL_WAN_T2V_ID] = {
         "provider": "fal",
         "provider_label": "Fal",
         "family": "wan-video",
-        "label": "Wan Video",
-        "input_modes": ["text", "image"],
+        "label": "Wan Video 2.2",
+        "input_modes": ["text"],
         "durations": VIDEO_DURATION_OPTIONS,
         "aspect_ratios": VIDEO_ASPECT_RATIOS,
         "supports_negative_prompt": True,
         "supports_safety_checker": True,
         "supports_resolution": True,
         "resolutions": WAN_RESOLUTION_OPTIONS,
-    },
-}
+        "supports_start_image": False,
+        "start_image_required": False,
+        "supports_reference_images": False,
+        "reference_images_required": False,
+        "max_reference_images": 0,
+        "sort_order": 210,
+        "video_mode_kind": "text_to_video",
+    }
+    info[FAL_WAN_I2V_ID] = {
+        "provider": "fal",
+        "provider_label": "Fal",
+        "family": "wan-video",
+        "label": "Wan Video 2.2",
+        "input_modes": ["image"],
+        "durations": VIDEO_DURATION_OPTIONS,
+        "aspect_ratios": VIDEO_ASPECT_RATIOS,
+        "supports_negative_prompt": True,
+        "supports_safety_checker": True,
+        "supports_resolution": True,
+        "resolutions": WAN_RESOLUTION_OPTIONS,
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+        "supports_reference_images": False,
+        "reference_images_required": False,
+        "max_reference_images": 0,
+        "sort_order": 211,
+        "video_mode_kind": "image_to_video",
+    }
+    info[FAL_SEEDVR_VIDEO_ID] = {
+        "provider": "fal",
+        "provider_label": "Fal",
+        "family": "seedvr-video",
+        "label": "SeedVR2 Video",
+        "input_modes": ["video"],
+        "durations": [],
+        "aspect_ratios": [],
+        "supports_prompt": False,
+        "supports_negative_prompt": False,
+        "supports_safety_checker": False,
+        "supports_resolution": False,
+        "supports_duration": False,
+        "supports_aspect_ratio": False,
+        "supports_start_image": False,
+        "start_image_required": False,
+        "supports_source_video": True,
+        "source_video_required": True,
+        "supports_reference_images": False,
+        "reference_images_required": False,
+        "max_reference_images": 0,
+        "supports_seedvr_video_settings": True,
+        "video_target_resolutions": ["720p", "1080p", "1440p", "2160p"],
+        "video_output_formats": ["X264 (.mp4)", "VP9 (.webm)", "PRORES4444 (.mov)", "GIF (.gif)"],
+        "video_output_qualities": ["low", "medium", "high", "maximum"],
+        "video_output_write_modes": ["fast", "balanced", "small"],
+        "sort_order": 310,
+        "video_mode_kind": "video_upscale",
+    }
+    return info
+
+
+VIDEO_MODELS_INFO = _build_video_models_info()
 
 VIDEO_MODEL_FAMILIES = {
     "kling": {
@@ -3016,7 +4544,15 @@ VIDEO_MODEL_FAMILIES = {
         "provider_order": ["kling", "fal"],
         "providers": {
             "kling": KLING_DIRECT_TEXT_DEFAULT_ID,
-            "fal": FAL_KLING_T2V_ID,
+            "fal": FAL_KLING_V30_PRO_T2V_ID,
+        },
+    },
+    "seedance": {
+        "label": "Seedance",
+        "default_provider": "fal",
+        "provider_order": ["fal"],
+        "providers": {
+            "fal": FAL_SEEDANCE_V15_PRO_T2V_ID,
         },
     },
     "wan-video": {
@@ -3027,29 +4563,45 @@ VIDEO_MODEL_FAMILIES = {
             "fal": FAL_WAN_T2V_ID,
         },
     },
+    "seedvr-video": {
+        "label": "SeedVR2",
+        "default_provider": "fal",
+        "provider_order": ["fal"],
+        "providers": {
+            "fal": FAL_SEEDVR_VIDEO_ID,
+        },
+    },
 }
 
+
+def get_video_model_candidates(family_key: str = "", provider_key: str = "", input_mode: str = "") -> list[tuple[str, dict]]:
+    mode_key = str(input_mode or "").strip().lower()
+    matches = []
+    for model_id, model_info in VIDEO_MODELS_INFO.items():
+        if family_key and model_info.get("family") != family_key:
+            continue
+        if provider_key and model_info.get("provider") != provider_key:
+            continue
+        supported_modes = [str(mode).strip().lower() for mode in model_info.get("input_modes", [])]
+        if mode_key and supported_modes and mode_key not in supported_modes:
+            continue
+        matches.append((model_id, model_info))
+    matches.sort(key=lambda item: (int(item[1].get("sort_order", 999)), str(item[1].get("label") or item[0]).lower()))
+    return matches
+
+
 VIDEO_PRICING = {
-    KLING_DIRECT_TEXT_DEFAULT_ID: {
-        "5": 0.0,
-        "10": 0.0,
-    },
-    FAL_KLING_T2V_ID: {
-        "5": 0.0,
-        "10": 0.0,
-    },
-    FAL_WAN_T2V_ID: {
-        "5": 0.0,
-        "10": 0.0,
-    },
+    model_id: {str(duration): 0.0 for duration in VIDEO_DURATION_ALL_OPTIONS}
+    for model_id in VIDEO_MODELS_INFO
 }
 
 
 def build_asset_page_context(kind: str) -> dict:
+    cfg = ASSET_GALLERY_PAGE_CONFIG.get(kind, ASSET_GALLERY_PAGE_CONFIG["history"])
     return {
         "asset_kind": kind,
-        "page_title": "Images",
-        "page_subtitle": "Browse History, References, and Loved images in one place.",
+        "page_title": "Assets",
+        "page_subtitle": cfg.get("subtitle", "Browse history, references, loved images, and videos in one place."),
         "asset_gallery_config": ASSET_GALLERY_PAGE_CONFIG,
         "initial_asset_items": collect_asset_records(kind),
         "user": session["user"],
@@ -3083,11 +4635,63 @@ def history_gallery():
     return redirect(url_for("images_gallery", kind="history"))
 
 
-@app.route("/loved/<date_str>/<filename>")
+def collect_video_asset_records(max_load: int | None = None) -> list[dict]:
+    limit = max_load if max_load is not None else None
+    result = []
+    if not os.path.isdir(VIDEOS_DIR):
+        return result
+
+    for meta_file in list_meta_files_recursive(VIDEOS_DIR):
+        if limit is not None and len(result) >= limit:
+            break
+        try:
+            with open(meta_file, "r", encoding="utf-8") as fh:
+                meta = json.load(fh)
+            filename = str(meta.get("filename") or "").strip()
+            if not filename:
+                continue
+            relpath = str(meta.get("assetRelpath") or os.path.relpath(os.path.join(os.path.dirname(meta_file), filename), VIDEOS_DIR)).replace("\\", "/")
+            video_path = os.path.join(VIDEOS_DIR, relpath.replace("/", os.sep))
+            if not os.path.exists(video_path):
+                continue
+            generated_at = str(meta.get("generated_at") or "")
+            date_key = derive_asset_date_key(relpath, generated_at)
+            meta = dict(meta)
+            meta["assetRelpath"] = relpath
+            result.append({
+                "id": f"videos:{relpath}".replace("/", ":"),
+                "kind": "videos",
+                "url": build_asset_public_url("videos", relpath),
+                "download_url": build_asset_public_url("videos", relpath),
+                "date": date_key,
+                "filename": filename,
+                "relpath": relpath,
+                "generated_at": generated_at,
+                "sortTimestamp": generated_at or f"{date_key}T00:00:00",
+                "prompt_preview": str(meta.get("prompt") or meta.get("text") or filename)[:120],
+                "text": str(meta.get("text") or meta.get("prompt") or ""),
+                "mime_type": str(meta.get("mime_type") or "video/mp4"),
+                "poster_url": str(meta.get("poster_url") or ""),
+                "delete_url": f"/api/videos/{relpath}",
+                "folder_open_payload": {
+                    "kind": "videos",
+                    "date": date_key,
+                    "filename": filename,
+                    "relpath": relpath,
+                },
+                "params": meta,
+            })
+        except Exception:
+            continue
+    return result
+
+
+@app.route("/loved/<path:asset_relpath>")
 @login_required
-def serve_loved(date_str, filename):
-    day_path = os.path.join(LOVED_DIR, date_str)
-    return send_from_directory(day_path, filename)
+def serve_loved(asset_relpath):
+    safe_relpath = resolve_asset_relpath(relpath=asset_relpath)
+    local_path = safe_asset_path(LOVED_DIR, safe_relpath)
+    return send_from_directory(os.path.dirname(local_path), os.path.basename(local_path))
 
 
 @app.route("/reference-archive/<date_str>/<filename>")
@@ -3111,18 +4715,20 @@ def serve_reference_render(date_str, filename):
     return send_from_directory(day_path, filename)
 
 
-@app.route("/generations/<date_str>/<filename>")
+@app.route("/generations/<path:asset_relpath>")
 @login_required
-def serve_generation(date_str, filename):
-    day_path = os.path.join(GENERATIONS_DIR, date_str)
-    return send_from_directory(day_path, filename)
+def serve_generation(asset_relpath):
+    safe_relpath = resolve_asset_relpath(relpath=asset_relpath)
+    local_path = safe_asset_path(GENERATIONS_DIR, safe_relpath)
+    return send_from_directory(os.path.dirname(local_path), os.path.basename(local_path))
 
 
-@app.route("/videos/<date_str>/<filename>")
+@app.route("/videos/<path:asset_relpath>")
 @login_required
-def serve_video(date_str, filename):
-    day_path = os.path.join(VIDEOS_DIR, date_str)
-    return send_from_directory(day_path, filename)
+def serve_video(asset_relpath):
+    safe_relpath = resolve_asset_relpath(relpath=asset_relpath)
+    local_path = safe_asset_path(VIDEOS_DIR, safe_relpath)
+    return send_from_directory(os.path.dirname(local_path), os.path.basename(local_path))
 
 
 @app.route("/pose-outputs/<date_str>/<filename>")
@@ -3141,13 +4747,13 @@ def open_file_in_folder(img_path: str):
         subprocess.Popen(["xdg-open", os.path.dirname(img_path)])
 
 
-def resolve_asset_image_path(kind: str, date_str: str, filename: str) -> tuple[str, str]:
+def resolve_asset_image_path(kind: str, date_str: str = "", filename: str = "", relpath: str = "") -> tuple[str, str, str]:
     kind = str(kind or "").strip()
-    filename = os.path.basename(str(filename or "").strip())
-    date_str = str(date_str or "").strip()
     mapping = {
         "history": GENERATIONS_DIR,
         "generations": GENERATIONS_DIR,
+        "videos": VIDEOS_DIR,
+        "video": VIDEOS_DIR,
         "loved": LOVED_DIR,
         "references": REFERENCE_ARCHIVE_DIR,
         "reference_archive": REFERENCE_ARCHIVE_DIR,
@@ -3155,15 +4761,9 @@ def resolve_asset_image_path(kind: str, date_str: str, filename: str) -> tuple[s
     root_dir = mapping.get(kind)
     if not root_dir:
         raise ValueError("Invalid asset kind.")
-    if not date_str or not filename:
-        raise ValueError("Missing asset file.")
-    safe_root = os.path.realpath(root_dir)
-    img_path = os.path.realpath(os.path.join(root_dir, date_str, filename))
-    if not img_path.startswith(safe_root + os.sep):
-        raise ValueError("Invalid path.")
-    if not os.path.exists(img_path):
-        raise FileNotFoundError("File not found.")
-    return safe_root, img_path
+    safe_relpath = resolve_asset_relpath(relpath=relpath, date_str=date_str, filename=filename)
+    img_path = safe_asset_path(root_dir, safe_relpath)
+    return os.path.realpath(root_dir), img_path, safe_relpath
 
 
 @app.route("/api/generations/open-folder", methods=["POST"])
@@ -3172,16 +4772,17 @@ def api_open_generation_folder():
     body = request.get_json(silent=True) or {}
     date_str = str(body.get("date") or "").strip()
     filename = os.path.basename(str(body.get("filename") or "").strip())
+    relpath = str(body.get("relpath") or "").strip()
 
     try:
-        resolve_asset_image_path("history", date_str, filename)
+        resolve_asset_image_path("history", date_str, filename, relpath)
     except FileNotFoundError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 404
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
 
     try:
-        _, img_path = resolve_asset_image_path("history", date_str, filename)
+        _, img_path, _ = resolve_asset_image_path("history", date_str, filename, relpath)
         open_file_in_folder(img_path)
         return jsonify({"ok": True})
     except Exception as exc:
@@ -3195,9 +4796,10 @@ def api_open_asset_folder():
     kind = str(body.get("kind") or "").strip()
     date_str = str(body.get("date") or "").strip()
     filename = os.path.basename(str(body.get("filename") or "").strip())
+    relpath = str(body.get("relpath") or "").strip()
 
     try:
-        _, img_path = resolve_asset_image_path(kind, date_str, filename)
+        _, img_path, _ = resolve_asset_image_path(kind, date_str, filename, relpath)
         open_file_in_folder(img_path)
         return jsonify({"ok": True})
     except FileNotFoundError as exc:
@@ -3211,33 +4813,33 @@ def api_open_asset_folder():
 # ---------------------------------------------------------------------------
 # API â€” Delete a loved image (image + JSON sidecar, never touches generations/)
 # ---------------------------------------------------------------------------
-@app.route("/api/loved/<date_str>/<filename>", methods=["DELETE"])
+@app.route("/api/loved/<path:asset_relpath>", methods=["DELETE"])
 @login_required
-def api_delete_loved(date_str, filename):
-    safe_root = os.path.realpath(LOVED_DIR)
-    img_path  = os.path.realpath(os.path.join(LOVED_DIR, date_str, filename))
-
-    # Security: must stay inside loved/
-    if not img_path.startswith(safe_root + os.sep):
-        return jsonify({"ok": False, "error": "Invalid path"}), 400
-
-    # Only image extensions allowed
-    if os.path.splitext(filename)[1].lower() not in (".jpeg", ".jpg", ".png", ".webp"):
-        return jsonify({"ok": False, "error": "Invalid file type"}), 400
-
-    if not os.path.exists(img_path):
-        return jsonify({"ok": False, "error": "File not found"}), 404
-
+def api_delete_loved(asset_relpath):
     try:
+        _, img_path, safe_relpath = resolve_asset_image_path("loved", relpath=asset_relpath)
+        filename = os.path.basename(img_path)
+        if os.path.splitext(filename)[1].lower() not in (".jpeg", ".jpg", ".png", ".webp"):
+            return jsonify({"ok": False, "error": "Invalid file type"}), 400
+        if not os.path.exists(img_path):
+            return jsonify({"ok": False, "error": "File not found"}), 404
         os.remove(img_path)
         json_path = os.path.splitext(img_path)[0] + ".json"
         if os.path.exists(json_path):
             os.remove(json_path)
-        # Remove day dir if now empty
-        day_dir = os.path.dirname(img_path)
-        if os.path.isdir(day_dir) and not os.listdir(day_dir):
-            os.rmdir(day_dir)
-        return jsonify({"ok": True})
+        current_dir = os.path.dirname(img_path)
+        safe_root = os.path.realpath(LOVED_DIR)
+        while current_dir.startswith(safe_root + os.sep) and current_dir != safe_root:
+            if os.path.isdir(current_dir) and not os.listdir(current_dir):
+                os.rmdir(current_dir)
+                current_dir = os.path.dirname(current_dir)
+                continue
+            break
+        return jsonify({"ok": True, "relpath": safe_relpath})
+    except FileNotFoundError:
+        return jsonify({"ok": False, "error": "File not found"}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
@@ -3369,6 +4971,18 @@ def build_common_asset_params(meta: dict | None, *, default_model: str = "", def
     model_info = MODELS_INFO.get(model_id, {})
     provider = str(meta.get("provider", default_provider or model_info.get("provider", "")) or default_provider or model_info.get("provider", ""))
     provider_label = str(meta.get("provider_label", model_info.get("provider_label", PROVIDER_LABELS.get(provider, provider.title() if provider else ""))) or "")
+    asset_meta = normalize_asset_metadata(meta, require_filename=False)
+    asset_relpath = str(meta.get("assetRelpath", "") or "").strip()
+    upscale_source_filename = str(meta.get("upscaleSourceFilename", "") or "").strip()
+    upscale_source_date = str(meta.get("upscaleSourceDate", "") or "").strip()
+    upscale_source_relpath = str(meta.get("upscaleSourceRelpath", "") or "").strip()
+    if not upscale_source_relpath and upscale_source_filename:
+        preferred_dir = os.path.dirname(asset_relpath).replace("\\", "/").strip("/")
+        upscale_source_relpath = find_generation_relpath_by_filename(
+            upscale_source_filename,
+            preferred_dir=preferred_dir,
+            preferred_date=upscale_source_date,
+        )
     return {
         "model": model_id,
         "modelFamily": meta.get("modelFamily", model_info.get("family", model_id)),
@@ -3403,10 +5017,17 @@ def build_common_asset_params(meta: dict | None, *, default_model: str = "", def
         "upscaleTargetAnchor": meta.get("upscaleTargetAnchor", ""),
         "upscaleDisplaySize": meta.get("upscaleDisplaySize", ""),
         "upscaleSourceDate": meta.get("upscaleSourceDate", ""),
-        "upscaleSourceFilename": meta.get("upscaleSourceFilename", ""),
+        "upscaleSourceFilename": upscale_source_filename,
+        "upscaleSourceRelpath": upscale_source_relpath,
+        "upscaleSourceUrl": build_asset_public_url("generations", upscale_source_relpath) if upscale_source_relpath else "",
         "upscaleOutputWidth": meta.get("upscaleOutputWidth", 0),
         "upscaleOutputHeight": meta.get("upscaleOutputHeight", 0),
         "mime_type": meta.get("mime_type", "image/png"),
+        "assetClient": asset_meta["assetClient"],
+        "assetProject": asset_meta["assetProject"],
+        "assetShot": asset_meta["assetShot"],
+        "assetFilename": asset_meta["assetFilename"],
+        "assetRelpath": asset_relpath,
     }
 
 
@@ -3428,43 +5049,42 @@ def collect_generation_records(max_load: int | None = None) -> list[dict]:
     if not os.path.isdir(GENERATIONS_DIR):
         return result
 
-    date_dirs = sorted(
-        [d for d in os.listdir(GENERATIONS_DIR) if os.path.isdir(os.path.join(GENERATIONS_DIR, d))],
-        reverse=True,
-    )
-    for date_str in date_dirs:
+    for mf in list_meta_files_recursive(GENERATIONS_DIR):
         if max_load is not None and len(result) >= max_load:
             break
-        day_path = os.path.join(GENERATIONS_DIR, date_str)
-        meta_files = sorted(glob.glob(os.path.join(day_path, "*.json")), reverse=True)
-        for mf in meta_files:
-            if max_load is not None and len(result) >= max_load:
-                break
-            try:
-                with open(mf, encoding="utf-8") as f:
-                    meta = json.load(f)
-                img_path, filename = find_existing_image_for_meta_base(mf[:-5])
-                if not img_path or not filename:
-                    continue
-                params = build_common_asset_params(meta)
-                generated_at = str(meta.get("generated_at", "") or "")
-                result.append({
-                    "id": f"history:{date_str}:{filename}",
-                    "kind": "history",
-                    "url": f"/generations/{date_str}/{filename}",
-                    "download_url": f"/generations/{date_str}/{filename}",
-                    "date": date_str,
-                    "filename": filename,
-                    "generated_at": generated_at,
-                    "sortTimestamp": iso_sort_key(generated_at, f"{date_str}T00:00:00"),
-                    "prompt_preview": (params.get("prompt", "") or "")[:120],
-                    "text": meta.get("text", ""),
-                    "params": params,
-                    "delete_url": f"/api/generations/{date_str}/{filename}",
-                    "folder_open_payload": {"kind": "history", "date": date_str, "filename": filename},
-                })
-            except Exception:
-                pass
+        try:
+            with open(mf, encoding="utf-8") as f:
+                meta = json.load(f)
+            img_path, filename = find_existing_binary_for_meta(mf, (".jpeg", ".jpg", ".png", ".webp"))
+            if not img_path or not filename:
+                continue
+            relpath = os.path.relpath(img_path, GENERATIONS_DIR).replace("\\", "/")
+            generated_at = str(meta.get("generated_at", "") or "")
+            date_key = derive_asset_date_key(relpath, generated_at)
+            params = build_common_asset_params(meta)
+            params["assetRelpath"] = relpath
+            params["assetUrl"] = build_asset_public_url("generations", relpath)
+            params["gen_date"] = date_key
+            params["gen_filename"] = filename
+            params["gen_relpath"] = relpath
+            result.append({
+                "id": f"history:{relpath}".replace("/", ":"),
+                "kind": "history",
+                "url": build_asset_public_url("generations", relpath),
+                "download_url": build_asset_public_url("generations", relpath),
+                "date": date_key,
+                "filename": filename,
+                "relpath": relpath,
+                "generated_at": generated_at,
+                "sortTimestamp": iso_sort_key(generated_at, f"{date_key}T00:00:00"),
+                "prompt_preview": (params.get("prompt", "") or "")[:120],
+                "text": meta.get("text", ""),
+                "params": params,
+                "delete_url": f"/api/generations/{relpath}",
+                "folder_open_payload": {"kind": "history", "date": date_key, "filename": filename, "relpath": relpath},
+            })
+        except Exception:
+            pass
     return result
 
 
@@ -3473,39 +5093,37 @@ def collect_loved_records() -> list[dict]:
     if not os.path.isdir(LOVED_DIR):
         return result
 
-    date_dirs = sorted(
-        [d for d in os.listdir(LOVED_DIR) if os.path.isdir(os.path.join(LOVED_DIR, d))],
-        reverse=True,
-    )
-    for date_str in date_dirs:
-        day_path = os.path.join(LOVED_DIR, date_str)
-        meta_files = sorted(glob.glob(os.path.join(day_path, "*.json")), reverse=True)
-        for mf in meta_files:
-            try:
-                with open(mf, encoding="utf-8") as f:
-                    meta = json.load(f)
-                img_path, filename = find_existing_image_for_meta_base(mf[:-5])
-                if not img_path or not filename:
-                    continue
-                params = build_common_asset_params(meta)
-                published_at = str(meta.get("published_at", meta.get("generated_at", "")) or "")
-                result.append({
-                    "id": f"loved:{date_str}:{filename}",
-                    "kind": "loved",
-                    "url": f"/loved/{date_str}/{filename}",
-                    "download_url": f"/loved/{date_str}/{filename}",
-                    "date": date_str,
-                    "filename": filename,
-                    "generated_at": published_at,
-                    "sortTimestamp": iso_sort_key(published_at, f"{date_str}T00:00:00"),
-                    "prompt_preview": (params.get("prompt", "") or "")[:120],
-                    "text": meta.get("text", ""),
-                    "params": params,
-                    "delete_url": f"/api/loved/{date_str}/{filename}",
-                    "folder_open_payload": {"kind": "loved", "date": date_str, "filename": filename},
-                })
-            except Exception:
-                pass
+    for mf in list_meta_files_recursive(LOVED_DIR):
+        try:
+            with open(mf, encoding="utf-8") as f:
+                meta = json.load(f)
+            img_path, filename = find_existing_binary_for_meta(mf, (".jpeg", ".jpg", ".png", ".webp"))
+            if not img_path or not filename:
+                continue
+            relpath = os.path.relpath(img_path, LOVED_DIR).replace("\\", "/")
+            published_at = str(meta.get("published_at", meta.get("generated_at", "")) or "")
+            date_key = derive_asset_date_key(relpath, published_at)
+            params = build_common_asset_params(meta)
+            params["assetRelpath"] = relpath
+            params["assetUrl"] = build_asset_public_url("loved", relpath)
+            result.append({
+                "id": f"loved:{relpath}".replace("/", ":"),
+                "kind": "loved",
+                "url": build_asset_public_url("loved", relpath),
+                "download_url": build_asset_public_url("loved", relpath),
+                "date": date_key,
+                "filename": filename,
+                "relpath": relpath,
+                "generated_at": published_at,
+                "sortTimestamp": iso_sort_key(published_at, f"{date_key}T00:00:00"),
+                "prompt_preview": (params.get("prompt", "") or "")[:120],
+                "text": meta.get("text", ""),
+                "params": params,
+                "delete_url": f"/api/loved/{relpath}",
+                "folder_open_payload": {"kind": "loved", "date": date_key, "filename": filename, "relpath": relpath},
+            })
+        except Exception:
+            pass
     return result
 
 
@@ -3515,59 +5133,53 @@ def collect_reference_archive_records() -> list[dict]:
     if not os.path.isdir(GENERATIONS_DIR):
         return result
 
-    date_dirs = sorted(
-        [d for d in os.listdir(GENERATIONS_DIR) if os.path.isdir(os.path.join(GENERATIONS_DIR, d))],
-        reverse=True,
-    )
-    for date_str in date_dirs:
-        day_path = os.path.join(GENERATIONS_DIR, date_str)
-        meta_files = sorted(glob.glob(os.path.join(day_path, "*.json")), reverse=True)
-        for mf in meta_files:
-            try:
-                with open(mf, encoding="utf-8") as f:
-                    meta = json.load(f)
-                params = build_common_asset_params(meta)
-                generated_at = str(meta.get("generated_at", "") or "")
-                for idx, ref_entry in enumerate(meta.get("refArchive", []) or []):
-                    if not isinstance(ref_entry, dict):
-                        continue
-                    ref_date = str(ref_entry.get("date", "") or "").strip()
-                    filename = os.path.basename(str(ref_entry.get("filename", "") or "").strip())
-                    if not ref_date or not filename:
-                        continue
-                    ref_key = compute_reference_archive_file_hash(ref_date, filename) or f"{ref_date}/{filename}"
-                    if ref_key in seen_refs:
-                        continue
-                    ref_path = os.path.join(REFERENCE_ARCHIVE_DIR, ref_date, filename)
-                    if not os.path.exists(ref_path):
-                        continue
-                    seen_refs.add(ref_key)
-                    enriched_ref = enrich_reference_archive_entry(ref_entry)
-                    result.append({
-                        "id": f"reference:{ref_date}:{filename}",
-                        "kind": "references",
-                        "url": str(enriched_ref.get("url") or f"/reference-archive/{ref_date}/{filename}"),
-                        "download_url": str(enriched_ref.get("url") or f"/reference-archive/{ref_date}/{filename}"),
-                        "date": ref_date,
-                        "filename": filename,
-                        "generated_at": generated_at,
-                        "sortTimestamp": iso_sort_key(generated_at, f"{ref_date}T00:00:00"),
-                        "prompt_preview": str(enriched_ref.get("name") or params.get("prompt", "") or filename)[:120],
-                        "text": "",
-                        "params": params,
-                        "reference_name": str(enriched_ref.get("name", "") or ""),
-                        "source_generation_date": date_str,
-                        "source_generation_filename": str(meta.get("filename", "") or ""),
-                        "delete_url": f"/api/reference-archive/{ref_date}/{filename}",
-                        "folder_open_payload": {"kind": "references", "date": ref_date, "filename": filename},
-                        "original_url": str(enriched_ref.get("original_url") or ""),
-                        "masked_url": str(enriched_ref.get("masked_url") or ""),
-                        "mask_url": str(enriched_ref.get("mask_url") or ""),
-                        "has_mask": bool(enriched_ref.get("has_mask")),
-                        "mask_edit_payload": enriched_ref.get("mask_edit_payload") or {"kind": "references", "date": ref_date, "filename": filename},
-                    })
-            except Exception:
-                pass
+    for mf in list_meta_files_recursive(GENERATIONS_DIR):
+        try:
+            with open(mf, encoding="utf-8") as f:
+                meta = json.load(f)
+            params = build_common_asset_params(meta)
+            generated_at = str(meta.get("generated_at", "") or "")
+            source_relpath = str(meta.get("assetRelpath") or "").strip()
+            for ref_entry in meta.get("refArchive", []) or []:
+                if not isinstance(ref_entry, dict):
+                    continue
+                ref_date = str(ref_entry.get("date", "") or "").strip()
+                filename = os.path.basename(str(ref_entry.get("filename", "") or "").strip())
+                if not ref_date or not filename:
+                    continue
+                ref_key = compute_reference_archive_file_hash(ref_date, filename) or f"{ref_date}/{filename}"
+                if ref_key in seen_refs:
+                    continue
+                ref_path = os.path.join(REFERENCE_ARCHIVE_DIR, ref_date, filename)
+                if not os.path.exists(ref_path):
+                    continue
+                seen_refs.add(ref_key)
+                enriched_ref = enrich_reference_archive_entry(ref_entry)
+                result.append({
+                    "id": f"reference:{ref_date}:{filename}",
+                    "kind": "references",
+                    "url": str(enriched_ref.get("url") or f"/reference-archive/{ref_date}/{filename}"),
+                    "download_url": str(enriched_ref.get("url") or f"/reference-archive/{ref_date}/{filename}"),
+                    "date": ref_date,
+                    "filename": filename,
+                    "generated_at": generated_at,
+                    "sortTimestamp": iso_sort_key(generated_at, f"{ref_date}T00:00:00"),
+                    "prompt_preview": str(enriched_ref.get("name") or params.get("prompt", "") or filename)[:120],
+                    "text": "",
+                    "params": params,
+                    "reference_name": str(enriched_ref.get("name", "") or ""),
+                    "source_generation_date": derive_asset_date_key(source_relpath, generated_at),
+                    "source_generation_filename": str(meta.get("filename", "") or ""),
+                    "delete_url": f"/api/reference-archive/{ref_date}/{filename}",
+                    "folder_open_payload": {"kind": "references", "date": ref_date, "filename": filename},
+                    "original_url": str(enriched_ref.get("original_url") or ""),
+                    "masked_url": str(enriched_ref.get("masked_url") or ""),
+                    "mask_url": str(enriched_ref.get("mask_url") or ""),
+                    "has_mask": bool(enriched_ref.get("has_mask")),
+                    "mask_edit_payload": enriched_ref.get("mask_edit_payload") or {"kind": "references", "date": ref_date, "filename": filename},
+                })
+        except Exception:
+            pass
     return result
 
 
@@ -3578,7 +5190,155 @@ def collect_asset_records(kind: str) -> list[dict]:
         return collect_loved_records()
     if kind == "references":
         return collect_reference_archive_records()
+    if kind == "videos":
+        return collect_video_asset_records(max_load=None)
     raise ValueError("Invalid asset kind")
+
+
+def collect_asset_metadata_records() -> list[dict]:
+    records: list[dict] = []
+    seen: set[tuple[str, str, str, str]] = set()
+
+    def append_record(client_value: str, project_value: str, shot_value: str, filename_value: str) -> None:
+        client = sanitize_asset_meta_text(client_value) or ASSET_UNCATEGORIZED_VALUE
+        project = sanitize_asset_meta_text(project_value) or ASSET_UNCATEGORIZED_VALUE
+        shot = sanitize_asset_meta_text(shot_value) or ASSET_UNCATEGORIZED_VALUE
+        filename = sanitize_asset_filename_stem(filename_value, fallback="")
+        if not filename:
+            return
+        key = (client, project, shot, filename)
+        if key in seen:
+            return
+        seen.add(key)
+        records.append({
+            "assetClient": client,
+            "assetProject": project,
+            "assetShot": shot,
+            "assetFilename": filename,
+        })
+
+    for root_dir in (GENERATIONS_DIR, VIDEOS_DIR):
+        if not os.path.isdir(root_dir):
+            continue
+        for current_root, dirnames, _ in os.walk(root_dir):
+            rel_dir = os.path.relpath(current_root, root_dir).replace("\\", "/")
+            rel_parts = [part for part in rel_dir.split("/") if part and part != "."]
+            if len(rel_parts) >= 4:
+                append_record(rel_parts[0], rel_parts[1], rel_parts[2], os.path.splitext(rel_parts[3])[0])
+            for file_name in os.listdir(current_root):
+                file_path = os.path.join(current_root, file_name)
+                if not os.path.isfile(file_path):
+                    continue
+                if file_name.lower().endswith(".json"):
+                    continue
+                if len(rel_parts) >= 3:
+                    append_record(rel_parts[0], rel_parts[1], rel_parts[2], os.path.splitext(file_name)[0])
+
+    for item in (
+        collect_generation_records(max_load=None)
+        + collect_video_asset_records(max_load=None)
+        + collect_loved_records()
+        + collect_reference_archive_records()
+    ):
+        params = item.get("params", {}) or {}
+        append_record(
+            params.get("assetClient", ""),
+            params.get("assetProject", ""),
+            params.get("assetShot", ""),
+            params.get("assetFilename", ""),
+        )
+    return records
+
+
+def collect_asset_metadata_options() -> dict:
+    options = {
+        "clients": [ASSET_UNCATEGORIZED_VALUE],
+        "projects": [ASSET_UNCATEGORIZED_VALUE],
+        "shots": [ASSET_UNCATEGORIZED_VALUE],
+        "filenames": [],
+    }
+    seen = {
+        "clients": {ASSET_UNCATEGORIZED_VALUE},
+        "projects": {ASSET_UNCATEGORIZED_VALUE},
+        "shots": {ASSET_UNCATEGORIZED_VALUE},
+        "filenames": set(),
+    }
+    for record in collect_asset_metadata_records():
+        client = sanitize_asset_meta_text(record.get("assetClient", "")) or ASSET_UNCATEGORIZED_VALUE
+        project = sanitize_asset_meta_text(record.get("assetProject", "")) or ASSET_UNCATEGORIZED_VALUE
+        shot = sanitize_asset_meta_text(record.get("assetShot", "")) or ASSET_UNCATEGORIZED_VALUE
+        filename = sanitize_asset_filename_stem(record.get("assetFilename", ""), fallback="")
+        if client not in seen["clients"]:
+            seen["clients"].add(client)
+            options["clients"].append(client)
+        if project not in seen["projects"]:
+            seen["projects"].add(project)
+            options["projects"].append(project)
+        if shot not in seen["shots"]:
+            seen["shots"].add(shot)
+            options["shots"].append(shot)
+        if filename and filename not in seen["filenames"]:
+            seen["filenames"].add(filename)
+            options["filenames"].append(filename)
+
+    config = load_config()
+    memory = ensure_asset_metadata_memory_shape(config.get("asset_metadata_memory"))
+    for key in ("clients", "projects", "shots"):
+        for value in memory.get(key, []):
+            clean_value = sanitize_asset_meta_text(value) or ASSET_UNCATEGORIZED_VALUE
+            if clean_value not in seen[key]:
+                seen[key].add(clean_value)
+                options[key].append(clean_value)
+    for value in memory.get("filenames", []):
+        clean_value = sanitize_asset_filename_stem(value, fallback="")
+        if clean_value and clean_value not in seen["filenames"]:
+            seen["filenames"].add(clean_value)
+            options["filenames"].append(clean_value)
+    return options
+
+
+@app.context_processor
+def inject_asset_metadata_bootstrap():
+    try:
+        return {
+            "asset_meta_bootstrap": {
+                "options": collect_asset_metadata_options(),
+                "records": collect_asset_metadata_records(),
+            }
+        }
+    except Exception:
+        return {
+            "asset_meta_bootstrap": {
+                "options": {
+                    "clients": [ASSET_UNCATEGORIZED_VALUE],
+                    "projects": [ASSET_UNCATEGORIZED_VALUE],
+                    "shots": [ASSET_UNCATEGORIZED_VALUE],
+                    "filenames": [],
+                },
+                "records": [],
+            }
+        }
+
+
+@app.route("/api/asset-metadata-options")
+@login_required
+def api_asset_metadata_options():
+    return jsonify({
+        "ok": True,
+        "options": collect_asset_metadata_options(),
+        "records": collect_asset_metadata_records(),
+    })
+
+
+@app.route("/api/asset-metadata-memory", methods=["POST"])
+@login_required
+def api_asset_metadata_memory():
+    body = request.get_json(silent=True) or {}
+    asset_meta = normalize_asset_metadata(body, require_filename=False)
+    config = load_config()
+    memory = update_asset_metadata_memory(config, asset_meta)
+    save_config(config)
+    return jsonify({"ok": True, "options": collect_asset_metadata_options(), "memory": memory})
 
 
 @app.route("/api/reference-archive-list")
@@ -4804,7 +6564,7 @@ def run_gemini_generation_job(body: dict, api_key: str) -> dict:
 
     price_per_image = PRICING.get(model_id, {}).get(image_size, 0.0)
     cost = price_per_image * len(images)
-    params_meta = {
+    params_meta = merge_request_settings(merge_asset_metadata({
         "model": model_id,
         "modelFamily": body.get("modelFamily", model_info.get("family", "")),
         "model_label": model_info["label"],
@@ -4822,7 +6582,7 @@ def run_gemini_generation_job(body: dict, api_key: str) -> dict:
         "ref_count": len(ref_images),
         "seedMode": seed_mode,
         "seedValue": actual_seed,
-    }
+    }, body), body)
     return {
         "ok": True,
         "images": images,
@@ -4862,6 +6622,10 @@ def persist_generation_result(result: dict):
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
     time_str = now.strftime("%H%M%S%f")[:12]
+    fallback_filename = sanitize_asset_filename_stem(params.get("prompt", ""), fallback=time_str)
+    asset_meta = normalize_asset_metadata(params, require_filename=True, fallback_filename=fallback_filename)
+    params.update(asset_meta)
+    update_asset_metadata_memory(config, asset_meta)
     if raw_ref_images is not None:
         archived_refs = build_reference_archive_entries(raw_ref_images, date_str, time_str)
         params["refArchive"] = archived_refs
@@ -4871,10 +6635,7 @@ def persist_generation_result(result: dict):
         params["ref_count"] = int(params.get("ref_count", len(params["refArchive"])))
     result["params"] = params
 
-    gen_day_dir = os.path.join(GENERATIONS_DIR, date_str)
-    os.makedirs(gen_day_dir, exist_ok=True)
     for g_idx, img in enumerate(result.get("images", [])):
-        basename = f"{time_str}_{g_idx}"
         try:
             png_b64, png_mime = convert_image_b64_to_png(
                 img.get("data", ""),
@@ -4882,33 +6643,121 @@ def persist_generation_result(result: dict):
             )
             img["data"] = png_b64
             img["mime_type"] = png_mime
-            img["gen_date"] = date_str
-            img["gen_filename"] = f"{basename}.png"
-            img_path = os.path.join(gen_day_dir, f"{basename}.png")
-            meta_path = os.path.join(gen_day_dir, f"{basename}.json")
+            abs_dir, relpath, basename = build_asset_storage_paths(
+                GENERATIONS_DIR,
+                asset_meta,
+                "png",
+                variant_suffix=str(g_idx + 1) if len(result.get("images", [])) > 1 else "",
+            )
+            img_path = os.path.join(GENERATIONS_DIR, relpath.replace("/", os.sep))
+            meta_path = os.path.join(abs_dir, f"{basename}.json")
+            img["gen_date"] = derive_asset_date_key(relpath, now.isoformat())
+            img["gen_filename"] = os.path.basename(img_path)
+            img["gen_relpath"] = relpath
             with open(img_path, "wb") as fh:
                 fh.write(base64.b64decode(png_b64))
             gen_meta = dict(params)
             gen_meta.update({
                 "generated_at": now.isoformat(),
                 "mime_type": png_mime,
+                "gen_date": img["gen_date"],
+                "gen_filename": img["gen_filename"],
+                "gen_relpath": img["gen_relpath"],
                 "filename": os.path.basename(img_path),
+                "assetRelpath": relpath,
                 "text": result.get("text", "") if g_idx == 0 else "",
             })
             with open(meta_path, "w", encoding="utf-8") as fh:
                 json.dump(gen_meta, fh, indent=2, ensure_ascii=False)
         except Exception:
             pass
+    save_config(config)
     return result
 
 
 def persist_video_result(result: dict):
     params = result.get("params", {}) or {}
+    raw_source_image = result.pop("_input_source_image", None)
+    raw_source_video = result.pop("_input_source_video", None)
+    raw_reference_images = result.pop("_input_reference_images", None)
+    config = load_config()
     now = datetime.now()
     date_str = now.strftime("%Y-%m-%d")
     time_str = now.strftime("%H%M%S%f")[:12]
-    video_day_dir = os.path.join(VIDEOS_DIR, date_str)
-    os.makedirs(video_day_dir, exist_ok=True)
+    fallback_filename = sanitize_asset_filename_stem(
+        params.get("prompt", "") or params.get("modelLabel", "") or "video",
+        fallback=time_str,
+    )
+    asset_meta = normalize_asset_metadata(params, require_filename=True, fallback_filename=fallback_filename)
+    params.update(asset_meta)
+    update_asset_metadata_memory(config, asset_meta)
+
+    if isinstance(raw_source_image, dict) and str(raw_source_image.get("data") or "").strip():
+        archived_source = build_reference_archive_entries([raw_source_image], date_str, f"{time_str}_video_src")
+        params["videoSourceArchive"] = archived_source[0] if archived_source else {}
+    else:
+        params["videoSourceArchive"] = params.get("videoSourceArchive", {}) or {}
+
+    if isinstance(raw_reference_images, list):
+        archived_refs = build_reference_archive_entries(raw_reference_images, date_str, f"{time_str}_video_ref")
+        params["videoRefArchive"] = archived_refs
+        params["videoRefCount"] = len(archived_refs)
+    else:
+        params["videoRefArchive"] = params.get("videoRefArchive", []) or []
+        params["videoRefCount"] = int(params.get("videoRefCount", len(params["videoRefArchive"])))
+
+    source_video_archive = params.get("videoSourceVideoArchive", {}) or {}
+    if isinstance(raw_source_video, dict):
+        raw_video_url = str(raw_source_video.get("url") or "").strip()
+        raw_video_name = os.path.basename(str(raw_source_video.get("name") or "")) or "video-source.mp4"
+        raw_video_mime = str(raw_source_video.get("mime_type") or "video/mp4").strip() or "video/mp4"
+        local_source_path = resolve_local_video_url_to_path(raw_video_url)
+        if local_source_path:
+            source_video_archive = {
+                "date": os.path.basename(os.path.dirname(local_source_path)),
+                "filename": os.path.basename(local_source_path),
+                "name": raw_video_name,
+                "mime_type": raw_video_mime,
+                "url": raw_video_url or f"/videos/{os.path.basename(os.path.dirname(local_source_path))}/{os.path.basename(local_source_path)}",
+            }
+        elif str(raw_source_video.get("data") or "").strip():
+            ext = get_video_extension_for_payload(raw_video_mime, raw_video_name)
+            source_meta = dict(asset_meta)
+            source_meta["assetFilename"] = sanitize_asset_filename_stem(
+                f"{asset_meta.get('assetFilename', fallback_filename)}_source",
+                fallback=f"{time_str}_source",
+            )
+            try:
+                archive_dir, archive_relpath, _archive_basename = build_asset_storage_paths(
+                    VIDEOS_DIR,
+                    source_meta,
+                    ext,
+                    variant_suffix="source",
+                )
+                archive_path = os.path.join(VIDEOS_DIR, archive_relpath.replace("/", os.sep))
+                with open(archive_path, "wb") as fh:
+                    fh.write(base64.b64decode(str(raw_source_video.get("data") or ""), validate=False))
+                source_video_archive = {
+                    "date": derive_asset_date_key(archive_relpath, now.isoformat()),
+                    "filename": os.path.basename(archive_path),
+                    "name": raw_video_name,
+                    "mime_type": raw_video_mime,
+                    "url": f"/videos/{archive_relpath}",
+                    "relpath": archive_relpath,
+                }
+            except Exception:
+                source_video_archive = {}
+        elif raw_video_url:
+            source_video_archive = {
+                "date": "",
+                "filename": raw_video_name,
+                "name": raw_video_name,
+                "mime_type": raw_video_mime,
+                "url": raw_video_url,
+            }
+    params["videoSourceVideoArchive"] = source_video_archive
+
+    result["params"] = params
 
     for idx, video in enumerate(result.get("videos", []) or []):
         video_url = str(video.get("url") or "").strip()
@@ -4917,9 +6766,14 @@ def persist_video_result(result: dict):
         try:
             raw_bytes, detected_mime = download_remote_binary(video_url, timeout=300)
             ext, mime_type = normalize_video_extension(video.get("mime_type") or detected_mime, video_url)
-            basename = f"{time_str}_{idx}"
-            video_filename = f"{basename}.{ext}"
-            video_path = os.path.join(video_day_dir, video_filename)
+            abs_dir, relpath, basename = build_asset_storage_paths(
+                VIDEOS_DIR,
+                asset_meta,
+                ext,
+                variant_suffix=str(idx + 1) if len(result.get("videos", []) or []) > 1 else "",
+            )
+            video_path = os.path.join(VIDEOS_DIR, relpath.replace("/", os.sep))
+            video_filename = os.path.basename(video_path)
             with open(video_path, "wb") as fh:
                 fh.write(raw_bytes)
 
@@ -4931,20 +6785,22 @@ def persist_video_result(result: dict):
                     poster_b64 = base64.b64encode(poster_raw).decode("utf-8")
                     poster_png_b64, poster_png_mime = convert_image_b64_to_png(poster_b64, poster_mime or "image/png")
                     poster_filename = f"{basename}_poster.png"
-                    poster_path = os.path.join(video_day_dir, poster_filename)
+                    poster_path = os.path.join(abs_dir, poster_filename)
                     with open(poster_path, "wb") as pfh:
                         pfh.write(base64.b64decode(poster_png_b64))
-                    video["poster_url"] = f"/videos/{date_str}/{poster_filename}"
+                    poster_relpath = os.path.join(os.path.dirname(relpath), poster_filename).replace("\\", "/")
+                    video["poster_url"] = f"/videos/{poster_relpath}"
                     video["poster_mime_type"] = poster_png_mime
                 except Exception:
                     poster_filename = ""
 
-            video["gen_date"] = date_str
+            video["gen_date"] = derive_asset_date_key(relpath, now.isoformat())
             video["gen_filename"] = video_filename
-            video["url"] = f"/videos/{date_str}/{video_filename}"
+            video["gen_relpath"] = relpath
+            video["url"] = f"/videos/{relpath}"
             video["mime_type"] = mime_type
 
-            meta_path = os.path.join(video_day_dir, f"{basename}.json")
+            meta_path = os.path.join(abs_dir, f"{basename}.json")
             video_meta = dict(params)
             video_meta.update({
                 "generated_at": now.isoformat(),
@@ -4952,12 +6808,14 @@ def persist_video_result(result: dict):
                 "filename": video_filename,
                 "poster_filename": poster_filename,
                 "poster_url": video.get("poster_url", ""),
+                "assetRelpath": relpath,
                 "text": result.get("text", "") if idx == 0 else "",
             })
             with open(meta_path, "w", encoding="utf-8") as fh:
                 json.dump(video_meta, fh, indent=2, ensure_ascii=False)
         except Exception:
             continue
+    save_config(config)
     return result
 
 
@@ -5024,17 +6882,32 @@ def run_native_kling_video_job(body: dict, api_token: str) -> dict:
     if not prompt:
         raise ValueError("Please enter a video prompt.")
 
-    model_name = str(body.get("model") or KLING_DIRECT_TEXT_DEFAULT_ID).strip() or KLING_DIRECT_TEXT_DEFAULT_ID
+    selected_model_id = str(body.get("model") or KLING_DIRECT_TEXT_DEFAULT_ID).strip() or KLING_DIRECT_TEXT_DEFAULT_ID
+    model_info = VIDEO_MODELS_INFO.get(selected_model_id, {})
+    model_name = str(model_info.get("native_model_name") or selected_model_id or KLING_DIRECT_TEXT_DEFAULT_ID).strip() or KLING_DIRECT_TEXT_DEFAULT_ID
     duration = normalize_video_duration(body.get("duration", 5))
     aspect_ratio = body.get("aspectRatio", "16:9")
     negative_prompt = str(body.get("negativePrompt") or "").strip()
     source_image = body.get("sourceImage") or {}
-    endpoint = "/v1/videos/text2video"
+    reference_images = list(body.get("referenceImages") or [])
+    kling_mode = str(model_info.get("kling_mode") or "pro").strip().lower() or "pro"
+    endpoint = str(model_info.get("native_video_endpoint") or "").strip()
+    if not endpoint:
+        endpoint = "/v1/videos/text2video" if input_mode == "text" else "/v1/videos/image2video"
+    native_ref_item_key = str(model_info.get("native_reference_item_key") or "image").strip() or "image"
+
+    def build_native_ref_item(image_payload: dict, item_type: str = "") -> dict:
+        raw_value = str(image_payload.get("data") or "").strip()
+        item = {native_ref_item_key: raw_value}
+        if item_type:
+            item["type"] = item_type
+        return item
+
     payload = {
         "model_name": model_name,
         "prompt": prompt,
         "duration": str(duration),
-        "mode": "pro",
+        "mode": kling_mode,
         "sound": "off",
         "aspect_ratio": aspect_ratio,
     }
@@ -5043,8 +6916,24 @@ def run_native_kling_video_job(body: dict, api_token: str) -> dict:
     if input_mode == "image":
         if not source_image.get("data"):
             raise ValueError("Choose a source image for image-to-video.")
-        endpoint = "/v1/videos/image2video"
-        payload["image"] = str(source_image.get("data") or "").strip()
+        if endpoint == "/v1/videos/omni-video":
+            payload["image_list"] = [build_native_ref_item(source_image, "first_frame")]
+        else:
+            payload["image"] = str(source_image.get("data") or "").strip()
+    elif input_mode == "reference":
+        reference_payloads = [
+            build_native_ref_item(img)
+            for img in reference_images
+            if str(img.get("data") or "").strip()
+        ]
+        if endpoint == "/v1/videos/omni-video" and source_image.get("data"):
+            reference_payloads.insert(0, build_native_ref_item(source_image, "first_frame"))
+        if model_name == "kling-video-o1" and source_image.get("data") and len(reference_payloads) > 2:
+            raise ValueError("Kling O1 supports at most one extra reference image when a start image is also used.")
+        if model_info.get("reference_images_required") and not reference_payloads:
+            raise ValueError("Add at least one reference image for this Kling reference-to-video model.")
+        if reference_payloads:
+            payload["image_list"] = reference_payloads
     headers = build_kling_headers(api_token)
     try:
         create_response = requests.post(f"{KLING_BASE_URL}{endpoint}", headers=headers, json=payload, timeout=90)
@@ -5060,10 +6949,10 @@ def run_native_kling_video_job(body: dict, api_token: str) -> dict:
         raise RuntimeError("Kling did not return a task id.")
     result_payload = poll_kling_task(api_token, endpoint, task_id)
     video_item = build_kling_video_from_payload(result_payload)
-    params_meta = {
-        "model": model_name,
+    params_meta = merge_request_settings(merge_asset_metadata({
+        "model": selected_model_id,
         "modelFamily": body.get("modelFamily", "kling"),
-        "model_label": "Kling",
+        "model_label": model_info.get("label", "Kling"),
         "provider": "kling",
         "provider_label": "Kling",
         "videoInputMode": input_mode,
@@ -5072,14 +6961,16 @@ def run_native_kling_video_job(body: dict, api_token: str) -> dict:
         "negativePrompt": negative_prompt,
         "prompt": prompt,
         "resolution": body.get("resolution", "720p"),
-    }
+    }, body), body)
     return {
         "ok": True,
         "videos": [video_item],
         "text": "",
-        "cost": round(float(VIDEO_PRICING.get(model_name, {}).get(str(duration), 0.0)), 4),
-        "model_label": "Kling",
+        "cost": round(float(VIDEO_PRICING.get(selected_model_id, {}).get(str(duration), 0.0)), 4),
+        "model_label": model_info.get("label", "Kling"),
         "params": params_meta,
+        "_input_source_image": source_image if str(source_image.get("data") or "").strip() else None,
+        "_input_reference_images": reference_images,
     }
 
 
@@ -5093,7 +6984,16 @@ def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
     aspect_ratio = body.get("aspectRatio", "16:9")
     negative_prompt = str(body.get("negativePrompt") or "").strip()
     source_image = body.get("sourceImage") or {}
-    endpoint = FAL_KLING_T2V_ID if input_mode == "text" else FAL_KLING_I2V_ID
+    reference_images = list(body.get("referenceImages") or [])
+    endpoint = str(body.get("model") or "").strip()
+    model_info = VIDEO_MODELS_INFO.get(endpoint, {})
+    if not endpoint or model_info.get("provider") != "fal" or model_info.get("family") != "kling":
+        raise ValueError("Choose a valid Fal Kling model.")
+    max_reference_images = max(0, int(model_info.get("max_reference_images", 0) or 0))
+    if not model_info.get("supports_reference_images"):
+        reference_images = []
+    elif max_reference_images:
+        reference_images = reference_images[:max_reference_images]
     payload = {
         "prompt": prompt,
         "duration": str(duration),
@@ -5102,10 +7002,26 @@ def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
     }
     if negative_prompt:
         payload["negative_prompt"] = negative_prompt
-    if input_mode == "image":
-        if not source_image.get("data"):
-            raise ValueError("Choose a source image for image-to-video.")
-        payload["image_url"] = f"data:{source_image.get('mime_type', 'image/png')};base64,{source_image.get('data', '')}"
+    if input_mode != "text" and model_info.get("supports_start_image"):
+        if model_info.get("start_image_required") and not source_image.get("data"):
+            raise ValueError("Choose a start image for this Kling video model.")
+        if source_image.get("data"):
+            start_field = str(model_info.get("start_image_field") or "image_url")
+            payload[start_field] = f"data:{source_image.get('mime_type', 'image/png')};base64,{source_image.get('data', '')}"
+    if input_mode == "reference" and model_info.get("supports_reference_images"):
+        if model_info.get("reference_images_required") and not reference_images:
+            raise ValueError("Add at least one reference image for this Kling reference-to-video model.")
+        if reference_images:
+            ref_field = str(model_info.get("reference_images_field") or "image_urls")
+            reference_urls = [
+                f"data:{img.get('mime_type', 'image/png')};base64,{img.get('data', '')}"
+                for img in reference_images
+                if str(img.get("data") or "").strip()
+            ]
+            if model_info.get("reference_images_required") and not reference_urls:
+                raise ValueError("Add at least one valid reference image for this Kling reference-to-video model.")
+            if reference_urls:
+                payload[ref_field] = reference_urls
     headers = {
         "Authorization": f"Key {api_key}",
         "Content-Type": "application/json",
@@ -5123,10 +7039,10 @@ def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
     video_item = extract_fal_video_result(result)
     if not video_item:
         raise RuntimeError("Fal Kling returned no video for this request.")
-    params_meta = {
+    params_meta = merge_request_settings(merge_asset_metadata({
         "model": endpoint,
         "modelFamily": body.get("modelFamily", "kling"),
-        "model_label": "Kling",
+        "model_label": model_info.get("label", "Kling"),
         "provider": "fal",
         "provider_label": "Fal",
         "videoInputMode": input_mode,
@@ -5135,14 +7051,16 @@ def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
         "negativePrompt": negative_prompt,
         "prompt": prompt,
         "resolution": body.get("resolution", "720p"),
-    }
+    }, body), body)
     return {
         "ok": True,
         "videos": [video_item],
         "text": "",
-        "cost": round(float(VIDEO_PRICING.get(FAL_KLING_T2V_ID, {}).get(str(duration), 0.0)), 4),
-        "model_label": "Kling",
+        "cost": round(float(VIDEO_PRICING.get(endpoint, {}).get(str(duration), 0.0)), 4),
+        "model_label": model_info.get("label", "Kling"),
         "params": params_meta,
+        "_input_source_image": source_image if str(source_image.get("data") or "").strip() else None,
+        "_input_reference_images": reference_images,
     }
 
 
@@ -5193,7 +7111,7 @@ def run_fal_wan_video_job(body: dict, api_key: str) -> dict:
     video_item = extract_fal_video_result(result)
     if not video_item:
         raise RuntimeError("Fal Wan returned no video for this request.")
-    params_meta = {
+    params_meta = merge_request_settings(merge_asset_metadata({
         "model": endpoint,
         "modelFamily": body.get("modelFamily", "wan-video"),
         "model_label": "Wan Video",
@@ -5206,7 +7124,7 @@ def run_fal_wan_video_job(body: dict, api_key: str) -> dict:
         "prompt": prompt,
         "resolution": resolution,
         "videoSafetyChecker": safety_checker,
-    }
+    }, body), body)
     return {
         "ok": True,
         "videos": [video_item],
@@ -5214,6 +7132,195 @@ def run_fal_wan_video_job(body: dict, api_key: str) -> dict:
         "cost": round(float(VIDEO_PRICING.get(FAL_WAN_T2V_ID, {}).get(str(duration), 0.0)), 4),
         "model_label": "Wan Video",
         "params": params_meta,
+        "_input_source_image": source_image if str(source_image.get("data") or "").strip() else None,
+        "_input_reference_images": [],
+    }
+
+
+def run_fal_seedance_video_job(body: dict, api_key: str) -> dict:
+    body = normalize_video_request(body)
+    input_mode = body.get("videoInputMode", "text")
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt:
+        raise ValueError("Please enter a video prompt.")
+    duration = normalize_video_duration(body.get("duration", 5))
+    aspect_ratio = body.get("aspectRatio", "16:9")
+    negative_prompt = str(body.get("negativePrompt") or "").strip()
+    resolution = normalize_video_resolution(body.get("resolution", "720p"))
+    source_image = body.get("sourceImage") or {}
+    reference_images = list(body.get("referenceImages") or [])
+    endpoint = str(body.get("model") or "").strip()
+    model_info = VIDEO_MODELS_INFO.get(endpoint, {})
+    if not endpoint or model_info.get("provider") != "fal" or model_info.get("family") != "seedance":
+        raise ValueError("Choose a valid Fal Seedance model.")
+    max_reference_images = max(0, int(model_info.get("max_reference_images", 0) or 0))
+    if not model_info.get("supports_reference_images"):
+        reference_images = []
+    elif max_reference_images:
+        reference_images = reference_images[:max_reference_images]
+    payload = {
+        "prompt": prompt,
+        "duration": duration,
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+        "sync_mode": True,
+    }
+    if negative_prompt:
+        payload["negative_prompt"] = negative_prompt
+    if input_mode != "text" and model_info.get("supports_start_image"):
+        if model_info.get("start_image_required") and not source_image.get("data"):
+            raise ValueError("Choose a start image for this Seedance video model.")
+        if source_image.get("data"):
+            start_field = str(model_info.get("start_image_field") or "image_url")
+            payload[start_field] = f"data:{source_image.get('mime_type', 'image/png')};base64,{source_image.get('data', '')}"
+    if input_mode == "reference" and model_info.get("supports_reference_images"):
+        if model_info.get("reference_images_required") and not reference_images:
+            raise ValueError("Add at least one reference image for this Seedance reference-to-video model.")
+        if reference_images:
+            ref_field = str(model_info.get("reference_images_field") or "reference_image_urls")
+            reference_urls = [
+                f"data:{img.get('mime_type', 'image/png')};base64,{img.get('data', '')}"
+                for img in reference_images
+                if str(img.get("data") or "").strip()
+            ]
+            if model_info.get("reference_images_required") and not reference_urls:
+                raise ValueError("Add at least one valid reference image for this Seedance reference-to-video model.")
+            if reference_urls:
+                payload[ref_field] = reference_urls
+    headers = {
+        "Authorization": f"Key {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.post(f"{FAL_BASE_URL}/{endpoint}", headers=headers, json=payload, timeout=900)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: Fal Seedance generation took too long.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+    if response.status_code != 200:
+        raise RuntimeError(extract_fal_error(response))
+    result = response.json()
+    video_item = extract_fal_video_result(result)
+    if not video_item:
+        raise RuntimeError("Fal Seedance returned no video for this request.")
+    params_meta = merge_request_settings(merge_asset_metadata({
+        "model": endpoint,
+        "modelFamily": body.get("modelFamily", "seedance"),
+        "model_label": model_info.get("label", "Seedance"),
+        "provider": "fal",
+        "provider_label": "Fal",
+        "videoInputMode": input_mode,
+        "duration": duration,
+        "aspectRatio": aspect_ratio,
+        "negativePrompt": negative_prompt,
+        "prompt": prompt,
+        "resolution": resolution,
+    }, body), body)
+    return {
+        "ok": True,
+        "videos": [video_item],
+        "text": "",
+        "cost": round(float(VIDEO_PRICING.get(endpoint, {}).get(str(duration), 0.0)), 4),
+        "model_label": model_info.get("label", "Seedance"),
+        "params": params_meta,
+        "_input_source_image": source_image if str(source_image.get("data") or "").strip() else None,
+        "_input_reference_images": reference_images,
+    }
+
+
+def run_fal_seedvr_video_job(body: dict, api_key: str) -> dict:
+    body = normalize_video_request(body)
+    input_mode = body.get("videoInputMode", "video")
+    endpoint = str(body.get("model") or FAL_SEEDVR_VIDEO_ID).strip() or FAL_SEEDVR_VIDEO_ID
+    model_info = VIDEO_MODELS_INFO.get(endpoint, {})
+    if not endpoint or model_info.get("provider") != "fal" or model_info.get("family") != "seedvr-video":
+        raise ValueError("Choose a valid Fal SeedVR2 video model.")
+
+    source_video = body.get("sourceVideo") or {}
+    if not str(source_video.get("data") or source_video.get("url") or "").strip():
+        raise ValueError("Choose or drop a source video for SeedVR2.")
+
+    upscale_mode = normalize_video_upscale_mode(body.get("videoUpscaleMode", "factor"))
+    upscale_factor = normalize_video_upscale_factor(body.get("videoUpscaleFactor", 2))
+    target_resolution = normalize_video_upscale_target_resolution(
+        body.get("videoUpscaleTargetResolution", "1080p")
+    )
+    noise_scale = normalize_video_upscale_noise_scale(body.get("videoUpscaleNoiseScale", 0.1))
+    output_format = normalize_video_upscale_output_format(body.get("videoUpscaleOutputFormat", "X264 (.mp4)"))
+    output_quality = normalize_video_upscale_output_quality(body.get("videoUpscaleOutputQuality", "high"))
+    output_write_mode = normalize_video_upscale_write_mode(body.get("videoUpscaleOutputWriteMode", "balanced"))
+    sync_mode = bool(body.get("videoUpscaleSyncMode", True))
+    seed_value = normalize_optional_int(body.get("videoUpscaleSeed"))
+
+    try:
+        client = fal_client.SyncClient(key=api_key, default_timeout=1800.0)
+        uploaded_video_url = upload_video_payload_to_fal(client, source_video)
+        payload = {
+            "video_url": uploaded_video_url,
+            "upscale_mode": upscale_mode,
+            "noise_scale": noise_scale,
+            "output_format": output_format,
+            "output_quality": output_quality,
+            "output_write_mode": output_write_mode,
+            "sync_mode": sync_mode,
+        }
+        if upscale_mode == "target":
+            payload["target_resolution"] = target_resolution
+        else:
+            payload["upscale_factor"] = upscale_factor
+        if seed_value is not None:
+            payload["seed"] = seed_value
+        result = client.run(endpoint, arguments=payload)
+    except TimeoutError as exc:
+        raise TimeoutError("Timeout: SeedVR2 video upscale took too long.") from exc
+    except Exception as exc:
+        message = str(exc)
+        if "Timeout" in message:
+            raise TimeoutError("Timeout: SeedVR2 video upscale took too long.") from exc
+        raise RuntimeError(f"SeedVR2 video upscale failed: {message}") from exc
+
+    video_item = extract_fal_video_result(result if isinstance(result, dict) else {})
+    if not video_item:
+        raise RuntimeError("Fal SeedVR2 returned no video for this request.")
+
+    params_meta = merge_request_settings(merge_asset_metadata({
+        "model": endpoint,
+        "modelFamily": body.get("modelFamily", "seedvr-video"),
+        "model_label": model_info.get("label", "SeedVR2 Video"),
+        "provider": "fal",
+        "provider_label": "Fal",
+        "videoInputMode": input_mode,
+        "upscaled": True,
+        "upscalerType": "seedvr2-video",
+        "upscalerLabel": "SeedVR2 Video",
+        "upscaleModel": "seedvr2-video",
+        "upscalePreset": "video",
+        "prompt": "",
+        "negativePrompt": "",
+        "duration": body.get("duration", 0),
+        "aspectRatio": body.get("aspectRatio", ""),
+        "resolution": body.get("resolution", ""),
+        "videoUpscaleMode": upscale_mode,
+        "videoUpscaleFactor": float(upscale_factor),
+        "videoUpscaleTargetResolution": target_resolution,
+        "videoUpscaleNoiseScale": float(noise_scale),
+        "videoUpscaleOutputFormat": output_format,
+        "videoUpscaleOutputQuality": output_quality,
+        "videoUpscaleOutputWriteMode": output_write_mode,
+        "videoUpscaleSeed": seed_value,
+        "videoUpscaleSyncMode": sync_mode,
+    }, body), body)
+    return {
+        "ok": True,
+        "videos": [video_item],
+        "text": "",
+        "cost": 0.0,
+        "model_label": model_info.get("label", "SeedVR2 Video"),
+        "params": params_meta,
+        "_input_source_image": None,
+        "_input_source_video": source_video,
+        "_input_reference_images": [],
     }
 
 
@@ -5301,7 +7408,7 @@ def run_fal_seedream_generation_job(body: dict, api_key: str) -> dict:
 
     price_per_image = PRICING.get(model_id, {}).get(image_size, 0.0)
     cost = price_per_image * len(png_images)
-    params_meta = {
+    params_meta = merge_request_settings(merge_asset_metadata({
         "model": model_id,
         "modelFamily": body.get("modelFamily", model_info.get("family", "")),
         "model_label": model_info["label"],
@@ -5319,7 +7426,7 @@ def run_fal_seedream_generation_job(body: dict, api_key: str) -> dict:
         "seedMode": seed_mode,
         "seedValue": int(returned_seed if returned_seed is not None else actual_seed if actual_seed is not None else seed_value),
         "falSafetyChecker": enable_safety_checker,
-    }
+    }, body), body)
     return {
         "ok": True,
         "images": png_images,
@@ -5418,7 +7525,7 @@ def run_fal_nano_banana_generation_job(body: dict, api_key: str) -> dict:
 
     price_per_image = PRICING.get(model_id, {}).get(image_size, 0.0)
     cost = price_per_image * len(png_images)
-    params_meta = {
+    params_meta = merge_request_settings(merge_asset_metadata({
         "model": model_id,
         "modelFamily": body.get("modelFamily", model_info.get("family", "")),
         "model_label": model_info["label"],
@@ -5436,7 +7543,7 @@ def run_fal_nano_banana_generation_job(body: dict, api_key: str) -> dict:
         "seedMode": seed_mode,
         "seedValue": int(returned_seed if returned_seed is not None else actual_seed if actual_seed is not None else seed_value),
         "falSafetyTolerance": fal_safety_tolerance,
-    }
+    }, body), body)
     text_value = ""
     if isinstance(result, dict):
         text_value = str(result.get("description") or result.get("text") or "")
@@ -5526,7 +7633,7 @@ def run_byteplus_seedream_generation_job(body: dict, api_key: str) -> dict:
 
     price_per_image = PRICING.get(model_id, {}).get(image_size, 0.0)
     cost = price_per_image * len(images)
-    params_meta = {
+    params_meta = merge_request_settings(merge_asset_metadata({
         "model": model_id,
         "modelFamily": body.get("modelFamily", model_info.get("family", "")),
         "model_label": model_info["label"],
@@ -5544,7 +7651,7 @@ def run_byteplus_seedream_generation_job(body: dict, api_key: str) -> dict:
         "ref_count": len(ref_images),
         "seedMode": seed_mode,
         "seedValue": seed_value,
-    }
+    }, body), body)
     return {
         "ok": True,
         "images": images,
@@ -5667,7 +7774,9 @@ def run_fal_seedvr_upscale_job(body: dict, api_key: str) -> dict:
         "upscaleOutputWidth": output_width,
         "upscaleOutputHeight": output_height,
         "upscaleSourceFilename": str(body.get("sourceFilename") or ""),
+        "upscaleSourceRelpath": str(source_params.get("gen_relpath") or source_params.get("assetRelpath") or ""),
     })
+    params_meta = merge_request_settings(merge_asset_metadata(params_meta, body, fallback_source=source_params), body)
 
     return {
         "ok": True,
@@ -5725,8 +7834,12 @@ def run_video_job(body: dict, config: dict) -> dict:
         fal_key = (config.get("fal_api_key", "") or "").strip()
         if not fal_key:
             raise ValueError("Fal API key not configured. Go to Settings.")
+        if family == "seedvr-video":
+            return run_fal_seedvr_video_job(payload, fal_key)
         if family == "wan-video":
             return run_fal_wan_video_job(payload, fal_key)
+        if family == "seedance":
+            return run_fal_seedance_video_job(payload, fal_key)
         return run_fal_kling_video_job(payload, fal_key)
 
     raise ValueError("Unsupported video provider")
@@ -5864,47 +7977,22 @@ def api_generations():
     Returns the last N saved generations for gallery reload on restart.
     Each item includes a local image URL plus prompt metadata.
     """
-    MAX_LOAD = 100   # load up to last 100 images on startup
-    result   = []
-    if os.path.isdir(GENERATIONS_DIR):
-        date_dirs = sorted(
-            [d for d in os.listdir(GENERATIONS_DIR)
-             if os.path.isdir(os.path.join(GENERATIONS_DIR, d))],
-            reverse=True
-        )
-        for date_str in date_dirs:
-            if len(result) >= MAX_LOAD:
-                break
-            day_path   = os.path.join(GENERATIONS_DIR, date_str)
-            meta_files = sorted(glob.glob(os.path.join(day_path, "*.json")), reverse=True)
-            for mf in meta_files:
-                if len(result) >= MAX_LOAD:
-                    break
-                try:
-                    with open(mf, encoding="utf-8") as f:
-                        meta = json.load(f)
-                    base     = mf[:-5]
-                    img_path = None
-                    for ext in (".jpeg", ".jpg", ".png", ".webp"):
-                        candidate = base + ext
-                        if os.path.exists(candidate):
-                            img_path = candidate
-                            break
-                    if not img_path:
-                        continue
-                    filename = os.path.basename(img_path)
-                    params = build_common_asset_params(meta)
-                    result.append({
-                        "mime_type":    meta.get("mime_type", "image/jpeg"),
-                        "url":          f"/generations/{date_str}/{filename}",
-                        "generated_at": meta.get("generated_at", ""),
-                        "text":         meta.get("text", ""),
-                        "gen_date":     date_str,
-                        "gen_filename": meta.get("filename", filename),
-                        "params": params,
-                    })
-                except Exception:
-                    pass
+    MAX_LOAD = 100
+    result = []
+    for item in collect_generation_records(max_load=MAX_LOAD):
+        params = item.get("params", {})
+        result.append({
+            "mime_type": params.get("mime_type", "image/png"),
+            "url": item.get("url", ""),
+            "generated_at": item.get("generated_at", ""),
+            "text": item.get("text", ""),
+            "gen_date": item.get("date", ""),
+            "gen_filename": item.get("filename", ""),
+            "gen_relpath": item.get("relpath", ""),
+            "delete_url": item.get("delete_url", ""),
+            "folder_open_payload": item.get("folder_open_payload", {}),
+            "params": params,
+        })
     return jsonify(result)
 
 
@@ -5913,60 +8001,90 @@ def api_generations():
 def api_videos():
     max_load = 40
     result = []
-    if os.path.isdir(VIDEOS_DIR):
-        date_dirs = sorted(
-            [d for d in os.listdir(VIDEOS_DIR) if os.path.isdir(os.path.join(VIDEOS_DIR, d))],
-            reverse=True,
-        )
-        for date_str in date_dirs:
-            if len(result) >= max_load:
-                break
-            day_path = os.path.join(VIDEOS_DIR, date_str)
-            meta_files = sorted(glob.glob(os.path.join(day_path, "*.json")), reverse=True)
-            for meta_file in meta_files:
-                if len(result) >= max_load:
-                    break
-                try:
-                    with open(meta_file, "r", encoding="utf-8") as fh:
-                        meta = json.load(fh)
-                    filename = str(meta.get("filename") or "").strip()
-                    if not filename:
-                        continue
-                    video_path = os.path.join(day_path, filename)
-                    if not os.path.exists(video_path):
-                        continue
-                    result.append({
-                        "url": f"/videos/{date_str}/{filename}",
-                        "generated_at": meta.get("generated_at", ""),
-                        "gen_date": date_str,
-                        "gen_filename": filename,
-                        "mime_type": meta.get("mime_type", "video/mp4"),
-                        "poster_url": meta.get("poster_url", ""),
-                        "text": meta.get("text", ""),
-                        "params": meta,
-                    })
-                except Exception:
-                    continue
+    for item in collect_video_asset_records(max_load=max_load):
+        result.append({
+            "url": item.get("url", ""),
+            "generated_at": item.get("generated_at", ""),
+            "gen_date": item.get("date", ""),
+            "gen_filename": item.get("filename", ""),
+            "gen_relpath": item.get("relpath", ""),
+            "mime_type": item.get("mime_type", "video/mp4"),
+            "poster_url": item.get("poster_url", ""),
+            "text": item.get("text", ""),
+            "delete_url": item.get("delete_url", ""),
+            "folder_open_payload": item.get("folder_open_payload", {}),
+            "params": item.get("params", {}),
+        })
     return jsonify(result)
+
+
+@app.route("/api/videos/<path:asset_relpath>", methods=["DELETE"])
+@login_required
+def api_delete_video(asset_relpath):
+    try:
+        safe_relpath = resolve_asset_relpath(relpath=asset_relpath)
+        safe_root, video_path, _ = resolve_asset_image_path("videos", relpath=safe_relpath)
+    except FileNotFoundError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    filename = os.path.basename(video_path)
+    if os.path.splitext(filename)[1].lower() not in (".mp4", ".webm", ".mov"):
+        return jsonify({"ok": False, "error": "Invalid file type"}), 400
+
+    try:
+        base_path = os.path.splitext(video_path)[0]
+        json_path = base_path + ".json"
+        poster_path = base_path + "_poster.png"
+        archived_refs = []
+
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, encoding="utf-8") as fh:
+                    meta = json.load(fh)
+                if isinstance(meta.get("videoSourceArchive"), dict):
+                    archived_refs.append(meta.get("videoSourceArchive"))
+                if isinstance(meta.get("videoRefArchive"), list):
+                    archived_refs.extend([item for item in meta.get("videoRefArchive", []) if isinstance(item, dict)])
+            except Exception:
+                archived_refs = []
+
+        if os.path.exists(video_path):
+            os.remove(video_path)
+        if os.path.exists(json_path):
+            os.remove(json_path)
+        if os.path.exists(poster_path):
+            os.remove(poster_path)
+
+        delete_reference_archive_entries(archived_refs)
+
+        day_dir = os.path.dirname(video_path)
+        while os.path.isdir(day_dir) and day_dir.startswith(safe_root + os.sep) and not os.listdir(day_dir):
+            os.rmdir(day_dir)
+            day_dir = os.path.dirname(day_dir)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 # ---------------------------------------------------------------------------
 # API â€” Delete a generation (image + sidecar JSON only, never loved/)
 # ---------------------------------------------------------------------------
-@app.route("/api/generations/<date_str>/<filename>", methods=["DELETE"])
+@app.route("/api/generations/<path:asset_relpath>", methods=["DELETE"])
 @login_required
-def api_delete_generation(date_str, filename):
-    safe_root = os.path.realpath(GENERATIONS_DIR)
-    img_path  = os.path.realpath(os.path.join(GENERATIONS_DIR, date_str, filename))
+def api_delete_generation(asset_relpath):
+    try:
+        safe_relpath = resolve_asset_relpath(relpath=asset_relpath)
+        safe_root, img_path, _ = resolve_asset_image_path("history", relpath=safe_relpath)
+    except FileNotFoundError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
-    if not img_path.startswith(safe_root + os.sep):
-        return jsonify({"ok": False, "error": "Invalid path"}), 400
-
+    filename = os.path.basename(img_path)
     if os.path.splitext(filename)[1].lower() not in (".jpeg", ".jpg", ".png", ".webp"):
         return jsonify({"ok": False, "error": "Invalid file type"}), 400
-
-    if not os.path.exists(img_path):
-        return jsonify({"ok": False, "error": "File not found"}), 404
 
     try:
         json_path = os.path.splitext(img_path)[0] + ".json"
@@ -5986,8 +8104,9 @@ def api_delete_generation(date_str, filename):
         delete_reference_archive_entries(archived_refs)
 
         day_dir = os.path.dirname(img_path)
-        if os.path.isdir(day_dir) and not os.listdir(day_dir):
+        while os.path.isdir(day_dir) and day_dir.startswith(safe_root + os.sep) and not os.listdir(day_dir):
             os.rmdir(day_dir)
+            day_dir = os.path.dirname(day_dir)
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -6007,32 +8126,26 @@ def api_publish():
     if not img_b64:
         return jsonify({"ok": False, "error": "No image data provided"})
 
-    now      = datetime.now()
-    date_str = now.strftime("%Y-%m-%d")
-    time_str = now.strftime("%H%M%S")
-
-    day_dir = os.path.join(LOVED_DIR, date_str)
-    os.makedirs(day_dir, exist_ok=True)
+    now = datetime.now()
 
     try:
         img_b64, mime_type = convert_image_b64_to_png(img_b64, mime_type)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Image conversion error: {e}"})
 
-    ext         = "png"
-    model_short = (meta.get("model_label", "nb")
-                   .replace(" ", "").lower()
-                   .replace("nanobanana", "nb"))
-    size_str  = meta.get("imageSize", "1K").lower()
-    basename  = f"{time_str}_{model_short}_{size_str}"
+    fallback_filename = sanitize_asset_filename_stem(
+        meta.get("assetFilename", "") or meta.get("prompt", "") or meta.get("model_label", "") or now.strftime("%H%M%S"),
+        fallback=now.strftime("%H%M%S"),
+    )
+    asset_meta = normalize_asset_metadata(meta, require_filename=True, fallback_filename=fallback_filename)
+    meta.update(asset_meta)
+    config = load_config()
+    update_asset_metadata_memory(config, asset_meta)
+    save_config(config)
 
-    idx       = 1
-    img_path  = os.path.join(day_dir, f"{basename}.{ext}")
-    meta_path = os.path.join(day_dir, f"{basename}.json")
-    while os.path.exists(img_path):
-        img_path  = os.path.join(day_dir, f"{basename}_{idx}.{ext}")
-        meta_path = os.path.join(day_dir, f"{basename}_{idx}.json")
-        idx += 1
+    abs_dir, relpath, basename = build_asset_storage_paths(LOVED_DIR, asset_meta, "png")
+    img_path = os.path.join(LOVED_DIR, relpath.replace("/", os.sep))
+    meta_path = os.path.join(abs_dir, f"{basename}.json")
 
     img_bytes = base64.b64decode(img_b64)
     with open(img_path, "wb") as f:
@@ -6041,14 +8154,15 @@ def api_publish():
     meta["mime_type"]    = mime_type
     meta["published_at"] = now.isoformat()
     meta["filename"]     = os.path.basename(img_path)
-    with open(meta_path, "w") as f:
+    meta["assetRelpath"] = relpath
+    with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2, ensure_ascii=False)
 
     return jsonify({
         "ok":      True,
-        "date":    date_str,
+        "date":    derive_asset_date_key(relpath, now.isoformat()),
         "file":    os.path.basename(img_path),
-        "url":     f"/loved/{date_str}/{os.path.basename(img_path)}",
+        "url":     f"/loved/{relpath}",
         "gallery": url_for("loved_gallery")
     })
 

@@ -6,6 +6,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI API Studio</title>
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
+<script>window.__ASSET_META_BOOTSTRAP__ = {{ asset_meta_bootstrap | tojson }};</script>
+<script defer src="/static/project_meta.js?v=20260330b"></script>
 <script>
 (function () {
   const PROMPT_BAR_HEIGHT_DEFAULT = 320;
@@ -185,6 +187,9 @@
     if (videoActive && typeof window.syncVideoModeUi === 'function') {
       window.requestAnimationFrame(() => window.syncVideoModeUi());
     }
+    if (typeof window.syncGalleryModeUi === 'function') {
+      window.requestAnimationFrame(() => window.syncGalleryModeUi());
+    }
     if (typeof window.syncPoseWorkspace === 'function') {
       window.requestAnimationFrame(() => window.syncPoseWorkspace());
     }
@@ -193,7 +198,11 @@
   window.setPromptMode = function (mode) {
     const bar = document.getElementById('promptBar');
     if (!bar) return;
+    const previousMode = String(bar.dataset.promptMode || 'creation');
     bar.dataset.promptMode = ['creation', 'edit', 'video'].includes(mode) ? mode : 'creation';
+    if (bar.dataset.promptMode === 'video' && previousMode !== 'video') {
+      window.gallerySelectedVideoId = "";
+    }
     try {
       localStorage.setItem('nb_prompt_mode', bar.dataset.promptMode);
     } catch (e) {}
@@ -362,10 +371,11 @@
       <span></span><span></span><span></span>
     </button>
     <a href="/index" class="nav-logo">AI API Studio <span class="nav-version">1.2 beta</span></a>
+    {% include "_project_meta_bar.html" %}
   </div>
   <div class="nav-links">
     <a href="/index" class="active">Generator</a>
-    <a href="/images">Images</a>
+    <a href="/images">Assets</a>
     <a href="/workbench">Workbench</a>
     <a href="/reports">Reports</a>
     <a href="/settings">Settings</a>
@@ -624,14 +634,8 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/>
               </svg>
-              <span>Creation</span>
+              <span>Image</span>
             </button>
-            <button class="prompt-mode-tab" id="promptModeEditBtn" type="button" onclick="setPromptMode('edit')" aria-pressed="false">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M12 3v6"/><path d="M12 15v6"/><path d="M5 9h14"/><path d="M5 15h14"/>
-                </svg>
-                <span>Upscale</span>
-              </button>
             <button class="prompt-mode-tab" id="promptModeVideoBtn" type="button" onclick="setPromptMode('video')" aria-pressed="false">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="6" width="13" height="12" rx="2"></rect>
@@ -639,6 +643,12 @@
               </svg>
               <span>Video</span>
             </button>
+            <button class="prompt-mode-tab" id="promptModeEditBtn" type="button" onclick="setPromptMode('edit')" aria-pressed="false">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 3v6"/><path d="M12 15v6"/><path d="M5 9h14"/><path d="M5 15h14"/>
+                </svg>
+                <span>Upscale</span>
+              </button>
           </div>
           <div class="prompt-bar-header-actions" id="promptBarCreationControls">
             <div class="meta-left prompt-header-meta">
@@ -764,31 +774,36 @@
                   <span class="chip-g-icon footer-meta-provider-icon" id="videoFooterProviderIcon">K</span>
                   <select id="videoModelFooterSelect" class="footer-meta-select" onchange="onVideoFooterModelChange()"></select>
                 </label>
-                <label class="footer-meta-select-wrap footer-meta-select-wrap-provider" title="Provider">
+                <label class="footer-meta-select-wrap footer-meta-select-wrap-provider footer-meta-select-wrap-video-provider" title="Provider">
                   <select id="videoProviderFooterSelect" class="footer-meta-select footer-meta-select-provider" onchange="onVideoFooterProviderChange()"></select>
                 </label>
               </div>
-              <label class="footer-meta-select-wrap footer-meta-select-wrap-provider" title="Mode">
+              <label class="footer-meta-select-wrap footer-meta-select-wrap-video-mode" title="Mode">
                 <select id="videoInputModeSelect" class="footer-meta-select footer-meta-select-provider" onchange="onVideoInputModeChange()">
                   <option value="text">Text to Video</option>
                   <option value="image">Image to Video</option>
+                  <option value="video">Video Upscale</option>
                 </select>
               </label>
-              <label class="footer-meta-select-wrap footer-meta-select-wrap-provider" title="Aspect ratio">
+              <label class="footer-meta-select-wrap footer-meta-select-wrap-model footer-meta-select-wrap-video-model" title="Kling / video model">
+                <select id="videoConcreteModelSelect" class="footer-meta-select footer-meta-select-provider" onchange="onVideoConcreteModelChange()"></select>
+              </label>
+              <label class="footer-meta-select-wrap footer-meta-select-wrap-video-aspect" id="videoAspectWrap" title="Aspect ratio">
                 <select id="videoAspectRatioSelect" class="footer-meta-select footer-meta-select-provider">
                   <option value="16:9">16:9</option>
                   <option value="9:16">9:16</option>
                   <option value="1:1">1:1</option>
                 </select>
               </label>
-              <label class="footer-meta-select-wrap footer-meta-select-wrap-provider" title="Duration">
+              <label class="footer-meta-select-wrap footer-meta-select-wrap-video-duration" id="videoDurationWrap" title="Duration">
                 <select id="videoDurationSelect" class="footer-meta-select footer-meta-select-provider">
                   <option value="5">5s</option>
                   <option value="10">10s</option>
                 </select>
               </label>
-              <label class="footer-meta-select-wrap footer-meta-select-wrap-provider" id="videoResolutionWrap" title="Resolution">
+              <label class="footer-meta-select-wrap footer-meta-select-wrap-video-resolution" id="videoResolutionWrap" title="Resolution">
                 <select id="videoResolutionSelect" class="footer-meta-select footer-meta-select-provider">
+                  <option value="480p">480p</option>
                   <option value="720p">720p</option>
                   <option value="1080p">1080p</option>
                 </select>
@@ -882,53 +897,101 @@
               <div class="prompt-wrap video-prompt-box">
                 <textarea id="videoPromptInput" placeholder="Describe the motion, camera, mood, and scene..." rows="3" oninput="autoResize(this)"></textarea>
               </div>
+              <div class="prompt-compose-resizer video-prompt-resizer" id="videoPromptResizer" title="Drag to resize negative prompt" role="separator" aria-orientation="vertical" aria-label="Resize negative prompt"></div>
               <div class="prompt-wrap video-prompt-box video-negative-box">
                 <textarea id="videoNegativePromptInput" class="video-negative-input" placeholder="Optional negative prompt" rows="2" oninput="autoResize(this)"></textarea>
               </div>
             </div>
             <div class="prompt-compose-resizer video-compose-resizer" id="videoComposeResizer" title="Drag to resize video source panel" role="separator" aria-orientation="vertical" aria-label="Resize video source panel"></div>
-            <div class="video-source-strip ref-strip video-source-strip-empty ref-strip-empty-state" id="videoSourceStrip"
-                 ondragover="onVideoSourceDragOver(event)"
-                 ondragleave="onVideoSourceDragLeave(event)"
-                 ondrop="onVideoSourceDrop(event)">
-              <div class="video-source-toolbar ref-strip-toolbar">
-                <div class="ref-actions video-source-actions">
-                  <button class="ref-action-btn" type="button" onclick="triggerVideoSourceInput()" title="Upload source image">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-                      <polyline points="21 15 16 10 5 21"/>
-                    </svg>
-                  </button>
-                  <button class="ref-action-btn" type="button" onclick="openLovedPicker('video')" title="Choose from Loved images or saved references">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M7 10h10"></path><path d="M7 14h7"></path><path d="M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-5l-4 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path>
-                    </svg>
-                  </button>
-                  <button class="ref-action-btn" type="button" onclick="useSelectedViewerImageAsVideoSource()" title="Use selected viewer image">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M4 5h16v14H4z"></path><path d="M9 9l6 3-6 3z"></path>
-                    </svg>
-                  </button>
-                  <input type="file" id="videoSourceInput" accept="image/*" style="display:none" onchange="onVideoSourceInputChange(event)">
+            <div class="video-source-column" id="videoSourceColumn">
+              <div class="video-source-strip ref-strip video-source-strip-empty ref-strip-empty-state" id="videoSourceStrip"
+                   ondragover="onVideoSourceDragOver(event)"
+                   ondragleave="onVideoSourceDragLeave(event)"
+                   ondrop="onVideoSourceDrop(event)">
+                <div class="video-source-toolbar ref-strip-toolbar">
+                  <span class="video-source-strip-label" id="videoSourceStripLabel">Start image</span>
+                  <div class="ref-actions video-source-actions">
+                    <button class="ref-action-btn" type="button" id="videoSourceUploadBtn" onclick="triggerVideoSourceInput()" title="Upload source image">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                        <polyline points="21 15 16 10 5 21"/>
+                      </svg>
+                    </button>
+                    <button class="ref-action-btn" type="button" id="videoSourceLibraryBtn" onclick="openLovedPicker('video')" title="Choose from Loved images or saved references">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>
+                      </svg>
+                    </button>
+                    <button class="ref-action-btn ref-action-at" type="button" id="videoSourceElementsBtn" onclick="openElements('video')" title="Elements - asset library (@)">@</button>
+                    <button class="ref-action-btn" type="button" id="videoSourceViewerBtn" onclick="useSelectedViewerAssetAsVideoSource()" title="Use selected viewer image">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 5h16v14H4z"></path><path d="M9 9l6 3-6 3z"></path>
+                      </svg>
+                    </button>
+                    <input type="file" id="videoSourceInput" accept="image/*" style="display:none" onchange="onVideoSourceInputChange(event)">
+                  </div>
+                </div>
+                <div class="video-source-empty ref-strip-empty" id="videoSourceEmpty">
+                  <span class="ref-strip-empty-title" id="videoSourceEmptyTitle">Drop source image here</span>
+                  <span class="ref-strip-empty-sub" id="videoSourceEmptySub">Use one start image for image-to-video. Drag from the main image, history, Explorer, or another browser window.</span>
+                </div>
+                <div class="video-source-preview" id="videoSourcePreviewWrap" style="display:none">
+                  <img id="videoSourcePreview" alt="Video source preview" style="display:none">
+                  <video id="videoSourceVideoPreview" controls muted playsinline preload="metadata" style="display:none"></video>
+                </div>
+                <div class="video-source-meta ref-strip-meta">
+                  <div class="video-source-meta-left ref-strip-meta-left">
+                    <span id="videoSourceCounter" class="ref-counter">0/1</span>
+                    <span id="videoSourceName" class="ref-mask-hint">Drop or choose one start image</span>
+                  </div>
+                  <button class="ref-clear-all" id="clearVideoSourceBtn" type="button" onclick="clearVideoSource()" style="display:none">Clear</button>
                 </div>
               </div>
-              <div class="video-source-empty ref-strip-empty" id="videoSourceEmpty">
-                <span class="ref-strip-empty-title">Drop reference images here</span>
-                <span class="ref-strip-empty-sub" id="videoSourceEmptySub">Use one start image for image-to-video. Drag from the main image, history, Explorer, or another browser window.</span>
-              </div>
-              <div class="video-source-preview" id="videoSourcePreviewWrap" style="display:none">
-                <img id="videoSourcePreview" alt="Video source preview">
-              </div>
-              <div class="video-source-meta ref-strip-meta">
-                <div class="video-source-meta-left ref-strip-meta-left">
-                  <span id="videoSourceCounter" class="ref-counter">0/1</span>
-                  <span id="videoSourceName" class="ref-mask-hint">Drop or choose one start image</span>
+              <div class="video-ref-strip ref-strip ref-strip-empty-state" id="videoReferenceStrip" style="display:none"
+                   ondragover="onVideoReferenceDragOver(event)"
+                   ondragleave="onVideoReferenceDragLeave(event)"
+                   ondrop="onVideoReferenceDrop(event)">
+                <div class="ref-strip-toolbar">
+                  <span class="video-source-strip-label">Reference images</span>
+                  <div class="ref-actions video-source-actions">
+                    <button class="ref-action-btn" type="button" onclick="triggerVideoReferenceInput()" title="Upload reference image">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                        <polyline points="21 15 16 10 5 21"/>
+                      </svg>
+                    </button>
+                    <button class="ref-action-btn" type="button" onclick="openLovedPicker('video-refs')" title="Choose video reference images from Loved images or saved references">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>
+                      </svg>
+                    </button>
+                    <button class="ref-action-btn ref-action-at" type="button" onclick="openElements('video-refs')" title="Elements - asset library (@)">@</button>
+                    <button class="ref-action-btn" type="button" onclick="useSelectedViewerImageAsVideoReference()" title="Use selected viewer image as a video reference">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 5h16v14H4z"></path><path d="M9 9l6 3-6 3z"></path>
+                      </svg>
+                    </button>
+                    <input type="file" id="videoReferenceInput" accept="image/*" multiple style="display:none" onchange="onVideoReferenceInputChange(event)">
+                  </div>
                 </div>
-                <button class="ref-clear-all" id="clearVideoSourceBtn" type="button" onclick="clearVideoSource()" style="display:none">Clear</button>
+                <div class="ref-strip-empty" id="videoReferenceEmpty">
+                  <span class="ref-strip-empty-title">Drop reference images here</span>
+                  <span class="ref-strip-empty-sub" id="videoReferenceEmptySub">Add reference images for style or identity. Drag from the main image, history, Explorer, or another browser window.</span>
+                </div>
+                <div class="ref-strip-inner" id="videoReferenceInner"></div>
+                <div class="ref-strip-meta">
+                  <div class="ref-strip-meta-left">
+                    <span id="videoReferenceCounter" class="ref-counter">0/0</span>
+                    <span class="ref-mask-hint" id="videoReferenceHint">Reference images are sent only for supported Kling video models.</span>
+                  </div>
+                  <button class="ref-clear-all" type="button" onclick="clearAllVideoReferenceImages()">Clear All</button>
+                </div>
               </div>
             </div>
           </div>
-          <div class="video-results-shell">
+          <div class="video-results-shell" id="videoResultsShell" style="display:none">
             <div class="video-results-header">
               <span class="video-results-title">Recent videos</span>
               <span class="video-results-count" id="videoResultsCount">0 videos</span>
@@ -945,17 +1008,19 @@
           <div class="meta-upscale">
             <div class="upscale-control-group">
               <span class="upscale-control-label">Upscale</span>
-              <select id="upscaleModelSelect" class="upscale-model-select">
-                <option value="seedvr2" selected>SeedVR2</option>
-              </select>
-              <select id="upscalePresetSelect" class="upscale-preset-select" onchange="onUpscalePresetChange()">
-                <option value="factor:2" selected>2x</option>
-                <option value="factor:4">4x</option>
-                <option value="target:1080p">1080p</option>
-                <option value="target:1440p">1440p</option>
-                <option value="target:2160p">4K</option>
-                <option value="custom">Custom</option>
-              </select>
+              <div class="upscale-select-row">
+                <select id="upscaleModelSelect" class="upscale-model-select">
+                  <option value="seedvr2" selected>SeedVR2</option>
+                </select>
+                <select id="upscalePresetSelect" class="upscale-preset-select" onchange="onUpscalePresetChange()">
+                  <option value="factor:2" selected>2x</option>
+                  <option value="factor:4">4x</option>
+                  <option value="target:1080p">1080p</option>
+                  <option value="target:1440p">1440p</option>
+                  <option value="target:2160p">4K</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
               <div class="upscale-custom-fields" id="upscaleCustomFields" data-anchor="width" style="display:none">
                 <label class="upscale-custom-field" title="Target width">
                   <span>W</span>
@@ -967,14 +1032,76 @@
                 </label>
               </div>
               <div class="upscale-ratio-note" id="upscaleRatioNote" style="display:none"></div>
+              <div class="video-settings-panel video-settings-panel-upscale" id="videoUpscaleSettingsPanel" style="display:none">
+                <div class="video-settings-title">SeedVR2 Video Settings</div>
+                <div class="video-settings-grid">
+                  <label class="video-settings-field">
+                    <span>Upscale mode</span>
+                    <select id="videoUpscaleModeSelect" class="footer-meta-select footer-meta-select-provider" onchange="syncSeedvrVideoSettingsUi({ modelInfo: { supports_seedvr_video_settings: true } })">
+                      <option value="factor">By factor</option>
+                      <option value="target">Target resolution</option>
+                    </select>
+                  </label>
+                  <label class="video-settings-field" id="videoUpscaleFactorWrap">
+                    <span>Upscale factor</span>
+                    <input id="videoUpscaleFactorInput" class="prompt-safety-select video-settings-input" type="number" min="1" max="4" step="0.25" value="2">
+                  </label>
+                  <label class="video-settings-field" id="videoUpscaleTargetResolutionWrap" style="display:none">
+                    <span>Target resolution</span>
+                    <select id="videoUpscaleTargetResolutionSelect" class="footer-meta-select footer-meta-select-provider">
+                      <option value="720p">720p</option>
+                      <option value="1080p" selected>1080p</option>
+                      <option value="1440p">1440p</option>
+                      <option value="2160p">2160p</option>
+                    </select>
+                  </label>
+                  <label class="video-settings-field">
+                    <span>Noise scale</span>
+                    <input id="videoUpscaleNoiseScaleInput" class="prompt-safety-select video-settings-input" type="number" min="0" max="1" step="0.05" value="0.1">
+                  </label>
+                  <label class="video-settings-field">
+                    <span>Output format</span>
+                    <select id="videoUpscaleOutputFormatSelect" class="footer-meta-select footer-meta-select-provider">
+                      <option value="X264 (.mp4)">X264 (.mp4)</option>
+                      <option value="VP9 (.webm)">VP9 (.webm)</option>
+                      <option value="PRORES4444 (.mov)">PRORES4444 (.mov)</option>
+                      <option value="GIF (.gif)">GIF (.gif)</option>
+                    </select>
+                  </label>
+                  <label class="video-settings-field">
+                    <span>Output quality</span>
+                    <select id="videoUpscaleOutputQualitySelect" class="footer-meta-select footer-meta-select-provider">
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high" selected>High</option>
+                      <option value="maximum">Maximum</option>
+                    </select>
+                  </label>
+                  <label class="video-settings-field">
+                    <span>Write mode</span>
+                    <select id="videoUpscaleOutputWriteModeSelect" class="footer-meta-select footer-meta-select-provider">
+                      <option value="fast">Fast</option>
+                      <option value="balanced" selected>Balanced</option>
+                      <option value="small">Small</option>
+                    </select>
+                  </label>
+                  <label class="video-settings-field">
+                    <span>Seed</span>
+                    <input id="videoUpscaleSeedInput" class="prompt-safety-select video-settings-input" type="number" step="1" placeholder="Random">
+                  </label>
+                  <label class="video-settings-field video-settings-toggle">
+                    <span>Sync mode</span>
+                    <label class="prompt-safety-check" for="videoUpscaleSyncModeToggle">
+                      <input type="checkbox" id="videoUpscaleSyncModeToggle" checked>
+                      <span>On</span>
+                    </label>
+                  </label>
+                </div>
+              </div>
               <button class="btn-upscale" id="upscaleBtn" onclick="upscaleSelectedImage()" disabled>Upscale</button>
             </div>
             <div class="upscale-hint" id="upscaleHint">Select a gallery image to upscale</div>
           </div>
-        </div>
-        <div class="edit-panel-placeholder">
-          <div class="edit-panel-placeholder-label">Future tools will be added here</div>
-          <p>The `Upscale` section now holds upscale tools. More image editing functions can be added here next.</p>
         </div>
         </div>
         </div>
@@ -1099,12 +1226,12 @@
             <div class="history-sidebar-heading">
               <div class="gallery-source-switch">
                 <select class="gallery-source-select" id="gallerySourceSelect" onchange="void setGallerySource(this.value)" aria-label="Choose image source">
-                  <option value="history">History</option>
+                  <option value="history">Images</option>
                   <option value="references">References</option>
                   <option value="loved">Loved</option>
+                  <option value="videos">Videos</option>
                 </select>
               </div>
-              <span class="gallery-filter-count" id="galleryFilterCount">No history yet</span>
             </div>
             <div class="history-sidebar-top-actions">
               <button class="history-filter-toggle" id="galleryFilterToggleBtn" type="button" onclick="toggleGalleryFilters()" title="Hide history filters" aria-label="Hide history filters" aria-pressed="true">Filter</button>
@@ -1116,21 +1243,21 @@
                   <line x1="11" y1="0.75" x2="11" y2="12.25" stroke="currentColor" stroke-width="1.5"/>
                 </svg>
               </button>
-              <span class="sidebar-collapsed-label sidebar-collapsed-label-right" aria-hidden="true">Image History</span>
+              <span class="sidebar-collapsed-label sidebar-collapsed-label-right" aria-hidden="true">Images</span>
             </div>
           </div>
           <div class="gallery-toolbar" id="galleryToolbar">
             <div class="gallery-toolbar-filters">
               <div class="gallery-toolbar-row">
                 <label class="gallery-filter-field">
-                  <span>Sort</span>
+                  <span id="gallerySortFilterLabel">Sort</span>
                   <select id="gallerySortSelect">
                     <option value="newest" selected>Newest</option>
                     <option value="oldest">Oldest</option>
                   </select>
                 </label>
                 <label class="gallery-filter-field">
-                  <span>Image Size</span>
+                  <span id="gallerySizeFilterLabel">Image Size</span>
                   <select id="gallerySizeFilter">
                     <option value="all" selected>All sizes</option>
                     <option value="1K">1K</option>
@@ -1139,23 +1266,45 @@
                   </select>
                 </label>
                 <label class="gallery-filter-field gallery-filter-field-model">
-                  <span>Model</span>
+                  <span id="galleryModelFilterLabel">Model</span>
                   <select id="galleryModelFilter">
                     <option value="all" selected>All models</option>
                   </select>
                 </label>
                 <label class="gallery-filter-field gallery-filter-field-provider">
-                  <span>Provider</span>
+                  <span id="galleryProviderFilterLabel">Provider</span>
                   <select id="galleryProviderFilter">
                     <option value="all" selected>All providers</option>
                   </select>
                 </label>
                 <label class="gallery-filter-field">
-                  <span>Date</span>
+                  <span>Client</span>
+                  <select id="galleryClientFilter">
+                    <option value="all" selected>All clients</option>
+                  </select>
+                </label>
+                <label class="gallery-filter-field">
+                  <span>Project</span>
+                  <select id="galleryProjectFilter">
+                    <option value="all" selected>All projects</option>
+                  </select>
+                </label>
+                <label class="gallery-filter-field">
+                  <span>Shot</span>
+                  <select id="galleryShotFilter">
+                    <option value="all" selected>All shots</option>
+                  </select>
+                </label>
+                <label class="gallery-filter-field gallery-filter-field-filename">
+                  <span id="galleryFilenameFilterLabel">Filename</span>
+                  <input type="text" id="galleryFilenameFilter" placeholder="Search filename">
+                </label>
+                <label class="gallery-filter-field">
+                  <span id="galleryDateFilterLabel">Date</span>
                   <input type="date" id="galleryDateFilter">
                 </label>
                 <label class="gallery-filter-field">
-                  <span>Aspect Ratio</span>
+                  <span id="galleryRatioFilterLabel">Aspect Ratio</span>
                   <select id="galleryRatioFilter">
                     <option value="all" selected>All ratios</option>
                     <option value="1:1">1:1</option>
@@ -1175,7 +1324,7 @@
                   </select>
                 </label>
                 <label class="gallery-filter-field gallery-filter-field-upscaler">
-                  <span>Upscaler</span>
+                  <span id="galleryUpscalerFilterLabel">Upscaler</span>
                   <select id="galleryUpscalerFilter">
                     <option value="all" selected>All images</option>
                     <option value="none">Not upscaled</option>
@@ -1186,6 +1335,7 @@
               </div>
             </div>
             <div class="gallery-toolbar-size">
+              <span class="gallery-filter-count" id="galleryFilterCount">No images yet</span>
               <span class="gallery-rail-size-title">Size</span>
               <label class="gallery-rail-size-control gallery-rail-size-control-inline" for="galleryDensityRange">
                 <input type="range" id="galleryDensityRange" min="1" max="3" step="1" value="2">
@@ -1254,7 +1404,7 @@
       <div class="pub-picker-grid" id="pubPickerGrid" style="display:none"></div>
       <div class="pub-picker-empty" id="pubPickerEmpty" style="display:none">
                 No loved images yet.<br>
-                <a href="/images?kind=loved">Go to Images</a>
+            <a href="/images?kind=loved">Go to Assets</a>
       </div>
     </div>
     <div class="modal-footer">
@@ -1388,7 +1538,7 @@
 
     <!-- Header -->
     <div class="modal-header">
-      <h3>Ã¢Å“Â¦ New Talent</h3>
+      <h3>New Talent</h3>
       <div class="modal-header-right">
         <span class="wizard-step-label" id="wizStepLabel">Upload image</span>
         <button class="modal-close-btn" onclick="closeWizard()" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -1400,9 +1550,9 @@
       <div class="wizard-dropzone" id="wizDropzone"
            ondragover="wizDragOver(event)" ondragleave="wizDragLeave(event)" ondrop="wizDrop(event)"
            onclick="wizTriggerFile()">
-        <div class="wizard-drop-icon">Ã¢Â¬â€ </div>
+        <div class="wizard-drop-icon">+</div>
         <div class="wizard-drop-title">Drag an image here</div>
-        <div class="wizard-drop-sub">or click to browse Ã¢â‚¬â€ JPG, PNG, WEBP</div>
+        <div class="wizard-drop-sub">or click to browse - JPG, PNG, WEBP</div>
       </div>
       <input type="file" id="wizFileInput" accept="image/*" style="display:none"
              onchange="wizOnFileChange(event)">
@@ -1455,7 +1605,7 @@
         <div class="wizard-form-scroll">
           <div class="wiz-row">
             <div class="wiz-field wiz-field-wide">
-              <label>Nome</label>
+              <label>Name</label>
               <input type="text" id="wfName" placeholder="e.g. Sofia">
             </div>
             <div class="wiz-field">
@@ -1523,8 +1673,8 @@
     <!-- Debug log panel -->
     <div id="wizDebugWrap" style="display:none">
       <div class="wiz-debug-bar">
-        <span class="wiz-debug-title">Ã°Å¸â€Â Gemini Debug Log</span>
-        <button class="wiz-debug-clear" onclick="wizClearLog()">Ã¢Å“â€¢ Clear</button>
+        <span class="wiz-debug-title">Gemini Debug Log</span>
+        <button class="wiz-debug-clear" onclick="wizClearLog()">Clear</button>
       </div>
       <div class="wiz-debug-body" id="wizDebugBody"></div>
     </div>
@@ -1534,18 +1684,18 @@
       <div id="wizFooterLeft">
         <button class="btn-wiz-migrate" id="wizMigrateBtn" onclick="migrateCatalog()"
                 title="Migrate catalog.json into individual talent JSON files">
-          Ã¢Å¡â„¢ Migrate catalog
+          Migrate catalog
         </button>
         <button class="btn-wiz-migrate" id="wizLogBtn" onclick="wizToggleLog()"
                 title="Show/hide Gemini debug log">
-          Ã°Å¸â€Â Log
+          Log
         </button>
       </div>
       <div class="modal-footer-btns">
         <button class="btn-modal-cancel" onclick="closeWizard()">Cancel</button>
         <button class="btn-modal-confirm" id="wizSaveBtn"
                 onclick="saveTalent()" style="display:none">
-          Save Talent Ã¢Å“Â¦
+          Save Talent
         </button>
       </div>
     </div>
@@ -1556,7 +1706,7 @@
 <!-- Publication toast -->
 <div class="pub-toast" id="pubToast">
   <span id="pubToastText">Image loved!</span>
-              <a href="/images?kind=loved" id="pubToastLink">View gallery</a>
+      <a href="/images?kind=loved" id="pubToastLink">View assets</a>
 </div>
 
 <script>
@@ -1573,6 +1723,8 @@ const UPSCALE_PRESET_CUSTOM = "custom";
 let outputMode    = "images_text";
 let refImages     = [];           // [{mime_type, data, previewUrl, name}]
 let videoSourceImage = null;
+let videoSourceVideo = null;
+let videoReferenceImages = [];
 let videoEntries = [];
 let pickerSelected = new Set();   // URLs selected in picker
 let pickerItemsByUrl = new Map();
@@ -1822,6 +1974,36 @@ function normalizeDraftRefImages(items) {
     }));
 }
 
+function buildInlineImagePreviewUrl(mimeType, b64) {
+  const safeMime = String(mimeType || "image/png").trim() || "image/png";
+  const safeB64 = String(b64 || "").trim();
+  return safeB64 ? `data:${safeMime};base64,${safeB64}` : "";
+}
+
+function inferArchiveMetaFromReferenceUrls(item = {}) {
+  const result = {
+    archive_date: String(item.archive_date || item.date || "").trim(),
+    archive_filename: String(item.archive_filename || item.filename || "").trim(),
+  };
+  if (result.archive_date && result.archive_filename) return result;
+
+  const candidates = [
+    item.original_url,
+    item.masked_url,
+    item.url,
+    item.mask_url,
+  ].map(v => String(v || "").trim()).filter(Boolean);
+
+  for (const value of candidates) {
+    const match = value.match(/\/reference-(?:archive|render|mask)\/([^\/]+)\/([^\/?#]+)/i);
+    if (!match) continue;
+    if (!result.archive_date) result.archive_date = decodeURIComponent(match[1] || "");
+    if (!result.archive_filename) result.archive_filename = decodeURIComponent(match[2] || "");
+    if (result.archive_date && result.archive_filename) break;
+  }
+  return result;
+}
+
 function getSelectedModelFamilyId() {
   return document.getElementById("modelSelect").value || "nano-banana-2";
 }
@@ -1916,6 +2098,31 @@ function getCurrentVideoFamilyId() {
   return (select && select.value) || "kling";
 }
 
+function getVideoModelsForSelection(familyId, provider, inputMode = "") {
+  return Object.entries(VIDEO_MODELS_INFO)
+    .filter(([modelId, info]) => {
+      if ((info.family || "") !== familyId) return false;
+      if ((info.provider || "") !== provider) return false;
+      const modes = Array.isArray(info.input_modes) ? info.input_modes : [];
+      return !inputMode || !modes.length || modes.includes(inputMode);
+    })
+    .sort((a, b) => {
+      const orderA = parseInt(a[1]?.sort_order ?? 999, 10);
+      const orderB = parseInt(b[1]?.sort_order ?? 999, 10);
+      if (orderA !== orderB) return orderA - orderB;
+      return String(a[1]?.label || a[0]).localeCompare(String(b[1]?.label || b[0]));
+    });
+}
+
+function getAvailableVideoModesForSelection(familyId, provider) {
+  const order = ["text", "image", "reference"];
+  const modes = new Set();
+  getVideoModelsForSelection(familyId, provider).forEach(([, info]) => {
+    (Array.isArray(info.input_modes) ? info.input_modes : []).forEach(mode => modes.add(mode));
+  });
+  return order.filter(mode => modes.has(mode));
+}
+
 function syncVideoProviderOptions(options = {}) {
   const familyId = options.familyId || getCurrentVideoFamilyId();
   const familyInfo = VIDEO_MODEL_FAMILIES[familyId] || VIDEO_MODEL_FAMILIES["kling"];
@@ -1936,23 +2143,85 @@ function syncVideoProviderOptions(options = {}) {
   return { familyId, familyInfo, provider: select.value };
 }
 
+function syncVideoInputModeOptions(options = {}) {
+  const familyId = options.familyId || getCurrentVideoFamilyId();
+  const provider = options.provider || document.getElementById("videoProviderFooterSelect")?.value || "kling";
+  const select = document.getElementById("videoInputModeSelect");
+  if (!select) return { inputMode: "text" };
+  const modeLabels = {
+    text: "Text to Video",
+    image: "Image to Video",
+    reference: "Reference to Video",
+    video: "Video Upscale",
+  };
+  const availableModes = getAvailableVideoModesForSelection(familyId, provider);
+  const preferredMode = options.inputMode || select.value || availableModes[0] || "text";
+  select.innerHTML = "";
+  (availableModes.length ? availableModes : ["text"]).forEach(mode => {
+    const opt = document.createElement("option");
+    opt.value = mode;
+    opt.textContent = modeLabels[mode] || mode;
+    select.appendChild(opt);
+  });
+  select.value = availableModes.includes(preferredMode) ? preferredMode : (availableModes[0] || "text");
+  select.disabled = availableModes.length <= 1;
+  return { inputMode: select.value };
+}
+
+function syncVideoConcreteModelOptions(options = {}) {
+  const familyId = options.familyId || getCurrentVideoFamilyId();
+  const provider = options.provider || document.getElementById("videoProviderFooterSelect")?.value || "kling";
+  const inputMode = options.inputMode || document.getElementById("videoInputModeSelect")?.value || "text";
+  const select = document.getElementById("videoConcreteModelSelect");
+  const models = getVideoModelsForSelection(familyId, provider, inputMode);
+  if (!select) {
+    return { modelId: models[0]?.[0] || "", modelInfo: models[0]?.[1] || {} };
+  }
+  const preferredModel = options.modelId || select.value || models[0]?.[0] || "";
+  select.innerHTML = "";
+  models.forEach(([modelId, info]) => {
+    const opt = document.createElement("option");
+    opt.value = modelId;
+    opt.textContent = info.label || modelId;
+    select.appendChild(opt);
+  });
+  const fallbackModel = models[0]?.[0] || "";
+  select.value = models.some(([modelId]) => modelId === preferredModel) ? preferredModel : fallbackModel;
+  select.disabled = models.length <= 1;
+  const selectedModel = models.find(([modelId]) => modelId === select.value) || models[0] || ["", {}];
+  return { modelId: selectedModel[0] || "", modelInfo: selectedModel[1] || {} };
+}
+
 function syncVideoFooterControls(options = {}) {
   const modelSelect = document.getElementById("videoModelFooterSelect");
   const providerSelect = document.getElementById("videoProviderFooterSelect");
   const providerIcon = document.getElementById("videoFooterProviderIcon");
   if (!modelSelect) return;
   if (!modelSelect.options.length) {
-    Object.entries(VIDEO_MODEL_FAMILIES).forEach(([familyId, info]) => {
+    Object.entries(VIDEO_MODEL_FAMILIES)
+      .filter(([familyId]) => familyId !== "seedvr-video")
+      .forEach(([familyId, info]) => {
       const opt = document.createElement("option");
       opt.value = familyId;
       opt.textContent = info.label;
       modelSelect.appendChild(opt);
-    });
+      });
   }
-  const desiredFamily = options.familyId || modelSelect.value || "kling";
+  const desiredFamily = (options.familyId && options.familyId !== "seedvr-video") ? options.familyId : (modelSelect.value || "kling");
   modelSelect.value = desiredFamily;
   const familyId = getCurrentVideoFamilyId();
   const syncResult = syncVideoProviderOptions({ familyId, provider: options.provider || providerSelect?.value || "" });
+  const modeResult = syncVideoInputModeOptions({
+    familyId,
+    provider: syncResult.provider,
+    inputMode: options.inputMode || document.getElementById("videoInputModeSelect")?.value || "text",
+  });
+  syncVideoConcreteModelOptions({
+    familyId,
+    provider: syncResult.provider,
+    inputMode: modeResult.inputMode,
+    modelId: options.modelId || document.getElementById("videoConcreteModelSelect")?.value || "",
+  });
   const providerValue = syncResult.provider;
   if (providerIcon) {
     const label = (PROVIDER_LABELS[providerValue] || providerValue || "").trim();
@@ -1969,41 +2238,241 @@ function getCurrentVideoSelection() {
   if (!(familyInfo.providers || {})[provider]) {
     provider = familyInfo.default_provider || Object.keys(familyInfo.providers || {})[0] || "kling";
   }
-  const modelId = (familyInfo.providers || {})[provider] || Object.keys(VIDEO_MODELS_INFO)[0];
+  const inputMode = document.getElementById("videoInputModeSelect")?.value || "text";
+  const concreteSelect = document.getElementById("videoConcreteModelSelect");
+  const models = getVideoModelsForSelection(familyId, provider, inputMode);
+  const modelId = (concreteSelect?.value && models.some(([id]) => id === concreteSelect.value))
+    ? concreteSelect.value
+    : (models[0]?.[0] || (familyInfo.providers || {})[provider] || Object.keys(VIDEO_MODELS_INFO)[0]);
+  if (concreteSelect && concreteSelect.value !== modelId) concreteSelect.value = modelId;
   const modelInfo = VIDEO_MODELS_INFO[modelId] || {};
-  return { familyId, provider, modelId, familyInfo, modelInfo };
+  return { familyId, provider, inputMode, modelId, familyInfo, modelInfo };
+}
+
+function getVideoSupportsStartImage(selection = getCurrentVideoSelection()) {
+  const info = selection?.modelInfo || {};
+  const inputMode = String(selection?.inputMode || "").trim().toLowerCase();
+  return Boolean(info.supports_start_image) && inputMode !== "text";
+}
+
+function getVideoSupportsSourceVideo(selection = getCurrentVideoSelection()) {
+  const info = selection?.modelInfo || {};
+  const inputMode = String(selection?.inputMode || "").trim().toLowerCase();
+  return Boolean(info.supports_source_video) && inputMode === "video";
+}
+
+function getVideoSupportsReferenceImages(selection = getCurrentVideoSelection()) {
+  const info = selection?.modelInfo || {};
+  const inputMode = String(selection?.inputMode || "").trim().toLowerCase();
+  return Boolean(info.supports_reference_images) && inputMode === "reference";
+}
+
+function getVideoSupportsPrompt(selection = getCurrentVideoSelection()) {
+  const info = selection?.modelInfo || {};
+  return info.supports_prompt !== false;
+}
+
+function getVideoSupportsNegativePrompt(selection = getCurrentVideoSelection()) {
+  const info = selection?.modelInfo || {};
+  return info.supports_negative_prompt !== false;
+}
+
+function getVideoSupportsSeedvrSettings(selection = getCurrentVideoSelection()) {
+  const info = selection?.modelInfo || {};
+  return Boolean(info.supports_seedvr_video_settings);
 }
 
 function onVideoFooterModelChange() {
-  syncVideoFooterControls();
+  syncVideoFooterControls({
+    familyId: getCurrentVideoFamilyId(),
+    provider: document.getElementById("videoProviderFooterSelect")?.value || "",
+    inputMode: document.getElementById("videoInputModeSelect")?.value || "text",
+  });
   scheduleDraftSave();
 }
 
 function onVideoFooterProviderChange() {
-  syncVideoFooterControls();
+  syncVideoFooterControls({
+    familyId: getCurrentVideoFamilyId(),
+    provider: document.getElementById("videoProviderFooterSelect")?.value || "",
+    inputMode: document.getElementById("videoInputModeSelect")?.value || "text",
+  });
   scheduleDraftSave();
 }
 
 function onVideoInputModeChange() {
+  syncVideoFooterControls({
+    familyId: getCurrentVideoFamilyId(),
+    provider: document.getElementById("videoProviderFooterSelect")?.value || "",
+    inputMode: document.getElementById("videoInputModeSelect")?.value || "text",
+  });
+  scheduleDraftSave();
+}
+
+function onVideoConcreteModelChange() {
   syncVideoModeUi();
   scheduleDraftSave();
+}
+
+function getMaxVideoReferenceImages(selection = getCurrentVideoSelection()) {
+  const info = selection?.modelInfo || {};
+  return getVideoSupportsReferenceImages(selection) ? Math.max(0, parseInt(info.max_reference_images || 0, 10)) : 0;
+}
+
+function syncVideoDurationOptions(info = {}) {
+  const select = document.getElementById("videoDurationSelect");
+  if (!select) return;
+  const durations = (Array.isArray(info.durations) && info.durations.length ? info.durations : [5, 10])
+    .map(value => parseInt(value, 10))
+    .filter(value => Number.isFinite(value) && value > 0);
+  const currentValue = String(select.value || "");
+  select.innerHTML = "";
+  durations.forEach(value => {
+    const opt = document.createElement("option");
+    opt.value = String(value);
+    opt.textContent = `${value}s`;
+    select.appendChild(opt);
+  });
+  const fallback = String(durations[0] || 5);
+  select.value = durations.some(value => String(value) === currentValue) ? currentValue : fallback;
+}
+
+function syncVideoAspectRatioOptions(info = {}) {
+  const select = document.getElementById("videoAspectRatioSelect");
+  if (!select) return;
+  const allowed = Array.isArray(info.aspect_ratios) && info.aspect_ratios.length
+    ? info.aspect_ratios.map(value => String(value || "").trim()).filter(Boolean)
+    : ["16:9", "9:16", "1:1"];
+  const currentValue = String(select.value || "");
+  select.innerHTML = "";
+  allowed.forEach(value => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = value;
+    select.appendChild(opt);
+  });
+  select.value = allowed.includes(currentValue) ? currentValue : (allowed[0] || "16:9");
+}
+
+function syncVideoResolutionOptions(info = {}) {
+  const select = document.getElementById("videoResolutionSelect");
+  if (!select) return;
+  const allowed = Array.isArray(info.resolutions) && info.resolutions.length
+    ? info.resolutions.map(value => String(value || "").trim().toLowerCase()).filter(Boolean)
+    : ["480p", "720p", "1080p"];
+  const currentValue = String(select.value || "").trim().toLowerCase();
+  select.innerHTML = "";
+  allowed.forEach(value => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = value;
+    select.appendChild(opt);
+  });
+  select.value = allowed.includes(currentValue) ? currentValue : (allowed[0] || "720p");
+}
+
+function syncSeedvrVideoSettingsUi(selection = getCurrentVideoSelection()) {
+  const panel = document.getElementById("videoUpscaleSettingsPanel");
+  const factorWrap = document.getElementById("videoUpscaleFactorWrap");
+  const targetWrap = document.getElementById("videoUpscaleTargetResolutionWrap");
+  const modeSelect = document.getElementById("videoUpscaleModeSelect");
+  if (!panel || !factorWrap || !targetWrap || !modeSelect) return;
+  const enabled = getVideoSupportsSeedvrSettings(selection);
+  panel.style.display = enabled ? "" : "none";
+  const mode = String(modeSelect.value || "factor").trim().toLowerCase();
+  factorWrap.style.display = enabled && mode === "factor" ? "" : "none";
+  targetWrap.style.display = enabled && mode === "target" ? "" : "none";
 }
 
 function syncVideoModeUi() {
   const selection = getCurrentVideoSelection();
   const info = selection.modelInfo || {};
-  const inputMode = document.getElementById("videoInputModeSelect")?.value || "text";
+  const inputMode = selection.inputMode || document.getElementById("videoInputModeSelect")?.value || "text";
   const sourceStrip = document.getElementById("videoSourceStrip");
+  const sourceLabel = document.getElementById("videoSourceStripLabel");
+  const sourceTitle = document.getElementById("videoSourceEmptyTitle");
+  const sourceInput = document.getElementById("videoSourceInput");
+  const sourceUploadBtn = document.getElementById("videoSourceUploadBtn");
+  const sourceLibraryBtn = document.getElementById("videoSourceLibraryBtn");
+  const sourceElementsBtn = document.getElementById("videoSourceElementsBtn");
+  const sourceViewerBtn = document.getElementById("videoSourceViewerBtn");
+  const aspectWrap = document.getElementById("videoAspectWrap");
+  const durationWrap = document.getElementById("videoDurationWrap");
   const resolutionWrap = document.getElementById("videoResolutionWrap");
   const safetyWrap = document.getElementById("videoSafetyCheckerWrap");
-  if (sourceStrip) sourceStrip.style.display = "";
+  const refStrip = document.getElementById("videoReferenceStrip");
+  const promptWrap = document.getElementById("videoPromptWrap");
+  const promptBox = promptWrap?.querySelector(".video-prompt-box");
+  const negativeBox = promptWrap?.querySelector(".video-negative-box");
+  const promptResizer = document.getElementById("videoPromptResizer");
+  const showSource = getVideoSupportsStartImage(selection);
+  const showSourceVideo = getVideoSupportsSourceVideo(selection);
+  const showRefs = getVideoSupportsReferenceImages(selection);
+  const showPrompt = getVideoSupportsPrompt(selection);
+  const showNegativePrompt = getVideoSupportsNegativePrompt(selection);
+  const showSeedvrSettings = getVideoSupportsSeedvrSettings(selection);
+  syncVideoDurationOptions(info);
+  syncVideoAspectRatioOptions(info);
+  syncVideoResolutionOptions(info);
+  if (sourceStrip) sourceStrip.style.display = (showSource || showSourceVideo) ? "" : "none";
+  if (sourceLabel) {
+    sourceLabel.textContent = showSourceVideo ? "Source video" : "Start image";
+  }
+  if (sourceTitle) {
+    sourceTitle.textContent = showSourceVideo
+      ? "Drop source video here"
+      : (inputMode === "reference" ? "Drop start image here" : "Drop source image here");
+  }
+  if (sourceInput) {
+    sourceInput.accept = showSourceVideo ? "video/*" : "image/*";
+  }
+  if (sourceUploadBtn) {
+    sourceUploadBtn.title = showSourceVideo ? "Upload source video" : "Upload source image";
+  }
+  if (sourceLibraryBtn) {
+    sourceLibraryBtn.style.display = showSourceVideo ? "none" : "";
+  }
+  if (sourceElementsBtn) {
+    sourceElementsBtn.style.display = showSourceVideo ? "none" : "";
+  }
+  if (sourceViewerBtn) {
+    sourceViewerBtn.title = showSourceVideo ? "Use selected viewer video" : "Use selected viewer image";
+  }
+  if (aspectWrap) {
+    aspectWrap.style.display = info.supports_aspect_ratio === false ? "none" : "";
+  }
+  if (durationWrap) {
+    durationWrap.style.display = info.supports_duration === false ? "none" : "";
+  }
   if (resolutionWrap) {
     resolutionWrap.style.display = info.supports_resolution ? "" : "none";
   }
   if (safetyWrap) {
     safetyWrap.style.display = info.supports_safety_checker ? "flex" : "none";
   }
+  if (refStrip) {
+    refStrip.style.display = showRefs ? "" : "none";
+  }
+  if (promptWrap) {
+    promptWrap.classList.toggle("video-settings-only", showSeedvrSettings && !showPrompt && !showNegativePrompt);
+  }
+  if (promptBox) {
+    promptBox.style.display = showPrompt ? "" : "none";
+  }
+  if (negativeBox) {
+    negativeBox.style.display = showNegativePrompt ? "" : "none";
+  }
+  if (promptResizer) {
+    promptResizer.style.display = showPrompt && showNegativePrompt ? "" : "none";
+  }
+  const maxVideoRefs = getMaxVideoReferenceImages(selection);
+  if (maxVideoRefs > 0 && videoReferenceImages.length > maxVideoRefs) {
+    releaseRefPreviewUrls(videoReferenceImages.slice(maxVideoRefs));
+    videoReferenceImages = videoReferenceImages.slice(0, maxVideoRefs);
+  }
+  syncSeedvrVideoSettingsUi(selection);
   syncVideoSourceUi();
+  renderVideoReferenceStrip();
   syncVideoComposeLayout();
 }
 
@@ -2211,16 +2680,37 @@ function collectGeneratorDraft() {
     videoNegativePrompt: document.getElementById("videoNegativePromptInput")?.value || "",
     videoModelFamily: videoSelection.familyId,
     videoProvider: videoSelection.provider,
+    videoModel: videoSelection.modelId,
     videoInputMode: document.getElementById("videoInputModeSelect")?.value || "text",
     videoAspectRatio: document.getElementById("videoAspectRatioSelect")?.value || "16:9",
     videoDuration: parseInt(document.getElementById("videoDurationSelect")?.value || "5", 10),
     videoResolution: document.getElementById("videoResolutionSelect")?.value || "720p",
     videoSafetyChecker: Boolean(document.getElementById("videoSafetyCheckerToggle")?.checked),
-    videoSourceImage: videoSourceImage ? {
-      mime_type: videoSourceImage.mime_type,
-      data: videoSourceImage.data,
-      name: videoSourceImage.name,
-    } : null,
+    videoUpscaleMode: document.getElementById("videoUpscaleModeSelect")?.value || "factor",
+    videoUpscaleFactor: parseFloat(document.getElementById("videoUpscaleFactorInput")?.value || "2"),
+    videoUpscaleTargetResolution: document.getElementById("videoUpscaleTargetResolutionSelect")?.value || "1080p",
+    videoUpscaleNoiseScale: parseFloat(document.getElementById("videoUpscaleNoiseScaleInput")?.value || "0.1"),
+    videoUpscaleOutputFormat: document.getElementById("videoUpscaleOutputFormatSelect")?.value || "X264 (.mp4)",
+    videoUpscaleOutputQuality: document.getElementById("videoUpscaleOutputQualitySelect")?.value || "high",
+    videoUpscaleOutputWriteMode: document.getElementById("videoUpscaleOutputWriteModeSelect")?.value || "balanced",
+    videoUpscaleSeed: document.getElementById("videoUpscaleSeedInput")?.value || "",
+    videoUpscaleSyncMode: Boolean(document.getElementById("videoUpscaleSyncModeToggle")?.checked),
+    videoSourceImage: videoSourceImage
+      ? Object.assign({}, cloneRefImageDraftRecord(videoSourceImage, 0), {
+          name: videoSourceImage.name || "video-source.png",
+        })
+      : null,
+    videoSourceVideo: videoSourceVideo
+      ? {
+          mime_type: videoSourceVideo.mime_type || "video/mp4",
+          data: videoSourceVideo.data || "",
+          name: videoSourceVideo.name || "video-source.mp4",
+          url: videoSourceVideo.url || "",
+          archive_date: videoSourceVideo.archive_date || "",
+          archive_filename: videoSourceVideo.archive_filename || "",
+        }
+      : null,
+    videoReferenceImages: videoReferenceImages.map((img, idx) => cloneRefImageDraftRecord(img, idx)),
   };
 }
 
@@ -2283,7 +2773,13 @@ async function writeDraftToDb(draft) {
 async function persistDraftNow() {
   if (isRestoringDraft) return;
   const draft = collectGeneratorDraft();
-  const { refImages: _, ...meta } = draft;
+  const {
+    refImages: _,
+    videoSourceImage: __,
+    videoSourceVideo: ___video,
+    videoReferenceImages: ____refs,
+    ...meta
+  } = draft;
   try {
     sessionStorage.setItem(GENERATOR_DRAFT_META_KEY, JSON.stringify(meta));
   } catch (e) {}
@@ -2405,8 +2901,13 @@ function applyDraftState(draft, options = {}) {
       const el = document.getElementById("videoNegativePromptInput");
       if (el) el.value = draft.videoNegativePrompt;
     }
-    if (draft.videoModelFamily) {
-      syncVideoFooterControls({ familyId: draft.videoModelFamily, provider: draft.videoProvider || "" });
+    if (draft.videoModelFamily || draft.videoModel) {
+      syncVideoFooterControls({
+        familyId: draft.videoModelFamily || "kling",
+        provider: draft.videoProvider || "",
+        inputMode: draft.videoInputMode || "text",
+        modelId: draft.videoModel || "",
+      });
     } else {
       syncVideoFooterControls();
     }
@@ -2430,10 +2931,55 @@ function applyDraftState(draft, options = {}) {
       const el = document.getElementById("videoSafetyCheckerToggle");
       if (el) el.checked = draft.videoSafetyChecker;
     }
-    if (draft.videoSourceImage && draft.videoSourceImage.data) {
+    if (draft.videoUpscaleMode) {
+      const el = document.getElementById("videoUpscaleModeSelect");
+      if (el) el.value = draft.videoUpscaleMode;
+    }
+    if (draft.videoUpscaleFactor != null) {
+      const el = document.getElementById("videoUpscaleFactorInput");
+      if (el) el.value = draft.videoUpscaleFactor;
+    }
+    if (draft.videoUpscaleTargetResolution) {
+      const el = document.getElementById("videoUpscaleTargetResolutionSelect");
+      if (el) el.value = draft.videoUpscaleTargetResolution;
+    }
+    if (draft.videoUpscaleNoiseScale != null) {
+      const el = document.getElementById("videoUpscaleNoiseScaleInput");
+      if (el) el.value = draft.videoUpscaleNoiseScale;
+    }
+    if (draft.videoUpscaleOutputFormat) {
+      const el = document.getElementById("videoUpscaleOutputFormatSelect");
+      if (el) el.value = draft.videoUpscaleOutputFormat;
+    }
+    if (draft.videoUpscaleOutputQuality) {
+      const el = document.getElementById("videoUpscaleOutputQualitySelect");
+      if (el) el.value = draft.videoUpscaleOutputQuality;
+    }
+    if (draft.videoUpscaleOutputWriteMode) {
+      const el = document.getElementById("videoUpscaleOutputWriteModeSelect");
+      if (el) el.value = draft.videoUpscaleOutputWriteMode;
+    }
+    if (draft.videoUpscaleSeed != null) {
+      const el = document.getElementById("videoUpscaleSeedInput");
+      if (el) el.value = draft.videoUpscaleSeed;
+    }
+    if (typeof draft.videoUpscaleSyncMode === "boolean") {
+      const el = document.getElementById("videoUpscaleSyncModeToggle");
+      if (el) el.checked = draft.videoUpscaleSyncMode;
+    }
+    if (draft.videoSourceVideo && (draft.videoSourceVideo.data || draft.videoSourceVideo.url)) {
+      setVideoSourceVideo(draft.videoSourceVideo);
+    } else if (draft.videoSourceImage && draft.videoSourceImage.data) {
       setVideoSourceImage(draft.videoSourceImage);
     } else {
       clearVideoSource();
+    }
+    if (Array.isArray(draft.videoReferenceImages)) {
+      releaseRefPreviewUrls(videoReferenceImages);
+      videoReferenceImages = normalizeDraftRefImages(draft.videoReferenceImages);
+    } else {
+      releaseRefPreviewUrls(videoReferenceImages);
+      videoReferenceImages = [];
     }
     syncVideoModeUi();
   } finally {
@@ -2488,11 +3034,21 @@ function bindDraftPersistence() {
     "videoNegativePromptInput",
     "videoModelFooterSelect",
     "videoProviderFooterSelect",
+    "videoConcreteModelSelect",
     "videoInputModeSelect",
     "videoAspectRatioSelect",
     "videoDurationSelect",
     "videoResolutionSelect",
-    "videoSafetyCheckerToggle"
+    "videoSafetyCheckerToggle",
+    "videoUpscaleModeSelect",
+    "videoUpscaleFactorInput",
+    "videoUpscaleTargetResolutionSelect",
+    "videoUpscaleNoiseScaleInput",
+    "videoUpscaleOutputFormatSelect",
+    "videoUpscaleOutputQualitySelect",
+    "videoUpscaleOutputWriteModeSelect",
+    "videoUpscaleSeedInput",
+    "videoUpscaleSyncModeToggle"
   ].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -3064,6 +3620,126 @@ const VIDEO_COMPOSE_SOURCE_WIDTH_STORAGE_KEY = "nb_video_compose_source_width";
 const VIDEO_COMPOSE_SOURCE_WIDTH_MIN = 220;
 const VIDEO_COMPOSE_SOURCE_WIDTH_DEFAULT = 300;
 let videoComposeManualSourceWidth = null;
+let _videoPromptResizeObserver = null;
+const VIDEO_PROMPT_NEGATIVE_WIDTH_STORAGE_KEY = "nb_video_prompt_negative_width";
+const VIDEO_PROMPT_NEGATIVE_WIDTH_MIN = 240;
+const VIDEO_PROMPT_NEGATIVE_WIDTH_DEFAULT = 340;
+let videoPromptManualNegativeWidth = null;
+
+function loadVideoPromptNegativeWidth() {
+  if (videoPromptManualNegativeWidth !== null) return videoPromptManualNegativeWidth;
+  try {
+    const stored = parseInt(localStorage.getItem(VIDEO_PROMPT_NEGATIVE_WIDTH_STORAGE_KEY) || "", 10);
+    videoPromptManualNegativeWidth = Number.isFinite(stored) && stored > 0 ? stored : 0;
+  } catch (error) {
+    videoPromptManualNegativeWidth = 0;
+  }
+  return videoPromptManualNegativeWidth;
+}
+
+function clampVideoPromptNegativeWidth(value, wrap = document.getElementById("videoPromptWrap"), minPositiveWidth = 420) {
+  const parsed = parseInt(value, 10);
+  if (!wrap || !Number.isFinite(parsed)) return VIDEO_PROMPT_NEGATIVE_WIDTH_DEFAULT;
+  const wrapWidth = Math.floor(wrap.getBoundingClientRect().width || wrap.clientWidth || 0);
+  const maxWidth = Math.max(VIDEO_PROMPT_NEGATIVE_WIDTH_MIN, wrapWidth - minPositiveWidth - 20);
+  return Math.max(VIDEO_PROMPT_NEGATIVE_WIDTH_MIN, Math.min(maxWidth, parsed));
+}
+
+function applyVideoPromptNegativeWidth(width, persist = true) {
+  const wrap = document.getElementById("videoPromptWrap");
+  if (!wrap) return VIDEO_PROMPT_NEGATIVE_WIDTH_DEFAULT;
+  const safeWidth = clampVideoPromptNegativeWidth(width, wrap);
+  videoPromptManualNegativeWidth = safeWidth;
+  if (persist) {
+    try {
+      localStorage.setItem(VIDEO_PROMPT_NEGATIVE_WIDTH_STORAGE_KEY, String(safeWidth));
+    } catch (error) {}
+  }
+  syncVideoPromptLayout();
+  return safeWidth;
+}
+
+function syncVideoPromptLayout() {
+  const wrap = document.getElementById("videoPromptWrap");
+  if (!wrap) return;
+  const wrapWidth = Math.floor(wrap.getBoundingClientRect().width || wrap.clientWidth || 0);
+  const shouldStack = wrapWidth > 0 && wrapWidth < 860;
+  wrap.classList.toggle("video-prompt-split", !shouldStack);
+  wrap.classList.toggle("video-prompt-stacked", shouldStack);
+  if (shouldStack) {
+    wrap.style.removeProperty("--video-negative-width");
+    syncVideoPromptHeights();
+    return;
+  }
+  const storedWidth = loadVideoPromptNegativeWidth();
+  const paneWidth = storedWidth > 0
+    ? clampVideoPromptNegativeWidth(storedWidth, wrap)
+    : clampVideoPromptNegativeWidth(VIDEO_PROMPT_NEGATIVE_WIDTH_DEFAULT, wrap);
+  wrap.style.setProperty("--video-negative-width", `${paneWidth}px`);
+  syncVideoPromptHeights();
+}
+
+function bindVideoPromptLayout() {
+  const wrap = document.getElementById("videoPromptWrap");
+  const handle = document.getElementById("videoPromptResizer");
+  if (!wrap || wrap.dataset.layoutBound === "1") {
+    syncVideoPromptLayout();
+    return;
+  }
+  wrap.dataset.layoutBound = "1";
+  loadVideoPromptNegativeWidth();
+  if ("ResizeObserver" in window) {
+    _videoPromptResizeObserver = new ResizeObserver(() => syncVideoPromptLayout());
+    _videoPromptResizeObserver.observe(wrap);
+  }
+  if (handle && handle.dataset.bound !== "1") {
+    handle.dataset.bound = "1";
+    let activePointerId = null;
+    let activeWidth = videoPromptManualNegativeWidth || VIDEO_PROMPT_NEGATIVE_WIDTH_DEFAULT;
+
+    const commitWidth = (width) => {
+      activeWidth = applyVideoPromptNegativeWidth(width, false);
+    };
+
+    const finishResize = () => {
+      if (activePointerId === null) return;
+      activePointerId = null;
+      document.body.classList.remove("video-prompt-resizing");
+      applyVideoPromptNegativeWidth(activeWidth, true);
+    };
+
+    handle.addEventListener("pointerdown", (event) => {
+      if (window.innerWidth <= 768) return;
+      if (!wrap.classList.contains("video-prompt-split")) return;
+      activePointerId = event.pointerId;
+      document.body.classList.add("video-prompt-resizing");
+      handle.setPointerCapture?.(event.pointerId);
+      commitWidth(wrap.getBoundingClientRect().right - event.clientX);
+      event.preventDefault();
+    });
+
+    handle.addEventListener("pointermove", (event) => {
+      if (activePointerId === null || event.pointerId !== activePointerId) return;
+      commitWidth(wrap.getBoundingClientRect().right - event.clientX);
+    });
+
+    handle.addEventListener("pointerup", (event) => {
+      if (activePointerId !== null && event.pointerId === activePointerId) {
+        handle.releasePointerCapture?.(event.pointerId);
+      }
+      finishResize();
+    });
+
+    handle.addEventListener("pointercancel", (event) => {
+      if (activePointerId !== null && event.pointerId === activePointerId) {
+        handle.releasePointerCapture?.(event.pointerId);
+      }
+      finishResize();
+    });
+  }
+  window.addEventListener("resize", syncVideoPromptLayout);
+  syncVideoPromptLayout();
+}
 
 function loadVideoComposeManualSourceWidth() {
   if (videoComposeManualSourceWidth !== null) return videoComposeManualSourceWidth;
@@ -3101,14 +3777,24 @@ function applyVideoComposeSourceWidth(width, persist = true) {
 function syncVideoComposeLayout() {
   const compose = document.getElementById("videoCompose");
   if (!compose) return;
-  const inputMode = document.getElementById("videoInputModeSelect")?.value || "text";
-  const hasSourcePane = inputMode === "image";
+  const sourceStrip = document.getElementById("videoSourceStrip");
+  const refStrip = document.getElementById("videoReferenceStrip");
+  const sourceColumn = document.getElementById("videoSourceColumn");
+  const sourceVisible = sourceStrip && sourceStrip.style.display !== "none";
+  const refVisible = refStrip && refStrip.style.display !== "none";
+  const hasSourcePane = Boolean(sourceVisible || refVisible);
   const composeWidth = Math.floor(compose.getBoundingClientRect().width || compose.clientWidth || 0);
   const shouldStack = hasSourcePane && composeWidth > 0 && composeWidth < 760;
   compose.classList.toggle("video-compose-with-source", hasSourcePane && !shouldStack);
   compose.classList.toggle("video-compose-stacked", hasSourcePane && shouldStack);
+  if (sourceColumn) {
+    sourceColumn.dataset.layout = sourceVisible && refVisible
+      ? "split"
+      : (sourceVisible ? "source-only" : (refVisible ? "refs-only" : "empty"));
+  }
   if (!hasSourcePane || shouldStack) {
     compose.style.removeProperty("--video-compose-source-width");
+    syncVideoPromptLayout();
     return;
   }
   const storedWidth = loadVideoComposeManualSourceWidth();
@@ -3116,6 +3802,7 @@ function syncVideoComposeLayout() {
     ? clampVideoComposeSourceWidth(storedWidth, compose)
     : clampVideoComposeSourceWidth(VIDEO_COMPOSE_SOURCE_WIDTH_DEFAULT, compose);
   compose.style.setProperty("--video-compose-source-width", `${paneWidth}px`);
+  syncVideoPromptLayout();
 }
 
 function bindVideoComposeLayout() {
@@ -3178,6 +3865,18 @@ function bindVideoComposeLayout() {
   }
   window.addEventListener("resize", syncVideoComposeLayout);
   syncVideoComposeLayout();
+}
+
+function syncVideoPromptHeights() {
+  ["videoPromptInput", "videoNegativePromptInput"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el || !el.isConnected) return;
+    const box = el.closest(".video-prompt-box");
+    const boxHeight = Math.floor(box?.getBoundingClientRect().height || 0);
+    if (boxHeight <= 0) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.max(64, boxHeight - 2)}px`;
+  });
 }
 
 function renderRefStrip() {
@@ -3699,13 +4398,14 @@ async function addRefImageFromUrl(url, label, options = {}) {
     const blob     = await resp.blob();
     const mimeType = blob.type || "image/png";
     const b64      = await blobToBase64(blob);
-    const archiveDate = options.archive_date || options.date || "";
-    const archiveFilename = options.archive_filename || options.filename || "";
+    const inferredArchive = inferArchiveMetaFromReferenceUrls(options);
+    const archiveDate = options.archive_date || options.date || inferredArchive.archive_date || "";
+    const archiveFilename = options.archive_filename || options.filename || inferredArchive.archive_filename || "";
     const derivedOriginalUrl = archiveDate && archiveFilename ? `/reference-archive/${archiveDate}/${archiveFilename}` : "";
     refImages.push({
       mime_type: mimeType,
       data: b64,
-      previewUrl: url,
+      previewUrl: buildInlineImagePreviewUrl(mimeType, b64) || url,
       name: label || url.split("/").pop(),
       archive_date: archiveDate,
       archive_filename: archiveFilename,
@@ -3947,13 +4647,13 @@ function getLovedPickerSourceConfig(source = pickerSource) {
     return {
       source: "references",
       apiUrl: "/api/reference-archive-list",
-        emptyHtml: 'No saved references yet.<br><a href="/images?kind=references">Go to Images</a>',
+        emptyHtml: 'No saved references yet.<br><a href="/images?kind=references">Go to Assets</a>',
     };
   }
   return {
     source: "loved",
     apiUrl: "/api/loved-list",
-      emptyHtml: 'No loved images yet.<br><a href="/images?kind=loved">Go to Images</a>',
+        emptyHtml: 'No loved images yet.<br><a href="/images?kind=loved">Go to Assets</a>',
   };
 }
 
@@ -4049,7 +4749,12 @@ async function loadLovedPickerSource(source = pickerSource) {
       return;
     }
 
-    renderLovedPickerList(list, pickerTarget === "video" ? 1 : getMaxRefImages());
+    renderLovedPickerList(
+      list,
+      pickerTarget === "video"
+        ? 1
+        : (pickerTarget === "video-refs" ? getMaxVideoReferenceImages() : getMaxRefImages())
+    );
   } catch(e) {
     document.getElementById("pubPickerLoading").style.display = "none";
     document.getElementById("pubPickerEmpty").style.display = "block";
@@ -4060,17 +4765,22 @@ function syncLovedPickerTargetUi() {
   const title = document.querySelector("#pubPickerOverlay .modal-header h3");
   const limitNote = document.getElementById("modalLimitNote");
   const confirmBtn = document.getElementById("pickerConfirmBtn");
+  const isVideoSource = pickerTarget === "video";
+  const isVideoRefs = pickerTarget === "video-refs";
   if (title) {
-    title.textContent = pickerTarget === "video" ? "Choose source image" : "Choose reference images";
+    title.textContent = isVideoSource ? "Choose source image" : "Choose reference images";
   }
   if (confirmBtn) {
-    confirmBtn.textContent = pickerTarget === "video" ? "Use selected" : "Add selected";
+    confirmBtn.textContent = isVideoSource ? "Use selected" : "Add selected";
   }
   if (limitNote) {
-    if (pickerTarget === "video") {
+    if (isVideoSource) {
       limitNote.textContent = videoSourceImage && videoSourceImage.data
         ? "Choose one image to replace the current video start image."
         : "Choose one image to use as the video start image.";
+    } else if (isVideoRefs) {
+      const maxVideoRefs = getMaxVideoReferenceImages();
+      limitNote.textContent = `You can select up to ${Math.max(0, maxVideoRefs - videoReferenceImages.length)} images (${videoReferenceImages.length}/${maxVideoRefs} already added)`;
     } else {
       const maxRef = getMaxRefImages();
       limitNote.textContent = `You can select up to ${maxRef - refImages.length} images (${refImages.length}/${maxRef} already added)`;
@@ -4079,10 +4789,13 @@ function syncLovedPickerTargetUi() {
 }
 
 async function openLovedPicker(target = "refs") {
-  pickerTarget = target === "video" ? "video" : "refs";
-  if (pickerTarget !== "video") {
+  pickerTarget = target === "video" ? "video" : (target === "video-refs" ? "video-refs" : "refs");
+  if (pickerTarget === "refs") {
     const maxRef = getMaxRefImages();
     if (maxRef === 0) return;
+  } else if (pickerTarget === "video-refs") {
+    const maxVideoRefs = getMaxVideoReferenceImages();
+    if (maxVideoRefs === 0) return;
   }
 
   pickerSelected = new Set();
@@ -4101,7 +4814,9 @@ async function switchLovedPickerSource(source) {
 }
 
 function togglePickerCard(card, url, filename, maxRef) {
-  const remaining = pickerTarget === "video" ? 1 : maxRef - refImages.length;
+  const remaining = pickerTarget === "video"
+    ? 1
+    : (pickerTarget === "video-refs" ? maxRef - videoReferenceImages.length : maxRef - refImages.length);
   if (!pickerSelected.has(url) && pickerSelected.size >= remaining) {
     if (pickerTarget === "video") {
       document.querySelectorAll(".picker-card.selected").forEach(el => el.classList.remove("selected"));
@@ -4138,10 +4853,40 @@ async function confirmLovedPicker() {
     const filename = item.filename || url.split("/").pop();
     try {
       const payload = await resolveRefImageSource(url, filename);
-      setVideoSourceImage(payload);
+      setVideoSourceImage({
+        ...payload,
+        archive_date: item.date || "",
+        archive_filename: item.filename || "",
+        original_url: item.original_url || "",
+        masked_url: item.masked_url || "",
+        mask_url: item.mask_url || "",
+        has_mask: Boolean(item.has_mask),
+      });
       showStatus("Start image loaded into Video.", "success", 2200);
     } catch (error) {
       showError(error.message || "Could not load the selected source image.");
+    }
+    return;
+  }
+  if (target === "video-refs") {
+    for (const url of urls) {
+      const item = pickerItemsByUrl.get(url) || {};
+      const filename = item.filename || url.split("/").pop();
+      try {
+        const payload = await resolveRefImageSource(url, filename);
+        addVideoReferenceImage({
+          ...payload,
+          archive_date: item.date || "",
+          archive_filename: item.filename || "",
+          original_url: item.original_url || "",
+          masked_url: item.masked_url || "",
+          mask_url: item.mask_url || "",
+          has_mask: Boolean(item.has_mask),
+        });
+      } catch (error) {
+        showError(error.message || "Could not load the selected video reference image.");
+        break;
+      }
     }
     return;
   }
@@ -4347,7 +5092,7 @@ async function pollPendingAsyncJobs() {
       await loadGenerations();
     }
     if (shouldReloadVideos) {
-      await loadVideos();
+      await loadVideos({ selectLatest: true });
     }
 
     if (completedCount > 0 && pendingAsyncJobs.length) {
@@ -4379,6 +5124,8 @@ async function pollPendingAsyncJobs() {
 async function generate() {
   const prompt = document.getElementById("promptInput").value.trim();
   if (!prompt) { showError("Please enter a prompt before generating."); return; }
+  const assetMetaError = typeof validateAssetMetaSelection === "function" ? validateAssetMetaSelection() : "";
+  if (assetMetaError) { showError(assetMetaError); return; }
 
   const selection = getCurrentModelSelection();
   const modelId = selection.modelId;
@@ -4393,6 +5140,7 @@ async function generate() {
 
   const seedConfig = resolveSeedForGeneration();
   const payload = {
+    ...(typeof collectAssetMetaPayload === "function" ? collectAssetMetaPayload() : {}),
     model:          modelId,
     modelFamily:    selection.familyId,
     provider:       selection.provider,
@@ -4456,42 +5204,89 @@ function handlePromptKey(e) {
 }
 
 function autoResize(el) {
+  if (el && (el.id === "videoPromptInput" || el.id === "videoNegativePromptInput")) {
+    syncVideoPromptHeights();
+    return;
+  }
   el.style.height = "auto";
   el.style.height = Math.min(el.scrollHeight, 160) + "px";
   syncPromptComposeLayout();
 }
 
 function syncVideoSourceUi() {
+  const selection = getCurrentVideoSelection();
+  const info = selection.modelInfo || {};
   const strip = document.getElementById("videoSourceStrip");
   const empty = document.getElementById("videoSourceEmpty");
+  const emptyTitle = document.getElementById("videoSourceEmptyTitle");
   const emptySub = document.getElementById("videoSourceEmptySub");
   const previewWrap = document.getElementById("videoSourcePreviewWrap");
-  const preview = document.getElementById("videoSourcePreview");
+  const previewImage = document.getElementById("videoSourcePreview");
+  const previewVideo = document.getElementById("videoSourceVideoPreview");
   const nameEl = document.getElementById("videoSourceName");
   const counterEl = document.getElementById("videoSourceCounter");
   const clearBtn = document.getElementById("clearVideoSourceBtn");
-  if (!strip || !empty || !previewWrap || !preview || !nameEl || !counterEl || !clearBtn) return;
-  const hasSource = Boolean(videoSourceImage && videoSourceImage.data);
-  const inputMode = document.getElementById("videoInputModeSelect")?.value || "text";
+  if (!strip || !empty || !previewWrap || !previewImage || !previewVideo || !nameEl || !counterEl || !clearBtn) return;
+  const inputMode = selection.inputMode || document.getElementById("videoInputModeSelect")?.value || "text";
+  const usesSourceVideo = getVideoSupportsSourceVideo(selection);
+  const showSource = getVideoSupportsStartImage(selection);
+  const hasSource = usesSourceVideo
+    ? Boolean(videoSourceVideo && (videoSourceVideo.data || videoSourceVideo.url || videoSourceVideo.previewUrl))
+    : Boolean(videoSourceImage && (videoSourceImage.data || videoSourceImage.url || videoSourceImage.previewUrl));
+  strip.style.display = (showSource || usesSourceVideo) ? "" : "none";
+  if (!(showSource || usesSourceVideo)) return;
   strip.classList.toggle("video-source-strip-empty", !hasSource);
   strip.classList.toggle("ref-strip-empty-state", !hasSource);
   empty.style.display = hasSource ? "none" : "";
   previewWrap.style.display = hasSource ? "" : "none";
   clearBtn.style.display = hasSource ? "" : "none";
   counterEl.textContent = hasSource ? "1/1" : "0/1";
+  if (emptyTitle) {
+    emptyTitle.textContent = usesSourceVideo
+      ? "Drop source video here"
+      : (inputMode === "reference" ? "Drop start image here" : "Drop source image here");
+  }
   if (hasSource) {
-    preview.src = `data:${videoSourceImage.mime_type};base64,${videoSourceImage.data}`;
-    nameEl.textContent = videoSourceImage.name || "Source image";
+    if (usesSourceVideo) {
+      previewImage.style.display = "none";
+      previewImage.removeAttribute("src");
+      previewVideo.style.display = "";
+      previewVideo.src = videoSourceVideo.previewUrl || videoSourceVideo.url || `data:${videoSourceVideo.mime_type};base64,${videoSourceVideo.data}`;
+      nameEl.textContent = videoSourceVideo.name || "Source video";
+    } else {
+      previewVideo.pause?.();
+      previewVideo.style.display = "none";
+      previewVideo.removeAttribute("src");
+      previewImage.style.display = "";
+      previewImage.src = videoSourceImage.previewUrl || `data:${videoSourceImage.mime_type};base64,${videoSourceImage.data}`;
+      nameEl.textContent = videoSourceImage.name || "Source image";
+    }
   } else {
-    preview.removeAttribute("src");
-    nameEl.textContent = inputMode === "image"
-      ? "Drop or choose one start image"
-      : "Optional: switch to Image to Video to use a start image";
+    previewImage.style.display = "none";
+    previewImage.removeAttribute("src");
+    previewVideo.pause?.();
+    previewVideo.style.display = "none";
+    previewVideo.removeAttribute("src");
+    if (usesSourceVideo) {
+      nameEl.textContent = info.source_video_required
+        ? "Drop or choose one source video"
+        : "Optional: add one source video";
+    } else if (inputMode === "reference") {
+      nameEl.textContent = info.start_image_required
+        ? "Drop or choose one required start image"
+        : "Optional: add one start image for the first frame";
+    } else {
+      nameEl.textContent = info.start_image_required
+        ? "Drop or choose one start image"
+        : "Optional: add one start image";
+    }
   }
   if (emptySub) {
-    emptySub.textContent = inputMode === "image"
-      ? "Use one start image for image-to-video. Drag from the main image, history, Explorer, or another browser window."
-      : "Optional for image-to-video. Drag from the main image, history, Explorer, or another browser window.";
+    emptySub.textContent = usesSourceVideo
+      ? "Drop a source video here, upload one from disk, or use the selected viewer video."
+      : (inputMode === "reference"
+        ? "Reference-to-video models can also use one optional start image. Drag from the main image, history, Explorer, or another browser window."
+        : "Use one start image for image-to-video. Drag from the main image, history, Explorer, or another browser window.");
   }
 }
 
@@ -4499,21 +5294,110 @@ function setVideoSourceImage(image) {
   if (videoSourceImage && videoSourceImage.previewUrl && videoSourceImage.previewUrl.startsWith("blob:")) {
     URL.revokeObjectURL(videoSourceImage.previewUrl);
   }
+  if (videoSourceVideo && videoSourceVideo.previewUrl && videoSourceVideo.previewUrl.startsWith("blob:")) {
+    URL.revokeObjectURL(videoSourceVideo.previewUrl);
+  }
+  videoSourceVideo = null;
   videoSourceImage = image ? {
     mime_type: image.mime_type || "image/png",
     data: image.data || "",
     name: image.name || "video-source.png",
+    previewUrl: image.previewUrl || (image.data ? `data:${image.mime_type || "image/png"};base64,${image.data}` : ""),
+    original_data: image.original_data || "",
+    original_mime_type: image.original_mime_type || "",
+    mask_png_data: image.mask_png_data || "",
+    archive_date: image.archive_date || "",
+    archive_filename: image.archive_filename || "",
+    original_url: image.original_url || "",
+    masked_url: image.masked_url || "",
+    mask_url: image.mask_url || "",
+    has_mask: Boolean(image.has_mask),
+  } : null;
+  syncVideoSourceUi();
+  scheduleDraftSave();
+}
+
+function setVideoSourceVideo(video) {
+  if (videoSourceImage && videoSourceImage.previewUrl && videoSourceImage.previewUrl.startsWith("blob:")) {
+    URL.revokeObjectURL(videoSourceImage.previewUrl);
+  }
+  if (videoSourceVideo && videoSourceVideo.previewUrl && videoSourceVideo.previewUrl.startsWith("blob:")) {
+    URL.revokeObjectURL(videoSourceVideo.previewUrl);
+  }
+  videoSourceImage = null;
+  videoSourceVideo = video ? {
+    mime_type: video.mime_type || "video/mp4",
+    data: video.data || "",
+    name: video.name || "video-source.mp4",
+    url: video.url || "",
+    previewUrl: video.previewUrl || video.url || (video.data ? `data:${video.mime_type || "video/mp4"};base64,${video.data}` : ""),
+    archive_date: video.archive_date || "",
+    archive_filename: video.archive_filename || "",
   } : null;
   syncVideoSourceUi();
   scheduleDraftSave();
 }
 
 function clearVideoSource() {
-  setVideoSourceImage(null);
+  if (videoSourceImage && videoSourceImage.previewUrl && videoSourceImage.previewUrl.startsWith("blob:")) {
+    URL.revokeObjectURL(videoSourceImage.previewUrl);
+  }
+  if (videoSourceVideo && videoSourceVideo.previewUrl && videoSourceVideo.previewUrl.startsWith("blob:")) {
+    URL.revokeObjectURL(videoSourceVideo.previewUrl);
+  }
+  videoSourceImage = null;
+  videoSourceVideo = null;
+  syncVideoSourceUi();
+  scheduleDraftSave();
+}
+
+function getVideoReferencePayloadName(index = 1) {
+  return `video-reference-${index}.png`;
+}
+
+function addVideoReferenceImage(image) {
+  const maxRefs = getMaxVideoReferenceImages();
+  if (maxRefs <= 0) {
+    showError("The selected video model does not support reference images.");
+    return false;
+  }
+  if (videoReferenceImages.length >= maxRefs) {
+    showError(`Limit reached: this video model accepts at most ${maxRefs} reference images.`);
+    return false;
+  }
+  videoReferenceImages.push({
+    mime_type: image.mime_type || "image/png",
+    data: image.data || "",
+    name: image.name || getVideoReferencePayloadName(videoReferenceImages.length + 1),
+    previewUrl: image.previewUrl || (image.data ? `data:${image.mime_type || "image/png"};base64,${image.data}` : ""),
+    original_data: image.original_data || "",
+    original_mime_type: image.original_mime_type || "",
+    mask_png_data: image.mask_png_data || "",
+    archive_date: image.archive_date || "",
+    archive_filename: image.archive_filename || "",
+    original_url: image.original_url || "",
+    masked_url: image.masked_url || "",
+    mask_url: image.mask_url || "",
+    has_mask: Boolean(image.has_mask),
+  });
+  renderVideoReferenceStrip();
+  scheduleDraftSave();
+  return true;
+}
+
+function clearAllVideoReferenceImages() {
+  releaseRefPreviewUrls(videoReferenceImages);
+  videoReferenceImages = [];
+  renderVideoReferenceStrip();
+  scheduleDraftSave();
 }
 
 function triggerVideoSourceInput() {
   document.getElementById("videoSourceInput")?.click();
+}
+
+function triggerVideoReferenceInput() {
+  document.getElementById("videoReferenceInput")?.click();
 }
 
 async function readImageFileAsPayload(file) {
@@ -4533,14 +5417,59 @@ async function readImageFileAsPayload(file) {
   });
 }
 
+async function readVideoFileAsPayload(file) {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const commaIdx = result.indexOf(",");
+      resolve({
+        mime_type: file.type || "video/mp4",
+        data: commaIdx >= 0 ? result.slice(commaIdx + 1) : result,
+        name: file.name || "video-source.mp4",
+        previewUrl: URL.createObjectURL(file),
+      });
+    };
+    reader.onerror = () => reject(reader.error || new Error("Could not load video"));
+    reader.readAsDataURL(file);
+  });
+}
+
 async function onVideoSourceInputChange(event) {
   const file = event.target?.files?.[0];
   if (!file) return;
   try {
-    const payload = await readImageFileAsPayload(file);
-    setVideoSourceImage(payload);
+    const selection = getCurrentVideoSelection();
+    if (getVideoSupportsSourceVideo(selection)) {
+      if (!String(file.type || "").startsWith("video/")) {
+        throw new Error("Choose a video file for this model.");
+      }
+      const payload = await readVideoFileAsPayload(file);
+      setVideoSourceVideo(payload);
+    } else {
+      const payload = await readImageFileAsPayload(file);
+      setVideoSourceImage(payload);
+    }
   } catch (error) {
-    showError("Could not load the selected source image.");
+    showError(error.message || "Could not load the selected source.");
+  } finally {
+    event.target.value = "";
+  }
+}
+
+async function onVideoReferenceInputChange(event) {
+  const files = Array.from(event.target?.files || []).filter(file => String(file.type || "").startsWith("image/"));
+  try {
+    for (const file of files) {
+      const payload = await readImageFileAsPayload(file);
+      payload.previewUrl = URL.createObjectURL(file);
+      if (!addVideoReferenceImage(payload)) {
+        if (payload.previewUrl && payload.previewUrl.startsWith("blob:")) URL.revokeObjectURL(payload.previewUrl);
+        break;
+      }
+    }
+  } catch (error) {
+    showError("Could not load the selected video reference image.");
   } finally {
     event.target.value = "";
   }
@@ -4555,14 +5484,136 @@ async function useSelectedViewerImageAsVideoSource() {
   try {
     const payload = await ensureImagePayload(entry.image);
     setVideoSourceImage({
-    mime_type: payload.mime_type || "image/png",
-    data: payload.data || "",
-    name: entry.image.name || entry.image.gen_filename || "viewer-source.png",
+      mime_type: payload.mime_type || "image/png",
+      data: payload.data || "",
+      name: entry.image.name || entry.image.gen_filename || "viewer-source.png",
+      original_data: entry.image.original_data || "",
+      original_mime_type: entry.image.original_mime_type || "",
+      mask_png_data: entry.image.mask_png_data || "",
+      archive_date: entry.image.archive_date || "",
+      archive_filename: entry.image.archive_filename || "",
+      original_url: entry.image.original_url || "",
+      masked_url: entry.image.masked_url || "",
+      mask_url: entry.image.mask_url || "",
+      has_mask: Boolean(entry.image.has_mask),
     });
     showStatus("Selected image loaded as the video source.", "success", 2200);
   } catch (error) {
     showError("Could not load the selected image as a video source.");
   }
+}
+
+function useSelectedViewerAssetAsVideoSource() {
+  if (getVideoSupportsSourceVideo()) {
+    return useSelectedViewerVideoAsVideoSource();
+  }
+  return useSelectedViewerImageAsVideoSource();
+}
+
+async function useSelectedViewerVideoAsVideoSource() {
+  const entry = getSelectedGalleryVideoEntry();
+  if (!entry || !entry.video) {
+    showError("Select a video in the viewer or sidebar first.");
+    return;
+  }
+  try {
+    setVideoSourceVideo({
+      mime_type: entry.video.mime_type || "video/mp4",
+      url: entry.video.url || "",
+      name: entry.fileName || entry.params?.gen_filename || "viewer-source.mp4",
+      previewUrl: entry.video.url || "",
+      archive_date: entry.fileDate || entry.params?.gen_date || "",
+      archive_filename: entry.fileName || entry.params?.gen_filename || "",
+    });
+    showStatus("Selected video loaded as the source video.", "success", 2200);
+  } catch (error) {
+    showError("Could not load the selected video as a source.");
+  }
+}
+
+async function useSelectedViewerImageAsVideoReference() {
+  const entry = getSelectedGalleryImageEntry();
+  if (!entry || !entry.image) {
+    showError("Select an image in the viewer or History first.");
+    return;
+  }
+  try {
+    const payload = await ensureImagePayload(entry.image);
+    addVideoReferenceImage({
+      mime_type: payload.mime_type || "image/png",
+      data: payload.data || "",
+      name: entry.image.name || entry.image.gen_filename || getVideoReferencePayloadName(videoReferenceImages.length + 1),
+      original_data: entry.image.original_data || "",
+      original_mime_type: entry.image.original_mime_type || "",
+      mask_png_data: entry.image.mask_png_data || "",
+      archive_date: entry.image.archive_date || "",
+      archive_filename: entry.image.archive_filename || "",
+      original_url: entry.image.original_url || "",
+      masked_url: entry.image.masked_url || "",
+      mask_url: entry.image.mask_url || "",
+      has_mask: Boolean(entry.image.has_mask),
+    });
+    showStatus("Selected image added as a video reference.", "success", 2200);
+  } catch (error) {
+    showError("Could not load the selected image as a video reference.");
+  }
+}
+
+function renderVideoReferenceStrip() {
+  const strip = document.getElementById("videoReferenceStrip");
+  const inner = document.getElementById("videoReferenceInner");
+  const empty = document.getElementById("videoReferenceEmpty");
+  const counter = document.getElementById("videoReferenceCounter");
+  const hint = document.getElementById("videoReferenceHint");
+  if (!strip || !inner || !empty || !counter || !hint) return;
+  const selection = getCurrentVideoSelection();
+  const modelLabel = String(selection?.modelInfo?.label || selection?.modelId || "This video model");
+  const maxRefs = getMaxVideoReferenceImages();
+  const supportsRefs = getVideoSupportsReferenceImages(selection) && maxRefs > 0;
+  strip.style.display = supportsRefs ? "" : "none";
+  if (!supportsRefs) return;
+  strip.classList.toggle("ref-strip-empty-state", videoReferenceImages.length === 0);
+  inner.innerHTML = "";
+  if (!videoReferenceImages.length) {
+    empty.style.display = "";
+  } else {
+    empty.style.display = "none";
+    videoReferenceImages.forEach((img, idx) => {
+      const wrap = document.createElement("div");
+      wrap.className = "ref-thumb-wrap";
+
+      const el = document.createElement("img");
+      el.className = "ref-thumb";
+      el.src = img.previewUrl || `data:${img.mime_type};base64,${img.data}`;
+      el.alt = img.name || getVideoReferencePayloadName(idx + 1);
+      wrap.appendChild(el);
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "ref-remove";
+      removeBtn.type = "button";
+      removeBtn.innerHTML = "&times;";
+      removeBtn.onclick = (event) => {
+        event.stopPropagation();
+        if (img.previewUrl && img.previewUrl.startsWith("blob:")) URL.revokeObjectURL(img.previewUrl);
+        videoReferenceImages.splice(idx, 1);
+        renderVideoReferenceStrip();
+        scheduleDraftSave();
+      };
+      wrap.appendChild(removeBtn);
+
+      const name = document.createElement("div");
+      name.className = "ref-name";
+      name.textContent = img.name || getVideoReferencePayloadName(idx + 1);
+      wrap.appendChild(name);
+
+      inner.appendChild(wrap);
+    });
+  }
+  counter.textContent = `${videoReferenceImages.length}/${maxRefs}`;
+  hint.textContent = maxRefs > 0
+    ? `${modelLabel} accepts up to ${maxRefs} reference image${maxRefs === 1 ? "" : "s"}.`
+    : "This video model does not use extra reference images.";
+  syncVideoComposeLayout();
 }
 
 function onVideoSourceDragOver(event) {
@@ -4584,102 +5635,260 @@ async function onVideoSourceDrop(event) {
   if (strip) strip.classList.remove("drag-over");
   const dt = event.dataTransfer;
   try {
+    const selection = getCurrentVideoSelection();
+    const supportsSourceVideo = getVideoSupportsSourceVideo(selection);
     if (dt?.files?.length) {
-      const imageFile = Array.from(dt.files).find(file => String(file.type || "").startsWith("image/"));
-      if (imageFile) {
-        const payload = await readImageFileAsPayload(imageFile);
+      if (supportsSourceVideo) {
+        const videoFile = Array.from(dt.files).find(file => String(file.type || "").startsWith("video/"));
+        if (videoFile) {
+          const payload = await readVideoFileAsPayload(videoFile);
+          setVideoSourceVideo(payload);
+          return;
+        }
+      } else {
+        const imageFile = Array.from(dt.files).find(file => String(file.type || "").startsWith("image/"));
+        if (imageFile) {
+          const payload = await readImageFileAsPayload(imageFile);
+          setVideoSourceImage(payload);
+          return;
+        }
+      }
+    }
+    if (!supportsSourceVideo) {
+      const droppedImages = extractDroppedImageCandidates(dt);
+      if (droppedImages.length > 0) {
+        const candidate = droppedImages[0];
+        const payload = await resolveRefImageSource(candidate.url, candidate.name);
         setVideoSourceImage(payload);
         return;
       }
     }
+    if (gallerySelectedImageId) {
+      if (supportsSourceVideo && window.gallerySelectedVideoId) {
+        await useSelectedViewerVideoAsVideoSource();
+      } else {
+        await useSelectedViewerImageAsVideoSource();
+      }
+      return;
+    }
+    if (supportsSourceVideo && window.gallerySelectedVideoId) {
+      await useSelectedViewerVideoAsVideoSource();
+    }
+  } catch (error) {
+    showError(error.message || "Could not import that source.");
+  }
+}
+
+function onVideoReferenceDragOver(event) {
+  event.preventDefault();
+  const strip = document.getElementById("videoReferenceStrip");
+  if (strip) strip.classList.add("drag-over");
+}
+
+function onVideoReferenceDragLeave(event) {
+  const strip = document.getElementById("videoReferenceStrip");
+  if (strip && (!event.relatedTarget || !strip.contains(event.relatedTarget))) {
+    strip.classList.remove("drag-over");
+  }
+}
+
+async function onVideoReferenceDrop(event) {
+  event.preventDefault();
+  const strip = document.getElementById("videoReferenceStrip");
+  if (strip) strip.classList.remove("drag-over");
+  const dt = event.dataTransfer;
+  try {
+    if (dt?.files?.length) {
+      const imageFiles = Array.from(dt.files).filter(file => String(file.type || "").startsWith("image/"));
+      for (const imageFile of imageFiles) {
+        const payload = await readImageFileAsPayload(imageFile);
+        payload.previewUrl = URL.createObjectURL(imageFile);
+        if (!addVideoReferenceImage(payload)) {
+          if (payload.previewUrl && payload.previewUrl.startsWith("blob:")) URL.revokeObjectURL(payload.previewUrl);
+          return;
+        }
+      }
+      if (imageFiles.length) return;
+    }
     const droppedImages = extractDroppedImageCandidates(dt);
     if (droppedImages.length > 0) {
-      const candidate = droppedImages[0];
-      const payload = await resolveRefImageSource(candidate.url, candidate.name);
-      setVideoSourceImage(payload);
+      for (const candidate of droppedImages) {
+        const payload = await resolveRefImageSource(candidate.url, candidate.name);
+        if (!addVideoReferenceImage(payload)) return;
+      }
       return;
     }
     if (gallerySelectedImageId) {
-      await useSelectedViewerImageAsVideoSource();
+      await useSelectedViewerImageAsVideoReference();
     }
   } catch (error) {
-    showError("Could not import that image as a video source.");
+    showError("Could not import that image as a video reference.");
   }
 }
 
 function renderVideoResults() {
-  const grid = document.getElementById("videoResultsGrid");
-  const empty = document.getElementById("videoResultsEmpty");
-  const count = document.getElementById("videoResultsCount");
-  if (!grid || !empty || !count) return;
-  grid.innerHTML = "";
-  count.textContent = `${videoEntries.length} video${videoEntries.length === 1 ? "" : "s"}`;
-  if (!videoEntries.length) {
-    empty.style.display = "";
-    return;
-  }
-  empty.style.display = "none";
-  videoEntries.forEach((entry, idx) => {
-    const card = document.createElement("div");
-    card.className = "video-result-card";
-    const media = document.createElement(idx === 0 ? "video" : "video");
-    media.className = "video-result-player";
-    media.src = entry.url;
-    media.controls = true;
-    media.preload = idx === 0 ? "metadata" : "none";
-    if (entry.poster_url) media.poster = entry.poster_url;
-    card.appendChild(media);
-    const meta = document.createElement("div");
-    meta.className = "video-result-meta";
-    meta.textContent = `${entry.params?.model_label || "Video"} - ${entry.params?.provider_label || ""} - ${entry.params?.duration || 5}s`;
-    card.appendChild(meta);
-    grid.appendChild(card);
-  });
+  const shell = document.getElementById("videoResultsShell");
+  if (shell) shell.style.display = "none";
 }
 
-async function loadVideos() {
+function normalizeVideoGalleryEntry(item) {
+  if (!item || !item.url) return null;
+  const baseParams = item.params || {};
+  const params = Object.assign({}, baseParams, {
+    gen_date: item.gen_date || item.date || baseParams.gen_date || "",
+    gen_filename: item.gen_filename || item.filename || baseParams.gen_filename || "",
+    generated_at: item.generated_at || baseParams.generated_at || "",
+    source_kind: "videos",
+    provider: baseParams.provider || item.provider || "",
+    videoInputMode: baseParams.videoInputMode || baseParams.inputMode || item.videoInputMode || item.inputMode || "",
+  });
+  const modelInfo = VIDEO_MODELS_INFO[params.model] || {};
+  const badgeLabel = params.model_label || item.model_label || modelInfo.label || params.model || "Video";
+  return registerGalleryVideoEntry(
+    {
+      url: item.url,
+      mime_type: item.mime_type || params.mime_type || "video/mp4",
+      poster_url: item.poster_url || params.poster_url || "",
+    },
+    params,
+    badgeLabel,
+    item.generated_at || params.generated_at || "",
+    item.gen_date || item.date || params.gen_date || "",
+    {
+      sourceKind: "videos",
+      deleteUrl: item.delete_url || (params.gen_date && params.gen_filename
+        ? `/api/videos/${encodeURIComponent(params.gen_date)}/${encodeURIComponent(params.gen_filename)}`
+        : ""),
+      folderOpenPayload: item.folder_open_payload || (params.gen_date && params.gen_filename
+        ? { kind: "videos", date: params.gen_date, filename: params.gen_filename }
+        : null),
+      promptPreview: item.text || params.text || "",
+      fileDate: item.gen_date || item.date || params.gen_date || "",
+      fileName: item.gen_filename || item.filename || params.gen_filename || "",
+      text: item.text || "",
+    },
+    videoEntries
+  );
+}
+
+async function loadVideos(options = {}) {
   try {
     const response = await fetch("/api/videos", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    videoEntries = Array.isArray(data) ? data : [];
+    const items = Array.isArray(data) ? data : [];
+    videoEntries = [];
+    for (const item of items) {
+      try {
+        normalizeVideoGalleryEntry(item);
+      } catch (error) {
+        continue;
+      }
+    }
+    if (!videoEntries.some((entry) => entry.id === window.gallerySelectedVideoId)) {
+      window.gallerySelectedVideoId = "";
+    }
+    if (options.selectLatest && videoEntries.length) {
+      window.gallerySelectedVideoId = videoEntries[0].id;
+    }
+    if (isGalleryVideoSource()) {
+      galleryEntries = videoEntries.slice();
+      galleryEntrySequence = galleryEntries.length;
+      gallerySelectedIds.clear();
+    }
     renderVideoResults();
+    if (isVideoPromptMode() || isGalleryVideoSource()) {
+      renderGalleryEntries();
+    }
   } catch (error) {
     videoEntries = [];
     renderVideoResults();
+    if (isGalleryVideoSource()) {
+      galleryEntries = [];
+      galleryEntrySequence = 0;
+      gallerySelectedIds.clear();
+    }
+    if (isVideoPromptMode() || isGalleryVideoSource()) {
+      renderGalleryEntries();
+    }
   }
 }
 
 async function generateVideo() {
   const selection = getCurrentVideoSelection();
+  const modelInfo = selection.modelInfo || {};
   const prompt = (document.getElementById("videoPromptInput")?.value || "").trim();
   const negativePrompt = (document.getElementById("videoNegativePromptInput")?.value || "").trim();
-  const inputMode = document.getElementById("videoInputModeSelect")?.value || "text";
+  const assetMetaError = typeof validateAssetMetaSelection === "function" ? validateAssetMetaSelection() : "";
+  if (assetMetaError) {
+    showError(assetMetaError);
+    return;
+  }
+  const inputMode = selection.inputMode || document.getElementById("videoInputModeSelect")?.value || "text";
+  const usesStartImage = getVideoSupportsStartImage(selection);
+  const usesSourceVideo = getVideoSupportsSourceVideo(selection);
+  const usesReferenceImages = getVideoSupportsReferenceImages(selection);
   const btn = document.getElementById("generateVideoBtn");
-  if (!prompt) {
+  if (getVideoSupportsPrompt(selection) && !prompt) {
     showError("Please enter a video prompt before generating.");
     return;
   }
-  if (inputMode === "image" && !(videoSourceImage && videoSourceImage.data)) {
-    showError("Choose or drop a source image for image-to-video.");
+  if (usesStartImage && modelInfo.start_image_required && !(videoSourceImage && videoSourceImage.data)) {
+    const label = inputMode === "reference" ? "start image" : "source image";
+    showError(`Choose or drop a ${label} for this video model.`);
+    return;
+  }
+  if (usesSourceVideo && modelInfo.source_video_required && !(videoSourceVideo && (videoSourceVideo.data || videoSourceVideo.url))) {
+    showError("Choose or drop a source video for this video upscaler.");
+    return;
+  }
+  if (usesReferenceImages && modelInfo.reference_images_required && !videoReferenceImages.length) {
+    showError("Add at least one reference image for this reference-to-video model.");
     return;
   }
   const payload = {
+    ...(typeof collectAssetMetaPayload === "function" ? collectAssetMetaPayload() : {}),
     model: selection.modelId,
     modelFamily: selection.familyId,
     provider: selection.provider,
     videoInputMode: inputMode,
     prompt,
-    negativePrompt,
+    negativePrompt: getVideoSupportsNegativePrompt(selection) ? negativePrompt : "",
     aspectRatio: document.getElementById("videoAspectRatioSelect")?.value || "16:9",
     duration: parseInt(document.getElementById("videoDurationSelect")?.value || "5", 10),
     resolution: document.getElementById("videoResolutionSelect")?.value || "720p",
     videoSafetyChecker: Boolean(document.getElementById("videoSafetyCheckerToggle")?.checked),
-    sourceImage: inputMode === "image" ? {
-      mime_type: videoSourceImage?.mime_type || "image/png",
-      data: videoSourceImage?.data || "",
-      name: videoSourceImage?.name || "video-source.png",
-    } : {},
+    videoUpscaleMode: document.getElementById("videoUpscaleModeSelect")?.value || "factor",
+    videoUpscaleFactor: parseFloat(document.getElementById("videoUpscaleFactorInput")?.value || "2"),
+    videoUpscaleTargetResolution: document.getElementById("videoUpscaleTargetResolutionSelect")?.value || "1080p",
+    videoUpscaleNoiseScale: parseFloat(document.getElementById("videoUpscaleNoiseScaleInput")?.value || "0.1"),
+    videoUpscaleOutputFormat: document.getElementById("videoUpscaleOutputFormatSelect")?.value || "X264 (.mp4)",
+    videoUpscaleOutputQuality: document.getElementById("videoUpscaleOutputQualitySelect")?.value || "high",
+    videoUpscaleOutputWriteMode: document.getElementById("videoUpscaleOutputWriteModeSelect")?.value || "balanced",
+    videoUpscaleSeed: document.getElementById("videoUpscaleSeedInput")?.value || "",
+    videoUpscaleSyncMode: Boolean(document.getElementById("videoUpscaleSyncModeToggle")?.checked),
+    sourceImage: usesStartImage
+      ? Object.assign({}, buildGenerationRefPayload(videoSourceImage || {}), {
+          mime_type: videoSourceImage?.mime_type || "image/png",
+          data: videoSourceImage?.data || "",
+          name: videoSourceImage?.name || "video-source.png",
+        })
+      : {},
+    sourceVideo: usesSourceVideo
+      ? {
+          mime_type: videoSourceVideo?.mime_type || "video/mp4",
+          data: videoSourceVideo?.data || "",
+          name: videoSourceVideo?.name || "video-source.mp4",
+          url: videoSourceVideo?.url || "",
+        }
+      : {},
+    referenceImages: usesReferenceImages
+      ? videoReferenceImages.map((img, idx) => Object.assign({}, buildGenerationRefPayload(img), {
+          mime_type: img.mime_type || "image/png",
+          data: img.data || "",
+          name: img.name || getVideoReferencePayloadName(idx + 1),
+        }))
+      : [],
   };
 
   if (btn) {
@@ -4689,6 +5898,7 @@ async function generateVideo() {
   hideError();
   showStatus("Starting video generation...", "loading");
   try {
+    await persistDraftNow();
     const response = await fetch("/api/jobs/video", {
       method: "POST",
       headers: {"Content-Type":"application/json"},
@@ -4719,17 +5929,19 @@ let _galleryFeatureText = null;
 let _galleryRailEmpty = null;
 let _infoPopup   = null;
 let galleryEntries = [];
+let galleryFeaturedEntry = null;
+window.gallerySelectedVideoId = "";
 let galleryEntrySequence = 0;
 let gallerySelectedImageId = "";
 let gallerySelectionMode = false;
 let gallerySelectedIds = new Set();
 const GALLERY_SOURCE_CONFIG = Object.freeze({
   history: {
-    label: "History",
+    label: "Images",
     api: "/api/asset-gallery/history",
-    emptyCount: "No history yet",
+    emptyCount: "No images yet",
     railEmpty: "Previous images will appear here.",
-    emptyFiltered: "No history images match these filters.",
+    emptyFiltered: "No images match these filters.",
   },
   references: {
     label: "References",
@@ -4744,6 +5956,13 @@ const GALLERY_SOURCE_CONFIG = Object.freeze({
     emptyCount: "No loved images yet",
     railEmpty: "Loved images will appear here.",
     emptyFiltered: "No loved images match these filters.",
+  },
+  videos: {
+    label: "Videos",
+    api: "/api/videos",
+    emptyCount: "No videos yet",
+    railEmpty: "Generated videos will appear here.",
+    emptyFiltered: "No videos match these filters.",
   },
 });
 
@@ -4768,6 +5987,10 @@ const GALLERY_FILTER_DEFAULTS = {
   model: "all",
   provider: "all",
   upscaler: "all",
+  client: "all",
+  project: "all",
+  shot: "all",
+  filename: "",
 };
 let galleryFilters = Object.assign({}, GALLERY_FILTER_DEFAULTS);
 const GALLERY_DENSITY_DEFAULT = 2;
@@ -4782,8 +6005,267 @@ const HISTORY_SIDEBAR_WIDTH_DEFAULT = 390;
 const HISTORY_SIDEBAR_WIDTH_MIN = 240;
 const HISTORY_SIDEBAR_WIDTH_MAX = 760;
 
+function getCurrentPromptMode() {
+  return document.getElementById("promptBar")?.dataset.promptMode || "creation";
+}
+
+function isVideoPromptMode() {
+  return getCurrentPromptMode() === "video";
+}
+
+function isGalleryVideoSource(source = gallerySource) {
+  return normalizeGallerySourceValue(source) === "videos";
+}
+
 function getGallerySourceMeta(source = gallerySource) {
   return GALLERY_SOURCE_CONFIG[normalizeGallerySourceValue(source)] || GALLERY_SOURCE_CONFIG.history;
+}
+
+function getAvailableGallerySourcesForMode(mode = getCurrentPromptMode()) {
+  return mode === "video" || mode === "edit"
+    ? ["videos", "history", "references", "loved"]
+    : ["history", "references", "loved"];
+}
+
+function syncGallerySourceOptions() {
+  const select = document.getElementById("gallerySourceSelect");
+  if (!select) return;
+  const mode = getCurrentPromptMode();
+  const availableSources = getAvailableGallerySourcesForMode(mode);
+  const currentValue = availableSources.includes(gallerySource) ? gallerySource : availableSources[0];
+  const existingValues = Array.from(select.options).map((option) => option.value);
+  if (
+    existingValues.length !== availableSources.length ||
+    existingValues.some((value, index) => value !== availableSources[index])
+  ) {
+    select.innerHTML = "";
+    availableSources.forEach((sourceKey) => {
+      const meta = getGallerySourceMeta(sourceKey);
+      const option = document.createElement("option");
+      option.value = sourceKey;
+      option.textContent = meta.label;
+      select.appendChild(option);
+    });
+  }
+  select.value = currentValue;
+}
+
+function setGalleryPlaceholderMessage(title, subtitle) {
+  const placeholder = document.getElementById("galleryPlaceholder");
+  if (!placeholder) return;
+  const titleEl = placeholder.querySelector("p:first-child");
+  const subEl = placeholder.querySelector(".placeholder-sub");
+  if (titleEl) titleEl.textContent = title || "";
+  if (subEl) subEl.textContent = subtitle || "";
+}
+
+function setSelectOptions(select, options, preferredValue) {
+  if (!select) return;
+  const preferred = String(preferredValue ?? "");
+  select.innerHTML = "";
+  let hasPreferred = false;
+  options.forEach((optionData) => {
+    const option = document.createElement("option");
+    option.value = String(optionData.value);
+    option.textContent = String(optionData.label);
+    if (option.value === preferred) hasPreferred = true;
+    select.appendChild(option);
+  });
+  if (hasPreferred) {
+    select.value = preferred;
+  } else if (options.length) {
+    select.value = String(options[0].value);
+  }
+}
+
+function buildGalleryVideoFilterOptions() {
+  const knownDurations = new Set(["5", "10"]);
+  videoEntries.forEach((entry) => {
+    const duration = String((entry.params || {}).duration || "").trim();
+    if (duration) knownDurations.add(duration);
+  });
+  const durationOptions = [{ value: "all", label: "All durations" }]
+    .concat(Array.from(knownDurations).sort((a, b) => Number(a) - Number(b)).map((value) => ({ value, label: `${value}s` })));
+
+  const modelOptions = [{ value: "all", label: "All models" }];
+  const seenFamilies = new Set();
+  Object.entries(VIDEO_MODELS_INFO || {}).forEach(([modelId, info]) => {
+    const familyKey = info.family || modelId;
+    if (!familyKey || seenFamilies.has(familyKey)) return;
+    seenFamilies.add(familyKey);
+    modelOptions.push({ value: familyKey, label: info.label || familyKey });
+  });
+
+  const providerOptions = [{ value: "all", label: "All providers" }];
+  const seenProviders = new Set();
+  Object.values(VIDEO_MODELS_INFO || {}).forEach((info) => {
+    const providerKey = String(info.provider || "").trim();
+    if (!providerKey || seenProviders.has(providerKey)) return;
+    seenProviders.add(providerKey);
+    providerOptions.push({ value: providerKey, label: PROVIDER_LABELS[providerKey] || providerKey });
+  });
+
+  const modeOptions = [
+    { value: "all", label: "All modes" },
+    { value: "text", label: "Text to Video" },
+    { value: "image", label: "Image to Video" },
+    { value: "reference", label: "Reference to Video" },
+  ];
+
+  return { durationOptions, modelOptions, providerOptions, modeOptions };
+}
+
+function buildGalleryImageFilterOptions() {
+  const sizeOptions = [
+    { value: "all", label: "All sizes" },
+    { value: "1K", label: "1K" },
+    { value: "2K", label: "2K" },
+    { value: "4K", label: "4K" },
+  ];
+  const seenSizes = new Set(sizeOptions.map((item) => item.value));
+  galleryEntries.forEach((entry) => {
+    const size = String((entry.params || {}).imageSize || "").trim().toUpperCase();
+    if (!size || seenSizes.has(size)) return;
+    seenSizes.add(size);
+    sizeOptions.push({ value: size, label: size });
+  });
+
+  const modelOptions = [{ value: "all", label: "All models" }];
+  const seenFamilies = new Set();
+  Object.entries(MODELS_INFO || {}).forEach(([modelId, info]) => {
+    const familyKey = info.family || modelId;
+    if (!familyKey || seenFamilies.has(familyKey)) return;
+    seenFamilies.add(familyKey);
+    modelOptions.push({ value: familyKey, label: info.label || familyKey });
+  });
+
+  const providerOptions = [{ value: "all", label: "All providers" }];
+  const seenProviders = new Set();
+  Object.values(MODELS_INFO || {}).forEach((info) => {
+    const providerKey = String(info.provider || "").trim();
+    if (!providerKey || seenProviders.has(providerKey)) return;
+    seenProviders.add(providerKey);
+    providerOptions.push({ value: providerKey, label: PROVIDER_LABELS[providerKey] || providerKey });
+  });
+
+  const upscalerOptions = [
+    { value: "all", label: "All images" },
+    { value: "none", label: "Not upscaled" },
+  ];
+  const existingUpscalerValues = new Set(upscalerOptions.map((item) => item.value));
+  const knownUpscalers = Object.assign({}, UPSCALER_LABELS);
+  galleryEntries.forEach((entry) => {
+    const key = String((entry.params || {}).upscalerType || "").trim();
+    if (!key) return;
+    knownUpscalers[key] = UPSCALER_LABELS[key] || (entry.params || {}).upscalerLabel || key;
+  });
+  Object.entries(knownUpscalers).forEach(([key, label]) => {
+    if (!key || existingUpscalerValues.has(key)) return;
+    existingUpscalerValues.add(key);
+    upscalerOptions.push({ value: key, label: label || key });
+  });
+
+  return { sizeOptions, modelOptions, providerOptions, upscalerOptions };
+}
+
+function buildGalleryAssetMetaOptions() {
+  const buildOptions = (key, allLabel) => {
+    const seen = new Set();
+    const options = [{ value: "all", label: allLabel }];
+    galleryEntries.forEach((entry) => {
+      const rawValue = String((entry.params || {})[key] || "-").trim() || "-";
+      if (seen.has(rawValue)) return;
+      seen.add(rawValue);
+      options.push({
+        value: rawValue,
+        label: rawValue === "-" ? "Uncategorized" : rawValue,
+      });
+    });
+    return options;
+  };
+  return {
+    clientOptions: buildOptions("assetClient", "All clients"),
+    projectOptions: buildOptions("assetProject", "All projects"),
+    shotOptions: buildOptions("assetShot", "All shots"),
+  };
+}
+
+function populateGalleryModelFilter() {
+  const modelSelect = document.getElementById("galleryModelFilter");
+  const providerSelect = document.getElementById("galleryProviderFilter");
+  const upscalerSelect = document.getElementById("galleryUpscalerFilter");
+  const sizeSelect = document.getElementById("gallerySizeFilter");
+  const clientSelect = document.getElementById("galleryClientFilter");
+  const projectSelect = document.getElementById("galleryProjectFilter");
+  const shotSelect = document.getElementById("galleryShotFilter");
+  const sizeLabel = document.getElementById("gallerySizeFilterLabel");
+  const upscalerLabel = document.getElementById("galleryUpscalerFilterLabel");
+  const ratioLabel = document.getElementById("galleryRatioFilterLabel");
+  const isVideoSource = isGalleryVideoSource();
+
+  if (sizeLabel) sizeLabel.textContent = isVideoSource ? "Duration" : "Image Size";
+  if (upscalerLabel) upscalerLabel.textContent = isVideoSource ? "Input mode" : "Upscaler";
+  if (ratioLabel) ratioLabel.textContent = "Aspect Ratio";
+
+  const sizeValue = galleryFilters.size || GALLERY_FILTER_DEFAULTS.size;
+  const modelValue = galleryFilters.model || GALLERY_FILTER_DEFAULTS.model;
+  const providerValue = galleryFilters.provider || GALLERY_FILTER_DEFAULTS.provider;
+  const upscalerValue = galleryFilters.upscaler || GALLERY_FILTER_DEFAULTS.upscaler;
+  const clientValue = galleryFilters.client || GALLERY_FILTER_DEFAULTS.client;
+  const projectValue = galleryFilters.project || GALLERY_FILTER_DEFAULTS.project;
+  const shotValue = galleryFilters.shot || GALLERY_FILTER_DEFAULTS.shot;
+  const metaOptions = buildGalleryAssetMetaOptions();
+
+  if (isVideoSource) {
+    const videoOptions = buildGalleryVideoFilterOptions();
+    setSelectOptions(sizeSelect, videoOptions.durationOptions, sizeValue);
+    setSelectOptions(modelSelect, videoOptions.modelOptions, modelValue);
+    setSelectOptions(providerSelect, videoOptions.providerOptions, providerValue);
+    setSelectOptions(upscalerSelect, videoOptions.modeOptions, upscalerValue);
+  } else {
+    const imageOptions = buildGalleryImageFilterOptions();
+    setSelectOptions(sizeSelect, imageOptions.sizeOptions, sizeValue);
+    setSelectOptions(modelSelect, imageOptions.modelOptions, modelValue);
+    setSelectOptions(providerSelect, imageOptions.providerOptions, providerValue);
+    setSelectOptions(upscalerSelect, imageOptions.upscalerOptions, upscalerValue);
+  }
+  setSelectOptions(clientSelect, metaOptions.clientOptions, clientValue);
+  setSelectOptions(projectSelect, metaOptions.projectOptions, projectValue);
+  setSelectOptions(shotSelect, metaOptions.shotOptions, shotValue);
+}
+
+function syncGalleryModeUi() {
+  syncGallerySourceOptions();
+  const mode = getCurrentPromptMode();
+  if (mode === "video") {
+    if (gallerySource !== "videos" && !syncGalleryModeUi._switching) {
+      syncGalleryModeUi._switching = true;
+      window.requestAnimationFrame(() => {
+        syncGalleryModeUi._switching = false;
+        void setGallerySource("videos");
+      });
+      return;
+    }
+    setGalleryPlaceholderMessage("Generated videos will appear here", "Write a video prompt and press Generate Video");
+  } else {
+    const available = getAvailableGallerySourcesForMode(mode);
+    if (!available.includes(gallerySource) && !syncGalleryModeUi._switching) {
+      syncGalleryModeUi._switching = true;
+      window.requestAnimationFrame(() => {
+        syncGalleryModeUi._switching = false;
+        void setGallerySource(available[0] || "history");
+      });
+      return;
+    }
+    if (isGalleryVideoSource()) {
+      setGalleryPlaceholderMessage("Generated videos will appear here", "Select a saved video from the sidebar to upscale");
+    } else {
+      setGalleryPlaceholderMessage("Generated images will appear here", "Write a prompt and press Generate");
+    }
+  }
+  populateGalleryModelFilter();
+  renderGallerySourceUi();
+  renderGalleryEntries();
 }
 
 function clampGalleryDensity(value) {
@@ -5061,12 +6543,43 @@ function registerGalleryImageEntry(img, idx, params, badgeLabel, generatedAt, fa
     deleteUrl: "",
     folderOpenPayload: null,
     assetId: "",
-    promptPreview: "",
+    promptPreview: params.promptPreview || params.prompt_preview || params.prompt || params.text || "",
     fileDate: fallbackDate || params.gen_date || "",
     fileName: params.gen_filename || "",
+    text: params.text || params.prompt || "",
   };
   Object.assign(entry, extra || {});
   galleryEntries.push(entry);
+  return entry;
+}
+
+function registerGalleryVideoEntry(video, params, badgeLabel, generatedAt, fallbackDate, extra = {}, target = galleryEntries) {
+  const stableDate = String((extra && extra.fileDate) || fallbackDate || params.gen_date || "").trim();
+  const stableName = String((extra && extra.fileName) || params.gen_filename || params.filename || "").trim();
+  const fallbackId = `gallery-video-${nextGallerySequence()}`;
+  const entry = {
+    id: stableDate && stableName
+      ? `gallery-video-${stableDate}-${stableName}`.replace(/[^a-zA-Z0-9._-]+/g, "-")
+      : fallbackId,
+    type: "video",
+    video,
+    params,
+    badgeLabel,
+    generatedAt: generatedAt || params.generated_at || "",
+    dateKey: formatGalleryDateKey(generatedAt || params.generated_at || "", fallbackDate || params.gen_date || ""),
+    sortTimestamp: parseGalleryTimestamp(generatedAt || params.generated_at || "", fallbackDate || params.gen_date || ""),
+    sequence: galleryEntrySequence,
+    sourceKind: "videos",
+    deleteUrl: "",
+    folderOpenPayload: null,
+    assetId: "",
+    promptPreview: params.promptPreview || params.prompt_preview || params.prompt || params.text || "",
+    fileDate: fallbackDate || params.gen_date || "",
+    fileName: params.gen_filename || "",
+    text: params.text || params.prompt || "",
+  };
+  Object.assign(entry, extra || {});
+  target.push(entry);
   return entry;
 }
 
@@ -5099,6 +6612,27 @@ function getSelectedGalleryImageEntry() {
   return galleryEntries.find(entry => entry.type === "image" && entry.id === gallerySelectedImageId) || null;
 }
 
+function setSelectedGalleryVideo(entryId, options = {}) {
+  window.gallerySelectedVideoId = entryId || "";
+  if (!options.silent) {
+    renderGalleryEntries();
+  }
+}
+
+function getSelectedGalleryVideoEntry() {
+  return videoEntries.find(entry => entry.type === "video" && entry.id === window.gallerySelectedVideoId) || null;
+}
+
+function getSelectedViewerAssetEntry() {
+  if (galleryFeaturedEntry) {
+    return galleryFeaturedEntry;
+  }
+  if (isGalleryVideoSource()) {
+    return getSelectedGalleryVideoEntry();
+  }
+  return getSelectedGalleryImageEntry();
+}
+
 function getGalleryEntrySourceKind(entry) {
   return normalizeGallerySourceValue(entry?.sourceKind || entry?.params?.source_kind || gallerySource);
 }
@@ -5107,6 +6641,9 @@ function getGalleryEntryDeleteUrl(entry) {
   if (!entry) return "";
   if (entry.deleteUrl) return entry.deleteUrl;
   const params = entry.params || {};
+  if (entry.type === "video" && params.gen_date && params.gen_filename) {
+    return `/api/videos/${encodeURIComponent(params.gen_date)}/${encodeURIComponent(params.gen_filename)}`;
+  }
   if (params.gen_date && params.gen_filename) {
     return `/api/generations/${encodeURIComponent(params.gen_date)}/${encodeURIComponent(params.gen_filename)}`;
   }
@@ -5119,6 +6656,13 @@ function getGalleryEntryFolderPayload(entry) {
     return entry.folderOpenPayload;
   }
   const params = entry.params || {};
+  if (entry.type === "video" && params.gen_date && params.gen_filename) {
+    return {
+      kind: "videos",
+      date: params.gen_date,
+      filename: params.gen_filename,
+    };
+  }
   if (params.gen_date && params.gen_filename) {
     return {
       kind: "history",
@@ -6104,7 +7648,9 @@ window.addEventListener("beforeunload", () => {
 function syncGallerySelectionUi() {
   const selectBtn = document.getElementById("gallerySelectModeBtn");
   const deleteBtn = document.getElementById("galleryBulkDeleteBtn");
-  const validIds = new Set(galleryEntries.filter(entry => entry.type === "image").map(entry => entry.id));
+  const sourceIsVideo = isGalleryVideoSource();
+  const selectionNoun = sourceIsVideo ? "videos" : "images";
+  const validIds = new Set(galleryEntries.map(entry => entry.id));
   gallerySelectedIds = new Set(Array.from(gallerySelectedIds).filter(id => validIds.has(id)));
   const selectedCount = gallerySelectedIds.size;
 
@@ -6112,7 +7658,7 @@ function syncGallerySelectionUi() {
     selectBtn.classList.toggle("active", gallerySelectionMode);
     selectBtn.setAttribute("aria-pressed", gallerySelectionMode ? "true" : "false");
     selectBtn.textContent = gallerySelectionMode ? "Done" : "Select";
-    selectBtn.title = gallerySelectionMode ? "Finish multi-select" : "Select multiple images";
+    selectBtn.title = gallerySelectionMode ? "Finish multi-select" : `Select multiple ${selectionNoun}`;
     selectBtn.setAttribute("aria-label", selectBtn.title);
   }
 
@@ -6120,7 +7666,7 @@ function syncGallerySelectionUi() {
     deleteBtn.style.display = gallerySelectionMode ? "inline-flex" : "none";
     deleteBtn.disabled = selectedCount === 0;
     deleteBtn.textContent = selectedCount > 0 ? `Delete ${selectedCount}` : "Delete";
-    deleteBtn.title = selectedCount > 0 ? `Delete ${selectedCount} selected images` : "Delete selected images";
+    deleteBtn.title = selectedCount > 0 ? `Delete ${selectedCount} selected ${selectionNoun}` : `Delete selected ${selectionNoun}`;
     deleteBtn.setAttribute("aria-label", deleteBtn.title);
   }
 }
@@ -6154,27 +7700,40 @@ function removeGalleryEntriesByFile(date, filename) {
   if (removedIds.includes(gallerySelectedImageId)) {
     gallerySelectedImageId = "";
   }
+  videoEntries = videoEntries.filter(entry => {
+    const params = entry.params || {};
+    const match = params.gen_date === date && params.gen_filename === filename;
+    if (match && entry.id === window.gallerySelectedVideoId) {
+      window.gallerySelectedVideoId = "";
+    }
+    return !match;
+  });
 }
 
 function removeGalleryEntriesByIds(entryIds) {
   const idSet = new Set((entryIds || []).filter(Boolean));
   if (!idSet.size) return;
   galleryEntries = galleryEntries.filter(entry => !idSet.has(entry.id));
+  videoEntries = videoEntries.filter(entry => !idSet.has(entry.id));
   idSet.forEach(id => gallerySelectedIds.delete(id));
   if (idSet.has(gallerySelectedImageId)) {
     gallerySelectedImageId = "";
+  }
+  if (idSet.has(window.gallerySelectedVideoId)) {
+    window.gallerySelectedVideoId = "";
   }
 }
 
 async function deleteGalleryEntry(entry, options = {}) {
   if (!entry) return false;
+  const entryTypeLabel = entry.type === "video" ? "video" : "image";
   const deleteUrl = getGalleryEntryDeleteUrl(entry);
   if (!deleteUrl) {
-    showError("This image cannot be deleted from the current source.");
+    showError(`This ${entryTypeLabel} cannot be deleted from the current source.`);
     return false;
   }
   if (options.confirm !== false) {
-    const confirmed = window.confirm(options.confirmMessage || "Delete this image permanently?");
+    const confirmed = window.confirm(options.confirmMessage || `Delete this ${entryTypeLabel} permanently?`);
     if (!confirmed) return false;
   }
   try {
@@ -6199,6 +7758,7 @@ async function deleteGalleryEntry(entry, options = {}) {
 function syncUpscaleControlsState() {
   const btn = document.getElementById("upscaleBtn");
   const hint = document.getElementById("upscaleHint");
+  const videoSettingsPanel = document.getElementById("videoUpscaleSettingsPanel");
   if (!btn || !hint) return;
   if (!btn.dataset.defaultLabel) btn.dataset.defaultLabel = (btn.textContent || "Upscale").trim() || "Upscale";
   const pendingUpscales = getPendingAsyncJobCount("upscale");
@@ -6206,21 +7766,38 @@ function syncUpscaleControlsState() {
     btn.disabled = true;
     btn.textContent = pendingUpscales > 1 ? `Upscaling ${pendingUpscales}` : "Upscaling...";
     hint.textContent = "Upscale continues in background";
+    if (videoSettingsPanel) {
+      videoSettingsPanel.style.display = isGalleryVideoSource() ? "" : "none";
+    }
     return;
   }
-  const entry = getSelectedGalleryImageEntry();
+  const entry = getSelectedViewerAssetEntry();
   if (!entry) {
     btn.disabled = true;
     btn.textContent = btn.dataset.defaultLabel || "Upscale";
-    hint.textContent = "Select a gallery image to upscale";
+    hint.textContent = isGalleryVideoSource() ? "Select a gallery video to upscale" : "Select a gallery image to upscale";
+    if (videoSettingsPanel) {
+      videoSettingsPanel.style.display = isGalleryVideoSource() ? "" : "none";
+    }
     syncUpscaleCustomControls({ persist: false });
     return;
   }
+  const isVideoEntry = entry.type === "video";
   btn.disabled = false;
-  btn.textContent = btn.dataset.defaultLabel || "Upscale";
+  btn.textContent = isVideoEntry ? "Upscale Video" : (btn.dataset.defaultLabel || "Upscale");
   const params = entry.params || {};
-  const parts = [getImageResolutionBadgeText(params), entry.badgeLabel].filter(Boolean);
-  hint.textContent = parts.length ? `Selected: ${parts.join(" - ")}` : "Ready to upscale selected image";
+  if (videoSettingsPanel) {
+    videoSettingsPanel.style.display = isVideoEntry ? "" : "none";
+    if (isVideoEntry) {
+      syncSeedvrVideoSettingsUi({ modelInfo: { supports_seedvr_video_settings: true } });
+    }
+  }
+  const parts = isVideoEntry
+    ? [getVideoDurationBadgeText(params), entry.badgeLabel, getVideoInputModeLabel(params)].filter(Boolean)
+    : [getImageResolutionBadgeText(params), entry.badgeLabel].filter(Boolean);
+  hint.textContent = parts.length
+    ? `Selected: ${parts.join(" - ")}`
+    : (isVideoEntry ? "Ready to upscale selected video" : "Ready to upscale selected image");
   syncUpscaleCustomControls({ persist: false });
 }
 
@@ -6239,19 +7816,48 @@ function updateGalleryFilterCount(visibleCount, totalCount) {
   el.textContent = `${visibleCount} of ${totalCount} items`;
 }
 
+function normalizeAssetMetaDisplayValue(value) {
+  const normalized = String(value || "-").trim();
+  return normalized || "-";
+}
+
+function getAssetMetaDisplayLine(params = {}, fallbackFilename = "") {
+  return [
+    normalizeAssetMetaDisplayValue(params.assetClient),
+    normalizeAssetMetaDisplayValue(params.assetProject),
+    normalizeAssetMetaDisplayValue(params.assetShot),
+    String(params.assetFilename || fallbackFilename || "").trim() || "-",
+  ].join(" / ");
+}
+
 function getGalleryFilteredEntries() {
+  const videoSource = isGalleryVideoSource();
   const filtered = galleryEntries.filter(entry => {
     const params = entry.params || {};
-    const modelInfo = MODELS_INFO[params.model] || {};
+    const modelInfo = videoSource ? (VIDEO_MODELS_INFO[params.model] || {}) : (MODELS_INFO[params.model] || {});
     const familyKey = params.modelFamily || modelInfo.family || params.model || "";
     const providerKey = params.provider || modelInfo.provider || "";
-    if (galleryFilters.size !== "all" && params.imageSize !== galleryFilters.size) return false;
+    if (videoSource) {
+      const durationKey = String(params.duration || "").trim();
+      const inputModeKey = String(params.videoInputMode || params.inputMode || "").trim();
+      if (galleryFilters.size !== "all" && durationKey !== galleryFilters.size) return false;
+      if (galleryFilters.upscaler !== "all" && inputModeKey !== galleryFilters.upscaler) return false;
+    } else {
+      if (galleryFilters.size !== "all" && params.imageSize !== galleryFilters.size) return false;
+      if (galleryFilters.upscaler === "none" && params.upscalerType) return false;
+      if (galleryFilters.upscaler !== "all" && galleryFilters.upscaler !== "none" && params.upscalerType !== galleryFilters.upscaler) return false;
+    }
     if (galleryFilters.date && entry.dateKey !== galleryFilters.date) return false;
     if (galleryFilters.ratio !== "all" && params.aspectRatio !== galleryFilters.ratio) return false;
     if (galleryFilters.model !== "all" && familyKey !== galleryFilters.model) return false;
     if (galleryFilters.provider !== "all" && providerKey !== galleryFilters.provider) return false;
-    if (galleryFilters.upscaler === "none" && params.upscalerType) return false;
-    if (galleryFilters.upscaler !== "all" && galleryFilters.upscaler !== "none" && params.upscalerType !== galleryFilters.upscaler) return false;
+    if (galleryFilters.filename) {
+      const filenameHaystack = String(params.assetFilename || entry.fileName || "").toLowerCase();
+      if (!filenameHaystack.includes(String(galleryFilters.filename || "").toLowerCase())) return false;
+    }
+    if (galleryFilters.client !== "all" && String(params.assetClient || "-").trim() !== galleryFilters.client) return false;
+    if (galleryFilters.project !== "all" && String(params.assetProject || "-").trim() !== galleryFilters.project) return false;
+    if (galleryFilters.shot !== "all" && String(params.assetShot || "-").trim() !== galleryFilters.shot) return false;
     return true;
   });
 
@@ -6287,25 +7893,395 @@ function buildTextCard(entry, options = {}) {
   return wrap;
 }
 
+function getVideoDurationBadgeText(params) {
+  const duration = String((params || {}).duration || "").trim();
+  return duration ? `${duration}s` : "";
+}
+
+function getVideoInputModeLabel(params) {
+  const inputMode = String((params || {}).videoInputMode || (params || {}).inputMode || "").trim().toLowerCase();
+  if (inputMode === "image") return "Image to Video";
+  if (inputMode === "reference") return "Reference to Video";
+  if (inputMode === "text") return "Text to Video";
+  if (inputMode === "video") return "Video Upscale";
+  return inputMode;
+}
+
+function getVideoCompareSourceUrl(params) {
+  const sourceArchive = params?.videoSourceVideoArchive || {};
+  return String(sourceArchive.url || "").trim();
+}
+
+function buildVideoCard(entry, options = {}) {
+  const videoData = entry?.video || {};
+  const params = entry?.params || {};
+  const card = document.createElement("div");
+  card.className = options.featured ? "video-feature-shell img-card-featured video-card-featured" : "img-card img-card-rail video-card";
+  const sourceKind = getGalleryEntrySourceKind(entry);
+  if (options.featured) {
+    card.style.setProperty("--compare-position", "50%");
+  }
+
+  if (options.selected && !options.featured) card.classList.add("img-card-selected");
+  if (options.multiSelected && !options.featured) card.classList.add("img-card-multi-selected");
+  if (options.selectionMode && !options.featured) card.classList.add("img-card-selection-mode");
+
+  const videoUrl = String(videoData.url || "").trim();
+  const posterUrl = String(videoData.poster_url || "").trim();
+  let mediaEl = null;
+
+  if (options.featured) {
+    mediaEl = document.createElement("video");
+    mediaEl.className = "video-card-player video-card-player-featured";
+    mediaEl.src = videoUrl;
+    if (posterUrl) mediaEl.poster = posterUrl;
+    mediaEl.controls = true;
+    mediaEl.playsInline = true;
+    mediaEl.preload = "metadata";
+    mediaEl.setAttribute("playsinline", "true");
+    mediaEl.setAttribute("webkit-playsinline", "true");
+    mediaEl.autoplay = true;
+    mediaEl.loop = true;
+    const fitWrap = document.createElement("div");
+    fitWrap.className = "video-feature-fit";
+    fitWrap.appendChild(mediaEl);
+    mediaEl = fitWrap;
+  } else if (posterUrl) {
+    mediaEl = document.createElement("img");
+    mediaEl.className = "img-card-image video-card-poster";
+    mediaEl.src = posterUrl;
+    mediaEl.alt = `${entry.badgeLabel || "Video"} preview`;
+    mediaEl.loading = "lazy";
+  } else {
+    mediaEl = document.createElement("video");
+    mediaEl.className = "video-card-player video-card-player-rail";
+    mediaEl.src = videoUrl;
+    mediaEl.muted = true;
+    mediaEl.loop = true;
+    mediaEl.playsInline = true;
+    mediaEl.preload = "metadata";
+  }
+
+  if (options.selectionMode && !options.featured && typeof options.onToggleSelection === "function") {
+    mediaEl.onclick = (event) => {
+      event.preventDefault();
+      options.onToggleSelection();
+    };
+    card.onclick = (event) => {
+      if (event.target instanceof Element && event.target.closest(".img-actions, .img-card-badges, .img-card-select-toggle")) return;
+      options.onToggleSelection();
+    };
+  } else if (!options.featured && typeof options.onSelect === "function") {
+    mediaEl.onclick = (event) => {
+      event.preventDefault();
+      options.onSelect();
+    };
+    card.onclick = () => options.onSelect();
+  }
+
+  if (!options.featured && options.selectionMode) {
+    const selectToggle = document.createElement("button");
+    selectToggle.className = "img-card-select-toggle" + (options.multiSelected ? " active" : "");
+    selectToggle.innerHTML = options.multiSelected ? SVG_CHECK : "";
+    selectToggle.title = options.multiSelected ? "Deselect video" : "Select video";
+    selectToggle.onclick = (event) => {
+      event.stopPropagation();
+      if (typeof options.onToggleSelection === "function") options.onToggleSelection();
+    };
+    card.append(selectToggle);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = options.featured ? "img-actions img-actions-featured" : "img-actions img-actions-rail";
+
+  const reuseBtn = makeActionBtn(SVG_REUSE, "Reuse video prompt & settings");
+  reuseBtn.onclick = async (event) => {
+    event.stopPropagation();
+    await reuseVideoParams(params);
+  };
+
+  const dlBtn = makeActionBtn(SVG_DOWNLOAD, "Download video");
+  dlBtn.onclick = (event) => {
+    event.stopPropagation();
+    if (!videoUrl) return;
+    const link = document.createElement("a");
+    link.href = videoUrl;
+    link.download = params.gen_filename || entry.fileName || "video.mp4";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const infoBtn = makeActionBtn(SVG_INFO, "Info prompt");
+  infoBtn.onclick = (event) => {
+    event.stopPropagation();
+    const fullPrompt =
+      params.prompt ||
+      entry.text ||
+      params.text ||
+      entry.promptPreview ||
+      params.promptPreview ||
+      params.prompt_preview ||
+      "";
+    showGeneratorInfoModal(Object.assign({}, params, {
+      prompt: fullPrompt,
+      promptPreview: fullPrompt,
+      prompt_preview: fullPrompt,
+      text: fullPrompt
+    }));
+  };
+
+  const folderBtn = makeActionBtn(SVG_FOLDER_OPEN, "Show file in folder");
+  folderBtn.onclick = (event) => {
+    event.stopPropagation();
+    void openGalleryEntryFolder(entry);
+  };
+
+  const delBtn = makeActionBtn(SVG_TRASH, "Delete");
+  delBtn.onclick = (event) => {
+    event.stopPropagation();
+    void deleteGalleryEntry(entry, { confirm: true });
+  };
+
+  actions.append(reuseBtn, dlBtn, infoBtn, folderBtn, delBtn);
+
+  const badges = document.createElement("div");
+  badges.className = "img-card-badges";
+  const badgeValues = [
+    getVideoDurationBadgeText(params),
+    entry.badgeLabel || params.model_label || "Video",
+    getVideoInputModeLabel(params),
+  ].filter(Boolean);
+  badgeValues.forEach((value) => {
+    const badge = document.createElement("div");
+    badge.className = "img-card-badge";
+    badge.textContent = String(value).toUpperCase();
+    badges.appendChild(badge);
+  });
+
+  if (!options.featured) {
+    const metaLine = String(params.assetFilename || entry.fileName || "-").trim() || "-";
+    const metaEl = document.createElement("div");
+    metaEl.className = "img-card-meta-line";
+    metaEl.textContent = metaLine;
+    metaEl.title = getAssetMetaDisplayLine(params, entry.fileName || "");
+    card.appendChild(metaEl);
+  }
+
+  if (options.featured) {
+    const sourceUrl = getVideoCompareSourceUrl(params);
+    if (params.upscaled && sourceUrl && videoUrl) {
+      const compareBtn = makeActionBtn(SVG_COMPARE, "Compare before and after");
+      compareBtn.classList.add("img-compare-toggle");
+      compareBtn.onclick = (event) => {
+        event.stopPropagation();
+        card.classList.toggle("img-card-compare-active");
+        compareBtn.classList.toggle("active", card.classList.contains("img-card-compare-active"));
+      };
+
+      const compareLayer = document.createElement("div");
+      compareLayer.className = "img-compare-layer video-compare-layer";
+      compareLayer.innerHTML = `
+        <div class="img-compare-labels">
+          <span class="img-compare-label img-compare-label-before">Before</span>
+          <span class="img-compare-label img-compare-label-after">After</span>
+        </div>
+        <video class="img-compare-image img-compare-image-before featured-zoom-target video-compare-player video-compare-player-before" muted playsinline preload="metadata" loop></video>
+        <div class="img-compare-after-frame">
+          <video class="img-compare-image img-compare-image-after featured-zoom-target video-compare-player video-compare-player-after" muted playsinline preload="metadata" loop></video>
+        </div>
+        <div class="img-compare-divider" aria-hidden="true">
+          <span class="img-compare-knob"></span>
+        </div>
+      `;
+      const beforeVideo = compareLayer.querySelector(".video-compare-player-before");
+      const afterVideo = compareLayer.querySelector(".video-compare-player-after");
+      const beforeLabel = compareLayer.querySelector(".img-compare-label-before");
+      const afterLabel = compareLayer.querySelector(".img-compare-label-after");
+      beforeVideo.src = sourceUrl;
+      afterVideo.src = videoUrl;
+
+      const updateComparePosition = (clientX) => {
+        const rect = card.getBoundingClientRect();
+        if (!rect.width) return;
+        const ratio = Math.min(0.98, Math.max(0.02, (clientX - rect.left) / rect.width));
+        card.style.setProperty("--compare-position", `${(ratio * 100).toFixed(2)}%`);
+      };
+
+      let comparePointerId = null;
+      compareLayer.addEventListener("pointerdown", (event) => {
+        comparePointerId = event.pointerId;
+        compareLayer.setPointerCapture?.(event.pointerId);
+        updateComparePosition(event.clientX);
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      compareLayer.addEventListener("pointermove", (event) => {
+        if (comparePointerId === null || event.pointerId !== comparePointerId) return;
+        updateComparePosition(event.clientX);
+      });
+      const finishCompareDrag = (event) => {
+        if (comparePointerId === null || event.pointerId !== comparePointerId) return;
+        compareLayer.releasePointerCapture?.(event.pointerId);
+        comparePointerId = null;
+      };
+      compareLayer.addEventListener("pointerup", finishCompareDrag);
+      compareLayer.addEventListener("pointercancel", finishCompareDrag);
+      compareLayer.addEventListener("click", (event) => event.stopPropagation());
+
+      const setVideoLabel = (videoEl, labelEl, prefix) => {
+        const width = videoEl.videoWidth || 0;
+        const height = videoEl.videoHeight || 0;
+        labelEl.textContent = (width && height) ? `${prefix} ${width}x${height}` : prefix;
+      };
+      const bindVideoLabel = (videoEl, labelEl, prefix) => {
+        if (videoEl.readyState >= 1) {
+          setVideoLabel(videoEl, labelEl, prefix);
+        } else {
+          videoEl.addEventListener("loadedmetadata", () => setVideoLabel(videoEl, labelEl, prefix), { once: true });
+        }
+      };
+      bindVideoLabel(beforeVideo, beforeLabel, "Before");
+      bindVideoLabel(afterVideo, afterLabel, "After");
+
+      const syncCurrentTime = () => {
+        if (!Number.isFinite(afterVideo.currentTime)) return;
+        if (Math.abs(beforeVideo.currentTime - afterVideo.currentTime) > 0.08) {
+          try {
+            beforeVideo.currentTime = afterVideo.currentTime;
+          } catch (error) {}
+        }
+      };
+      afterVideo.addEventListener("play", () => {
+        syncCurrentTime();
+        beforeVideo.play().catch(() => {});
+      });
+      afterVideo.addEventListener("pause", () => {
+        beforeVideo.pause();
+      });
+      afterVideo.addEventListener("seeking", syncCurrentTime);
+      afterVideo.addEventListener("timeupdate", syncCurrentTime);
+      beforeVideo.addEventListener("loadedmetadata", () => {
+        syncCurrentTime();
+        if (!afterVideo.paused) beforeVideo.play().catch(() => {});
+      });
+
+      card.append(compareLayer);
+      card.append(compareBtn);
+    }
+  }
+
+  card.append(mediaEl, actions, badges);
+
+  return card;
+}
+
 function renderGalleryEntries() {
   const { viewer, featureStage, featureText, grid, railEmpty } = ensureGalleryViewerRefs();
   const placeholder = document.getElementById("galleryPlaceholder");
   const emptyState = document.getElementById("galleryEmptyState");
   const sourceMeta = getGallerySourceMeta();
-  const totalImageEntries = galleryEntries.filter(entry => entry.type === "image");
-  const entries = getGalleryFilteredEntries().filter(entry => entry.type === "image");
+  const promptMode = getCurrentPromptMode();
+  const sourceIsVideo = isGalleryVideoSource();
+  const sourceEntryType = sourceIsVideo ? "video" : "image";
+  const totalSourceEntries = galleryEntries.filter(entry => entry.type === sourceEntryType);
+  const entries = getGalleryFilteredEntries().filter(entry => entry.type === sourceEntryType);
+  const totalVideoEntries = videoEntries.filter(entry => entry.type === "video");
+  const filteredVideoEntries = sourceIsVideo
+    ? entries
+    : totalVideoEntries
+        .slice()
+        .sort((a, b) => {
+          if (a.sortTimestamp !== b.sortTimestamp) return b.sortTimestamp - a.sortTimestamp;
+          return b.sequence - a.sequence;
+        });
 
   featureStage.innerHTML = "";
   featureText.innerHTML = "";
   grid.innerHTML = "";
-  updateGalleryFilterCount(entries.length, totalImageEntries.length);
+  galleryFeaturedEntry = null;
+  updateGalleryFilterCount(entries.length, totalSourceEntries.length);
   syncGallerySelectionUi();
+  featureText.style.display = "none";
 
-  if (totalImageEntries.length === 0) {
+  if (sourceIsVideo) {
+    const visibleSourceIds = new Set(entries.map(entry => entry.id));
+    gallerySelectedIds = new Set(Array.from(gallerySelectedIds).filter(id => visibleSourceIds.has(id)));
+    syncGallerySelectionUi();
+
+    const featuredVideoEntry =
+      filteredVideoEntries.find(entry => entry.id === window.gallerySelectedVideoId) ||
+      (promptMode === "video" ? null : filteredVideoEntries[0]) ||
+      null;
+    if (featuredVideoEntry && !window.gallerySelectedVideoId) {
+      window.gallerySelectedVideoId = featuredVideoEntry.id;
+    }
+    if (featuredVideoEntry) {
+      galleryFeaturedEntry = featuredVideoEntry;
+      placeholder.style.display = "none";
+      emptyState.style.display = "none";
+      viewer.style.display = "flex";
+      featureStage.appendChild(buildVideoCard(featuredVideoEntry, { featured: true, entry: featuredVideoEntry }));
+    } else {
+      placeholder.style.display = "flex";
+      emptyState.style.display = "none";
+      viewer.style.display = "none";
+    }
+
+    if (totalSourceEntries.length === 0) {
+      railEmpty.textContent = sourceMeta.railEmpty;
+      railEmpty.style.display = "flex";
+      grid.style.display = "none";
+    } else if (entries.length === 0) {
+      railEmpty.textContent = sourceMeta.emptyFiltered;
+      railEmpty.style.display = "flex";
+      grid.style.display = "none";
+    } else {
+      railEmpty.style.display = "none";
+      grid.style.display = "flex";
+      entries.forEach(entry => {
+        if (entry.type === "video") {
+          grid.appendChild(
+            buildVideoCard(entry, {
+              entry,
+              selected: featuredVideoEntry ? entry.id === featuredVideoEntry.id : false,
+              selectionMode: gallerySelectionMode,
+              multiSelected: gallerySelectedIds.has(entry.id),
+              onSelect: () => setSelectedGalleryVideo(entry.id),
+              onToggleSelection: () => toggleGalleryEntrySelection(entry.id),
+            })
+          );
+        } else {
+          grid.appendChild(
+            buildImgCard(
+              entry.image,
+              entry.idx || 0,
+              entry.params || {},
+              entry.badgeLabel || "NB",
+              {
+                entry,
+                selected: gallerySelectedImageId ? entry.id === gallerySelectedImageId : false,
+                selectionMode: gallerySelectionMode,
+                multiSelected: gallerySelectedIds.has(entry.id),
+                onSelect: () => setSelectedGalleryImage(entry.id),
+                onToggleSelection: () => toggleGalleryEntrySelection(entry.id),
+              }
+            )
+          );
+        }
+      });
+    }
+
+    window.requestAnimationFrame(updateGalleryRailLayout);
+    syncUpscaleControlsState();
+    syncPoseWorkspace();
+    return;
+  }
+
+  if (totalSourceEntries.length === 0) {
     placeholder.style.display = "flex";
     emptyState.style.display = "none";
     viewer.style.display = "none";
-    featureText.style.display = "none";
     syncUpscaleControlsState();
     syncPoseWorkspace();
     return;
@@ -6317,7 +8293,6 @@ function renderGalleryEntries() {
     railEmpty.textContent = sourceMeta.emptyFiltered;
     emptyState.style.display = "flex";
     viewer.style.display = "none";
-    featureText.style.display = "none";
     gallerySelectedIds.clear();
     syncGallerySelectionUi();
     syncUpscaleControlsState();
@@ -6327,15 +8302,14 @@ function renderGalleryEntries() {
   emptyState.style.display = "none";
   viewer.style.display = "flex";
 
-  const imageEntries = entries;
-  const visibleEntryIds = new Set(imageEntries.map(entry => entry.id));
+  const visibleEntryIds = new Set(entries.map(entry => entry.id));
   gallerySelectedIds = new Set(Array.from(gallerySelectedIds).filter(id => visibleEntryIds.has(id)));
-  const featuredImageEntry = imageEntries.find(entry => entry.id === gallerySelectedImageId) || imageEntries[0] || null;
+  const featuredImageEntry = entries.find(entry => entry.id === gallerySelectedImageId) || entries[0] || null;
   gallerySelectedImageId = featuredImageEntry ? featuredImageEntry.id : "";
-  const railImageEntries = imageEntries;
   syncGallerySelectionUi();
 
   if (featuredImageEntry) {
+    galleryFeaturedEntry = featuredImageEntry;
     featureStage.appendChild(
       buildImgCard(
         featuredImageEntry.image,
@@ -6346,19 +8320,10 @@ function renderGalleryEntries() {
       )
     );
   }
-  featureText.style.display = "none";
-
-  if (railImageEntries.length === 0) {
-    railEmpty.textContent = sourceMeta.emptyFiltered;
-    railEmpty.style.display = "flex";
-    grid.style.display = "none";
-    syncUpscaleControlsState();
-    return;
-  }
 
   railEmpty.style.display = "none";
   grid.style.display = "flex";
-  railImageEntries.forEach(entry => {
+  entries.forEach(entry => {
     grid.appendChild(
       buildImgCard(
         entry.image,
@@ -6390,6 +8355,10 @@ function readGalleryFiltersFromUi() {
     model: document.getElementById("galleryModelFilter").value || GALLERY_FILTER_DEFAULTS.model,
     provider: document.getElementById("galleryProviderFilter").value || GALLERY_FILTER_DEFAULTS.provider,
     upscaler: document.getElementById("galleryUpscalerFilter").value || GALLERY_FILTER_DEFAULTS.upscaler,
+    client: document.getElementById("galleryClientFilter").value || GALLERY_FILTER_DEFAULTS.client,
+    project: document.getElementById("galleryProjectFilter").value || GALLERY_FILTER_DEFAULTS.project,
+    shot: document.getElementById("galleryShotFilter").value || GALLERY_FILTER_DEFAULTS.shot,
+    filename: document.getElementById("galleryFilenameFilter").value || GALLERY_FILTER_DEFAULTS.filename,
   };
 }
 
@@ -6406,6 +8375,10 @@ function resetGalleryFilters() {
   document.getElementById("galleryModelFilter").value = GALLERY_FILTER_DEFAULTS.model;
   document.getElementById("galleryProviderFilter").value = GALLERY_FILTER_DEFAULTS.provider;
   document.getElementById("galleryUpscalerFilter").value = GALLERY_FILTER_DEFAULTS.upscaler;
+  document.getElementById("galleryClientFilter").value = GALLERY_FILTER_DEFAULTS.client;
+  document.getElementById("galleryProjectFilter").value = GALLERY_FILTER_DEFAULTS.project;
+  document.getElementById("galleryShotFilter").value = GALLERY_FILTER_DEFAULTS.shot;
+  document.getElementById("galleryFilenameFilter").value = GALLERY_FILTER_DEFAULTS.filename;
   applyGalleryFilters();
 }
 
@@ -6418,60 +8391,16 @@ function bindGalleryFilters() {
     "galleryModelFilter",
     "galleryProviderFilter",
     "galleryUpscalerFilter",
+    "galleryClientFilter",
+    "galleryProjectFilter",
+    "galleryShotFilter",
+    "galleryFilenameFilter",
   ].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener("change", applyGalleryFilters);
     el.addEventListener("input", applyGalleryFilters);
   });
-}
-
-function populateGalleryModelFilter() {
-  const modelSelect = document.getElementById("galleryModelFilter");
-  const providerSelect = document.getElementById("galleryProviderFilter");
-  const upscalerSelect = document.getElementById("galleryUpscalerFilter");
-
-  if (modelSelect && modelSelect.options.length <= 1) {
-    const seenFamilies = new Set();
-    Object.entries(MODELS_INFO).forEach(([modelId, info]) => {
-      const familyKey = info.family || modelId;
-      if (seenFamilies.has(familyKey)) return;
-      seenFamilies.add(familyKey);
-      const opt = document.createElement("option");
-      opt.value = familyKey;
-      opt.textContent = info.label || familyKey;
-      modelSelect.appendChild(opt);
-    });
-  }
-
-  if (providerSelect && providerSelect.options.length <= 1) {
-    const seenProviders = new Set();
-    Object.values(MODELS_INFO).forEach(info => {
-      const providerKey = info.provider || "";
-      if (!providerKey || seenProviders.has(providerKey)) return;
-      seenProviders.add(providerKey);
-      const opt = document.createElement("option");
-      opt.value = providerKey;
-      opt.textContent = PROVIDER_LABELS[providerKey] || providerKey;
-      providerSelect.appendChild(opt);
-    });
-  }
-
-  if (upscalerSelect) {
-    const existing = new Set(Array.from(upscalerSelect.options).map(opt => opt.value));
-    const knownUpscalers = Object.assign({}, UPSCALER_LABELS);
-    galleryEntries.forEach(entry => {
-      const key = (entry.params || {}).upscalerType || "";
-      if (key) knownUpscalers[key] = UPSCALER_LABELS[key] || (entry.params || {}).upscalerLabel || key;
-    });
-    Object.entries(knownUpscalers).forEach(([key, label]) => {
-      if (!key || existing.has(key)) return;
-      const opt = document.createElement("option");
-      opt.value = key;
-      opt.textContent = label || key;
-      upscalerSelect.appendChild(opt);
-    });
-  }
 }
 
 function getImageResolutionBadgeText(params) {
@@ -6488,8 +8417,19 @@ function getGenerationImageUrl(date, filename) {
   return `/generations/${encodeURIComponent(safeDate)}/${encodeURIComponent(safeFilename)}`;
 }
 
+function getGenerationRelpathUrl(relpath) {
+  const safeRelpath = String(relpath || "").trim().replace(/^\/+/, "");
+  if (!safeRelpath) return "";
+  return `/generations/${safeRelpath.split("/").map(part => encodeURIComponent(part)).join("/")}`;
+}
+
 function getUpscaleSourceImageUrl(params) {
-  if (!params || !params.upscaled || !params.upscaleSourceFilename) return "";
+  if (!params || !params.upscaled) return "";
+  const sourceUrl = String(params.upscaleSourceUrl || "").trim();
+  if (sourceUrl) return sourceUrl;
+  const sourceRelpath = String(params.upscaleSourceRelpath || "").trim();
+  if (sourceRelpath) return getGenerationRelpathUrl(sourceRelpath);
+  if (!params.upscaleSourceFilename) return "";
   const sourceDate = params.upscaleSourceDate || "";
   if (sourceDate) return getGenerationImageUrl(sourceDate, params.upscaleSourceFilename);
   return getGenerationImageUrl(params.gen_date || "", params.upscaleSourceFilename);
@@ -6497,25 +8437,58 @@ function getUpscaleSourceImageUrl(params) {
 
 async function upscaleSelectedImage() {
   const btn = document.getElementById("upscaleBtn");
-  const entry = getSelectedGalleryImageEntry();
+  const entry = getSelectedViewerAssetEntry();
   if (!entry) {
-    showStatus("Select a gallery image to upscale.", "error", 2800);
+    showStatus(isGalleryVideoSource() ? "Select a gallery video to upscale." : "Select a gallery image to upscale.", "error", 2800);
     syncUpscaleControlsState();
     return;
   }
 
-  const upscaleModel = document.getElementById("upscaleModelSelect").value || "seedvr2";
-  const preset = document.getElementById("upscalePresetSelect").value || "factor:2";
-  const customWidth = normalizeUpscaleDimensionValue(document.getElementById("upscaleWidthInput").value || "", 0);
-  const customHeight = normalizeUpscaleDimensionValue(document.getElementById("upscaleHeightInput").value || "", 0);
-  const customAnchor = getUpscaleCustomAnchor();
   try {
-    showStatus("Starting upscale...", "loading");
-    const payload = await ensureImagePayload(entry.image);
-    const response = await fetch("/api/jobs/upscale", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
+    const assetMetaPayload = typeof collectAssetMetaPayload === "function" ? collectAssetMetaPayload() : {};
+    const assetMetaError = typeof validateAssetMetaSelection === "function" ? validateAssetMetaSelection() : "";
+    if (assetMetaError) {
+      showStatus(assetMetaError, "error", 2800);
+      return;
+    }
+    let requestBody;
+    if (entry.type === "video") {
+      showStatus("Starting video upscale...", "loading");
+      requestBody = {
+        ...assetMetaPayload,
+        assetType: "video",
+        model: "fal-ai/seedvr/upscale/video",
+        modelFamily: "seedvr-video",
+        provider: "fal",
+        videoInputMode: "video",
+        sourceParams: entry.params || {},
+        sourceFilename: (entry.params || {}).gen_filename || entry.fileName || "",
+        sourceVideo: {
+          url: entry.video?.url || "",
+          mime_type: entry.video?.mime_type || "video/mp4",
+          name: entry.fileName || (entry.params || {}).gen_filename || "viewer-video.mp4",
+        },
+        videoUpscaleMode: document.getElementById("videoUpscaleModeSelect")?.value || "factor",
+        videoUpscaleFactor: parseFloat(document.getElementById("videoUpscaleFactorInput")?.value || "2"),
+        videoUpscaleTargetResolution: document.getElementById("videoUpscaleTargetResolutionSelect")?.value || "1080p",
+        videoUpscaleNoiseScale: parseFloat(document.getElementById("videoUpscaleNoiseScaleInput")?.value || "0.1"),
+        videoUpscaleOutputFormat: document.getElementById("videoUpscaleOutputFormatSelect")?.value || "X264 (.mp4)",
+        videoUpscaleOutputQuality: document.getElementById("videoUpscaleOutputQualitySelect")?.value || "high",
+        videoUpscaleOutputWriteMode: document.getElementById("videoUpscaleOutputWriteModeSelect")?.value || "balanced",
+        videoUpscaleSeed: document.getElementById("videoUpscaleSeedInput")?.value || "",
+        videoUpscaleSyncMode: Boolean(document.getElementById("videoUpscaleSyncModeToggle")?.checked),
+      };
+    } else {
+      const upscaleModel = document.getElementById("upscaleModelSelect").value || "seedvr2";
+      const preset = document.getElementById("upscalePresetSelect").value || "factor:2";
+      const customWidth = normalizeUpscaleDimensionValue(document.getElementById("upscaleWidthInput").value || "", 0);
+      const customHeight = normalizeUpscaleDimensionValue(document.getElementById("upscaleHeightInput").value || "", 0);
+      const customAnchor = getUpscaleCustomAnchor();
+      showStatus("Starting upscale...", "loading");
+      const payload = await ensureImagePayload(entry.image);
+      requestBody = {
+        ...assetMetaPayload,
+        assetType: "image",
         image: {
           data: payload.data,
           mime_type: payload.mime_type,
@@ -6527,7 +8500,12 @@ async function upscaleSelectedImage() {
         upscaleTargetWidth: preset === UPSCALE_PRESET_CUSTOM ? customWidth : 0,
         upscaleTargetHeight: preset === UPSCALE_PRESET_CUSTOM ? customHeight : 0,
         upscaleTargetAnchor: preset === UPSCALE_PRESET_CUSTOM ? customAnchor : "",
-      })
+      };
+    }
+    const response = await fetch("/api/jobs/upscale", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(requestBody)
     });
     const contentType = (response.headers.get("content-type") || "").toLowerCase();
     const data = contentType.includes("application/json")
@@ -6557,6 +8535,7 @@ function renderGallery(images, text, params) {
     const cardParams = Object.assign({}, params, {
       gen_date: img.gen_date || params.gen_date || generatedAt.slice(0, 10),
       gen_filename: img.gen_filename || "",
+      gen_relpath: img.gen_relpath || params.gen_relpath || "",
       generated_at: params.generated_at || generatedAt,
       source_kind: "history",
     });
@@ -6568,8 +8547,10 @@ function renderGallery(images, text, params) {
       folderOpenPayload: (cardParams.gen_date && cardParams.gen_filename)
         ? { kind: "history", date: cardParams.gen_date, filename: cardParams.gen_filename }
         : null,
+      promptPreview: cardParams.prompt || cardParams.text || "",
       fileDate: cardParams.gen_date,
       fileName: cardParams.gen_filename,
+      text: cardParams.text || cardParams.prompt || "",
     });
     if (!newestEntry) newestEntry = entry;
   });
@@ -6599,10 +8580,13 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
   }
 
   // Image - natural height
+  const featuredOutputUrl = options.featured
+    ? (String(params?.assetUrl || "").trim() || getGenerationRelpathUrl(params?.gen_relpath || params?.assetRelpath) || getImageSource(img))
+    : getImageSource(img);
   const image   = document.createElement("img");
   image.className = options.featured ? "img-card-image img-card-image-featured" : "img-card-image";
   if (options.featured) image.classList.add("featured-zoom-target");
-  image.src     = getImageSource(img);
+  image.src     = featuredOutputUrl;
   image.alt     = `Generated ${idx+1}`;
   image.loading = options.featured ? "eager" : "lazy";
   if (options.featured) {
@@ -6649,7 +8633,23 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
 
   // Info - show prompt in popup
   const infoBtn = makeActionBtn(SVG_INFO, "Info prompt");
-  infoBtn.onclick = (e) => { e.stopPropagation(); toggleInfoPopup(params, infoBtn); };
+  infoBtn.onclick = (e) => {
+    e.stopPropagation();
+    const resolvedPrompt =
+      params.prompt ||
+      entry.text ||
+      params.text ||
+      entry.promptPreview ||
+      params.promptPreview ||
+      params.prompt_preview ||
+      "";
+    showGeneratorInfoModal(Object.assign({}, params, {
+      prompt: resolvedPrompt,
+      promptPreview: resolvedPrompt,
+      prompt_preview: resolvedPrompt,
+      text: resolvedPrompt
+    }));
+  };
 
   const folderBtn = makeActionBtn(SVG_FOLDER_OPEN, "Show file in folder");
   folderBtn.onclick = (e) => { e.stopPropagation(); void openGalleryEntryFolder(entry); };
@@ -6707,6 +8707,15 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
     badges.appendChild(pixelBadge);
   }
 
+  if (!options.featured) {
+    const metaLine = String(params.assetFilename || entry?.fileName || "-").trim() || "-";
+    const metaEl = document.createElement("div");
+    metaEl.className = "img-card-meta-line";
+    metaEl.textContent = metaLine;
+    metaEl.title = getAssetMetaDisplayLine(params, entry?.fileName || "");
+    card.appendChild(metaEl);
+  }
+
   if (options.featured) {
     const sourceUrl = getUpscaleSourceImageUrl(params);
     if (sourceUrl) {
@@ -6738,7 +8747,7 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
       const beforeLabel = compareLayer.querySelector(".img-compare-label-before");
       const afterLabel = compareLayer.querySelector(".img-compare-label-after");
       beforeImage.src = sourceUrl;
-      afterImage.src = getImageSource(img);
+      afterImage.src = featuredOutputUrl;
 
       const updateComparePosition = (clientX) => {
         const rect = card.getBoundingClientRect();
@@ -6785,6 +8794,19 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
       bindCompareLabel(beforeImage, beforeLabel, "Before");
       bindCompareLabel(afterImage, afterLabel, "After");
 
+      const setUpscaleCompareState = (active) => {
+        card.classList.toggle("img-card-compare-active", active);
+        card.classList.toggle("img-card-upscaled-preview", !active);
+        card.style.setProperty("--compare-position", active ? "50%" : "0%");
+        compareBtn.classList.toggle("active", active);
+      };
+
+      compareBtn.onclick = (event) => {
+        event.stopPropagation();
+        setUpscaleCompareState(!card.classList.contains("img-card-compare-active"));
+      };
+
+      setUpscaleCompareState(false);
       card.append(compareLayer);
       card.append(compareBtn);
     }
@@ -7083,7 +9105,9 @@ async function deleteGeneration(date, filename, options = {}) {
 }
 
 async function deleteSelectedGenerations() {
-  const selectedEntries = getGalleryFilteredEntries().filter(entry => entry.type === "image" && gallerySelectedIds.has(entry.id));
+  const sourceIsVideo = isGalleryVideoSource();
+  const entryLabel = sourceIsVideo ? "video" : "image";
+  const selectedEntries = getGalleryFilteredEntries().filter(entry => gallerySelectedIds.has(entry.id));
   const deletableEntries = selectedEntries.filter(entry => Boolean(getGalleryEntryDeleteUrl(entry)));
   if (deletableEntries.length === 0) {
     syncGallerySelectionUi();
@@ -7091,7 +9115,7 @@ async function deleteSelectedGenerations() {
   }
 
   const count = deletableEntries.length;
-  const confirmed = window.confirm(`Delete ${count} selected image${count === 1 ? "" : "s"} permanently?`);
+  const confirmed = window.confirm(`Delete ${count} selected ${entryLabel}${count === 1 ? "" : "s"} permanently?`);
   if (!confirmed) return;
 
   let deletedCount = 0;
@@ -7101,12 +9125,12 @@ async function deleteSelectedGenerations() {
   }
 
   gallerySelectedIds.clear();
-  if (!galleryEntries.some(entry => entry.type === "image")) {
+  if (!galleryEntries.length) {
     gallerySelectionMode = false;
   }
   renderGalleryEntries();
   if (deletedCount > 0) {
-    showStatus(`Deleted ${deletedCount} image${deletedCount === 1 ? "" : "s"}.`, "success", 2200);
+    showStatus(`Deleted ${deletedCount} ${entryLabel}${deletedCount === 1 ? "" : "s"}.`, "success", 2200);
   }
 }
 
@@ -7146,22 +9170,90 @@ async function restoreRefArchive(refArchive) {
   const items = Array.isArray(refArchive) ? refArchive : [];
   for (const item of items) {
     if (!item || (!item.url && !item.original_url && !item.masked_url)) continue;
-    await addRefImageFromUrl(
-      item.masked_url || item.url || item.original_url,
-      item.name || item.filename || "reference",
-      {
-        archive_date: item.date || "",
-        archive_filename: item.filename || "",
-        original_url: item.original_url || "",
-        masked_url: item.masked_url || "",
-        mask_url: item.mask_url || "",
-        has_mask: item.has_mask,
-      }
+    const inferredArchive = inferArchiveMetaFromReferenceUrls(item);
+    const sourceUrl = item.masked_url || item.url || item.original_url;
+    const payload = await resolveRefImageSource(
+      sourceUrl,
+      item.name || item.filename || "reference"
     );
+    refImages.push({
+      ...payload,
+      previewUrl: buildInlineImagePreviewUrl(payload.mime_type, payload.data) || sourceUrl,
+      archive_date: item.date || inferredArchive.archive_date || "",
+      archive_filename: item.filename || inferredArchive.archive_filename || "",
+      original_url: item.original_url || "",
+      masked_url: item.masked_url || "",
+      mask_url: item.mask_url || "",
+      has_mask: Boolean(item.has_mask),
+    });
+  }
+  renderRefStrip();
+  scheduleDraftSave();
+}
+
+async function restoreVideoSourceArchive(sourceArchive) {
+  clearVideoSource();
+  const item = (sourceArchive && typeof sourceArchive === "object") ? sourceArchive : null;
+  if (!item || (!item.url && !item.original_url && !item.masked_url)) return;
+  const payload = await resolveRefImageSource(
+    item.masked_url || item.url || item.original_url,
+    item.name || item.filename || "video-source.png"
+  );
+  setVideoSourceImage({
+    ...payload,
+    archive_date: item.date || "",
+    archive_filename: item.filename || "",
+    original_url: item.original_url || "",
+    masked_url: item.masked_url || "",
+    mask_url: item.mask_url || "",
+    has_mask: Boolean(item.has_mask),
+  });
+}
+
+async function restoreVideoSourceVideoArchive(sourceArchive) {
+  clearVideoSource();
+  const item = (sourceArchive && typeof sourceArchive === "object") ? sourceArchive : null;
+  if (!item || !item.url) return;
+  setVideoSourceVideo({
+    mime_type: item.mime_type || "video/mp4",
+    url: item.url || "",
+    name: item.name || item.filename || "video-source.mp4",
+    previewUrl: item.url || "",
+    archive_date: item.date || "",
+    archive_filename: item.filename || "",
+  });
+}
+
+async function restoreVideoRefArchive(refArchive) {
+  clearAllVideoReferenceImages();
+  const items = Array.isArray(refArchive) ? refArchive : [];
+  for (const item of items) {
+    if (!item || (!item.url && !item.original_url && !item.masked_url)) continue;
+    const payload = await resolveRefImageSource(
+      item.masked_url || item.url || item.original_url,
+      item.name || item.filename || getVideoReferencePayloadName(videoReferenceImages.length + 1)
+    );
+    addVideoReferenceImage({
+      ...payload,
+      archive_date: item.date || "",
+      archive_filename: item.filename || "",
+      original_url: item.original_url || "",
+      masked_url: item.masked_url || "",
+      mask_url: item.mask_url || "",
+      has_mask: Boolean(item.has_mask),
+    });
   }
 }
 
 async function applyReusableParams(params, successMessage) {
+  if (typeof window.setAssetMetaSelection === "function") {
+    window.setAssetMetaSelection({
+      assetClient: params.assetClient || "-",
+      assetProject: params.assetProject || "-",
+      assetShot: params.assetShot || "-",
+      assetFilename: params.assetFilename || "",
+    }, { emit: true, persist: true, saveMemory: false });
+  }
   const promptEl = document.getElementById("promptInput");
   if (promptEl && params.prompt) {
     promptEl.value = params.prompt;
@@ -7267,6 +9359,112 @@ async function reuseParams(params) {
   await applyReusableParams(params || {}, "Prompt and parameters copied to form");
 }
 
+async function applyReusableVideoParams(params, successMessage) {
+  window.setPromptMode("video");
+
+  if (typeof window.setAssetMetaSelection === "function") {
+    window.setAssetMetaSelection({
+      assetClient: params.assetClient || "-",
+      assetProject: params.assetProject || "-",
+      assetShot: params.assetShot || "-",
+      assetFilename: params.assetFilename || "",
+    }, { emit: true, persist: true, saveMemory: false });
+  }
+
+  const modelInfo = VIDEO_MODELS_INFO[params.model] || {};
+  const familyId = params.modelFamily || modelInfo.family || "kling";
+  const provider = params.provider || modelInfo.provider || "kling";
+  const inputMode = params.videoInputMode || params.inputMode || "text";
+
+  syncVideoFooterControls({
+    familyId,
+    provider,
+    inputMode,
+    modelId: params.model || "",
+  });
+
+  const promptEl = document.getElementById("videoPromptInput");
+  const negativePromptEl = document.getElementById("videoNegativePromptInput");
+  if (promptEl) {
+    promptEl.value = params.prompt || "";
+    autoResize(promptEl);
+  }
+  if (negativePromptEl) {
+    negativePromptEl.value = params.negativePrompt || "";
+    autoResize(negativePromptEl);
+  }
+
+  const aspectEl = document.getElementById("videoAspectRatioSelect");
+  if (aspectEl && params.aspectRatio) aspectEl.value = params.aspectRatio;
+
+  const durationEl = document.getElementById("videoDurationSelect");
+  if (durationEl && params.duration != null) durationEl.value = String(params.duration);
+
+  const resolutionEl = document.getElementById("videoResolutionSelect");
+  if (resolutionEl && params.resolution) resolutionEl.value = params.resolution;
+
+  const safetyEl = document.getElementById("videoSafetyCheckerToggle");
+  if (safetyEl && params.videoSafetyChecker != null) {
+    safetyEl.checked = Boolean(params.videoSafetyChecker);
+  }
+  if (params.videoUpscaleMode) {
+    const el = document.getElementById("videoUpscaleModeSelect");
+    if (el) el.value = params.videoUpscaleMode;
+  }
+  if (params.videoUpscaleFactor != null) {
+    const el = document.getElementById("videoUpscaleFactorInput");
+    if (el) el.value = params.videoUpscaleFactor;
+  }
+  if (params.videoUpscaleTargetResolution) {
+    const el = document.getElementById("videoUpscaleTargetResolutionSelect");
+    if (el) el.value = params.videoUpscaleTargetResolution;
+  }
+  if (params.videoUpscaleNoiseScale != null) {
+    const el = document.getElementById("videoUpscaleNoiseScaleInput");
+    if (el) el.value = params.videoUpscaleNoiseScale;
+  }
+  if (params.videoUpscaleOutputFormat) {
+    const el = document.getElementById("videoUpscaleOutputFormatSelect");
+    if (el) el.value = params.videoUpscaleOutputFormat;
+  }
+  if (params.videoUpscaleOutputQuality) {
+    const el = document.getElementById("videoUpscaleOutputQualitySelect");
+    if (el) el.value = params.videoUpscaleOutputQuality;
+  }
+  if (params.videoUpscaleOutputWriteMode) {
+    const el = document.getElementById("videoUpscaleOutputWriteModeSelect");
+    if (el) el.value = params.videoUpscaleOutputWriteMode;
+  }
+  if (params.videoUpscaleSeed != null) {
+    const el = document.getElementById("videoUpscaleSeedInput");
+    if (el) el.value = params.videoUpscaleSeed;
+  }
+  if (typeof params.videoUpscaleSyncMode === "boolean") {
+    const el = document.getElementById("videoUpscaleSyncModeToggle");
+    if (el) el.checked = params.videoUpscaleSyncMode;
+  }
+
+  syncVideoModeUi();
+  const selection = getCurrentVideoSelection();
+  if (getVideoSupportsSourceVideo(selection)) {
+    await restoreVideoSourceVideoArchive(params.videoSourceVideoArchive || {});
+  } else {
+    await restoreVideoSourceArchive(params.videoSourceArchive || {});
+  }
+  await restoreVideoRefArchive(params.videoRefArchive || []);
+
+  if (promptEl) {
+    promptEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    promptEl.focus();
+  }
+  scheduleDraftSave();
+  showError(successMessage, "success");
+}
+
+async function reuseVideoParams(params) {
+  await applyReusableVideoParams(params || {}, "Video prompt and parameters copied to form");
+}
+
 // Info popup prompt (singleton flottante)
 function toggleInfoPopup(params, anchorEl) {
   // Close if already open on the same button
@@ -7283,7 +9481,16 @@ function toggleInfoPopup(params, anchorEl) {
 
   const modelInfo = MODELS_INFO[params.model];
   const label     = modelInfo ? modelInfo.label : (params.model || "");
-  const prompt    = params.prompt || "";
+  const prompt    = params.prompt || params.promptPreview || params.prompt_preview || params.text || "";
+  const metaRows = [];
+  const pushMeta = (labelText, value) => {
+    if (value === undefined || value === null || value === "") return;
+    metaRows.push(`<div class="info-asset-row"><strong>${escapeHtml(labelText)}:</strong> ${escapeHtml(value)}</div>`);
+  };
+  pushMeta("Client", params.assetClient || "");
+  pushMeta("Project", params.assetProject || "");
+  pushMeta("Shot", params.assetShot || "");
+  pushMeta("Filename", params.assetFilename || "");
 
   popup.innerHTML =
     `<strong>Prompt</strong>` +
@@ -7295,7 +9502,8 @@ function toggleInfoPopup(params, anchorEl) {
       (params.temperature != null ? `<span class="info-tag">t=${parseFloat(params.temperature).toFixed(2)}</span>` : "") +
       (params.seedValue != null ? `<span class="info-tag">seed ${escapeHtml(params.seedValue)}</span>` : "") +
       ((params.ref_count || (Array.isArray(params.refArchive) ? params.refArchive.length : 0)) ? `<span class="info-tag">refs ${params.ref_count || params.refArchive.length}</span>` : "") +
-    `</div>`;
+    `</div>` +
+    (metaRows.length ? `<div class="info-asset-meta">${metaRows.join("")}</div>` : "");
 
   document.body.appendChild(popup);
   _infoPopup = popup;
@@ -7319,6 +9527,93 @@ function toggleInfoPopup(params, anchorEl) {
       }
     });
   }, 50);
+}
+
+function showGeneratorInfoModal(params) {
+  const existing = document.getElementById("generatorInfoModal");
+  if (existing) existing.remove();
+
+  const modelInfo = MODELS_INFO[params.model] || VIDEO_MODELS_INFO[params.model] || null;
+  const label = modelInfo ? modelInfo.label : (params.model || "");
+  const prompt = String(
+    params.prompt ||
+    params.promptPreview ||
+    params.prompt_preview ||
+    params.text ||
+    ""
+  ).trim();
+
+  const rows = [];
+  const pushRow = (labelText, value) => {
+    if (value === undefined || value === null || value === "") return;
+    rows.push(`<div class="gallery-info-row"><strong>${escapeHtml(labelText)}:</strong> ${escapeHtml(String(value))}</div>`);
+  };
+  pushRow("Client", params.assetClient || "");
+  pushRow("Project", params.assetProject || "");
+  pushRow("Shot", params.assetShot || "");
+  pushRow("Filename", params.assetFilename || "");
+  pushRow("Model", label);
+  pushRow("Provider", params.provider_label || params.provider || "");
+  pushRow("Image size", params.imageSize || "");
+  pushRow("Aspect ratio", params.aspectRatio || "");
+  pushRow("Images", params.numberOfImages || "");
+  pushRow("Seed mode", params.seedMode || "");
+  pushRow("Seed", params.seedValue != null ? params.seedValue : "");
+  pushRow("Output mode", params.outputMode || "");
+  pushRow("Temperature", params.temperature != null ? params.temperature : "");
+  pushRow("Top P", params.topP != null ? params.topP : "");
+  pushRow("Thinking", params.thinkingLevel || "");
+  pushRow("Search", typeof params.useSearch === "boolean" ? (params.useSearch ? "On" : "Off") : "");
+  pushRow("Safety checker", typeof params.falSafetyChecker === "boolean" ? (params.falSafetyChecker ? "On" : "Off") : "");
+  pushRow("Safety tolerance", params.falSafetyTolerance != null ? params.falSafetyTolerance : "");
+  pushRow("Gemini safety", params.geminiSafetyPreset || "");
+  pushRow("BytePlus safety", params.byteplusSafetyMode || "");
+  pushRow("Duration", params.duration || "");
+  pushRow("Resolution", params.resolution || "");
+  pushRow("Video mode", params.videoInputMode || "");
+  pushRow("Video safety", typeof params.videoSafetyChecker === "boolean" ? (params.videoSafetyChecker ? "On" : "Off") : "");
+  pushRow("Upscale mode", params.videoUpscaleMode || params.upscaleMode || "");
+  pushRow("Upscale factor", params.videoUpscaleFactor != null ? params.videoUpscaleFactor : (params.upscaleFactor != null ? params.upscaleFactor : ""));
+  pushRow("Upscale target", params.videoUpscaleTargetResolution || params.upscaleTargetResolution || "");
+  pushRow("Upscale noise", params.videoUpscaleNoiseScale != null ? params.videoUpscaleNoiseScale : "");
+  pushRow("Output format", params.videoUpscaleOutputFormat || "");
+  pushRow("Output quality", params.videoUpscaleOutputQuality || "");
+  pushRow("Write mode", params.videoUpscaleOutputWriteMode || "");
+  pushRow("Upscale seed", params.videoUpscaleSeed != null ? params.videoUpscaleSeed : "");
+  pushRow("Sync mode", typeof params.videoUpscaleSyncMode === "boolean" ? (params.videoUpscaleSyncMode ? "On" : "Off") : "");
+  pushRow("Date", params.gen_date || "");
+
+  const overlay = document.createElement("div");
+  overlay.id = "generatorInfoModal";
+  overlay.className = "modal-overlay gallery-info-modal-overlay";
+  overlay.style.display = "flex";
+  overlay.innerHTML = `
+    <div class="modal-box gallery-info-modal-box" role="dialog" aria-modal="true" aria-label="Prompt info">
+      <div class="modal-header">
+        <h3>Prompt Info</h3>
+        <button class="modal-close-btn" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="gallery-info-modal-body">
+        <div class="gallery-info-prompt-block">
+          <div class="gallery-info-prompt-title">Prompt</div>
+          <div class="gallery-info-prompt-text">${escapeHtml(prompt || "No prompt saved.")}</div>
+        </div>
+        ${rows.length ? `<div class="gallery-info-meta-block">${rows.join("")}</div>` : ""}
+      </div>
+    </div>
+  `;
+
+  const close = () => overlay.remove();
+  overlay.querySelector(".modal-close-btn")?.addEventListener("click", close);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) close();
+  });
+  document.addEventListener("keydown", function onKey(event) {
+    if (event.key !== "Escape") return;
+    document.removeEventListener("keydown", onKey);
+    close();
+  }, { once: true });
+  document.body.appendChild(overlay);
 }
 
 // ============================================================
@@ -7646,6 +9941,7 @@ let elSelectedIds  = new Set();
 let elSelectedMap  = {};
 let elSearchTimer  = null;
 let elCategories   = [];
+let elementsTarget = "refs";
 
 // Character metadata filters
 const EL_FILTER_DEFS = [
@@ -7830,11 +10126,20 @@ function renderElFiltersBar() {
   }
 }
 
-async function openElements() {
-  const maxRef = getMaxRefImages();
-  if (maxRef === 0) {
-    showError("The selected model does not support reference images.");
-    return;
+async function openElements(target = "refs") {
+  elementsTarget = target === "video" ? "video" : (target === "video-refs" ? "video-refs" : "refs");
+  if (elementsTarget === "refs") {
+    const maxRef = getMaxRefImages();
+    if (maxRef === 0) {
+      showError("The selected model does not support reference images.");
+      return;
+    }
+  } else if (elementsTarget === "video-refs") {
+    const maxVideoRefs = getMaxVideoReferenceImages();
+    if (maxVideoRefs === 0) {
+      showError("The selected video model does not support reference images.");
+      return;
+    }
   }
   elSelectedIds  = new Set();
   elSelectedMap  = {};
@@ -7983,11 +10288,35 @@ function renderElementsGrid(items) {
 }
 
 function toggleElementCard(card, asset) {
-  const maxRef    = getMaxRefImages();
-  const remaining = maxRef - refImages.length;
-  if (!elSelectedIds.has(asset.id) && elSelectedIds.size >= remaining) {
-    showError(`You can only add ${remaining} more images (model limit: ${maxRef}).`);
+  const remaining = elementsTarget === "video"
+    ? 1
+    : (elementsTarget === "video-refs"
+        ? getMaxVideoReferenceImages() - videoReferenceImages.length
+        : getMaxRefImages() - refImages.length);
+  const safeRemaining = Math.max(0, remaining);
+  if (safeRemaining <= 0) {
+    if (elementsTarget === "video") {
+      showError("Replace the current video start image by selecting one asset.");
+    } else if (elementsTarget === "video-refs") {
+      showError("You have reached the video reference image limit.");
+    } else {
+      showError("You have reached the reference image limit.");
+    }
     return;
+  }
+  if (!elSelectedIds.has(asset.id) && elSelectedIds.size >= safeRemaining) {
+    if (elementsTarget === "video") {
+      elSelectedIds = new Set();
+      elSelectedMap = {};
+      document.querySelectorAll(".el-card.selected").forEach(el => el.classList.remove("selected"));
+    } else if (elementsTarget === "video-refs") {
+      showError(`You can only add ${safeRemaining} more video reference image${safeRemaining === 1 ? "" : "s"}.`);
+      return;
+    } else {
+      const maxRef = getMaxRefImages();
+      showError(`You can only add ${safeRemaining} more images (model limit: ${maxRef}).`);
+      return;
+    }
   }
   if (elSelectedIds.has(asset.id)) {
     elSelectedIds.delete(asset.id);
@@ -8044,15 +10373,52 @@ function updateElementsSelCount() {
 }
 
 function updateElementsLimitNote() {
-  const maxRef  = getMaxRefImages();
-  const free    = maxRef - refImages.length;
-  document.getElementById("elementsLimitNote").textContent =
-    `You can select up to ${free} images (${refImages.length}/${maxRef} already added)`;
+  let note = "";
+  if (elementsTarget === "video") {
+    note = videoSourceImage && videoSourceImage.data
+      ? "Choose one image to replace the current video start image."
+      : "Choose one image to use as the video start image.";
+  } else if (elementsTarget === "video-refs") {
+    const maxVideoRefs = getMaxVideoReferenceImages();
+    const free = Math.max(0, maxVideoRefs - videoReferenceImages.length);
+    note = `You can select up to ${free} images (${videoReferenceImages.length}/${maxVideoRefs} already added)`;
+  } else {
+    const maxRef  = getMaxRefImages();
+    const free    = Math.max(0, maxRef - refImages.length);
+    note = `You can select up to ${free} images (${refImages.length}/${maxRef} already added)`;
+  }
+  document.getElementById("elementsLimitNote").textContent = note;
 }
 
 async function confirmElements() {
   const assets = Object.values(elSelectedMap);
   closeElements();
+
+  if (elementsTarget === "video") {
+    const asset = assets[0];
+    if (!asset) return;
+    try {
+      const payload = await resolveRefImageSource(asset.img_url, asset.name);
+      setVideoSourceImage(payload);
+      showStatus("Start image loaded into Video.", "success", 2200);
+    } catch (error) {
+      showError(error.message || "Could not load the selected start image.");
+    }
+    return;
+  }
+
+  if (elementsTarget === "video-refs") {
+    for (const asset of assets) {
+      try {
+        const payload = await resolveRefImageSource(asset.img_url, asset.name);
+        addVideoReferenceImage(payload);
+      } catch (error) {
+        showError(error.message || "Could not load the selected video reference image.");
+        break;
+      }
+    }
+    return;
+  }
 
   const promptEl = document.getElementById("promptInput");
 
@@ -8089,23 +10455,23 @@ let wizMimeType   = "image/jpeg";
 let wizAnalyzed   = {};
 
 const WIZ_FIELDS = [
-  { key: "name",        label: "Nome",          icon: "Ã°Å¸â€˜Â¤" },
-  { key: "gender",      label: "Gender",        icon: "Ã¢Å â€¢"  },
-  { key: "ethnicity",   label: "Ethnicity",       icon: "Ã°Å¸Å’Â" },
-  { key: "age_group",   label: "Age Range",    icon: "Ã°Å¸â€œâ€¦" },
-  { key: "skin_tone",   label: "Skin Tone",    icon: "Ã°Å¸Å½Â¨" },
-  { key: "hair_color",  label: "Hair",       icon: "Ã°Å¸â€™â€¡" },
-  { key: "hair_style",  label: "Style",         icon: "Ã¢Å“â€š"  },
-  { key: "eye_color",   label: "Occhi",         icon: "Ã°Å¸â€˜Â"  },
-  { key: "body_type",   label: "Body Type",   icon: "Ã°Å¸â€œÂ" },
-  { key: "description", label: "Description",   icon: "Ã°Å¸â€œÂ" },
+  { key: "name",        label: "Name",         icon: "" },
+  { key: "gender",      label: "Gender",       icon: "" },
+  { key: "ethnicity",   label: "Ethnicity",    icon: "" },
+  { key: "age_group",   label: "Age Range",    icon: "" },
+  { key: "skin_tone",   label: "Skin Tone",    icon: "" },
+  { key: "hair_color",  label: "Hair",         icon: "" },
+  { key: "hair_style",  label: "Style",        icon: "" },
+  { key: "eye_color",   label: "Eyes",         icon: "" },
+  { key: "body_type",   label: "Body Type",    icon: "" },
+  { key: "description", label: "Description",  icon: "" },
 ];
 
 let wizDetectTimers = [];
 
 function wizStartScan() {
   wizClearLog();
-  wizLog("info", "Ã°Å¸â€â€ž Nuova scansione avviata");
+  wizLog("info", "New scan started");
   const container = document.getElementById("wizDetectFields");
   if (!container) return;
   // Clear old timers
@@ -8120,8 +10486,8 @@ function wizStartScan() {
     row.innerHTML = `
       <span class="wdr-icon">${f.icon}</span>
       <span class="wdr-label">${f.label}</span>
-      <span class="wdr-value">Ã¢â‚¬â€</span>
-      <span class="wdr-check">Ã¢Å“â€œ</span>`;
+      <span class="wdr-value">-</span>
+      <span class="wdr-check">OK</span>`;
     container.appendChild(row);
 
     // Stagger activation
@@ -8141,7 +10507,7 @@ function wizCompleteScan(meta) {
       ? (Array.isArray(meta.tags) ? meta.tags.join(", ") : (meta.tags || ""))
       : (meta[f.key] || "");
     const valEl = row.querySelector(".wdr-value");
-    if (valEl) valEl.textContent = val || "Ã¢â‚¬â€";
+    if (valEl) valEl.textContent = val || "-";
     row.classList.remove("scanning");
     if (val) row.classList.add("done");
   });
@@ -8265,15 +10631,15 @@ async function wizAnalyzeImage(b64, mimeType, dataUrl) {
       else
         wizLog("info", `Image OK: ${ii.orig_w}x${ii.orig_h}px -> converted to JPG 90%`);
     }
-    if (data.raw_text) wizLog("info", "Ã°Å¸â€œâ€ž Raw text da Gemini:", data.raw_text);
-    if (data.usage)    wizLog("info", `Ã°Å¸â€™Â° Token: ${data.usage.input_tokens} input / ${data.usage.output_tokens} output Ã¢â‚¬â€ costo $${(data.usage.cost_usd||0).toFixed(7)}`);
+    if (data.raw_text) wizLog("info", "Raw text from Gemini:", data.raw_text);
+    if (data.usage)    wizLog("info", `Token: ${data.usage.input_tokens} input / ${data.usage.output_tokens} output - cost $${(data.usage.cost_usd||0).toFixed(7)}`);
     if (!data.ok) throw new Error(data.error || "Analysis error");
     wizAnalyzed = data.metadata;
-    wizLog("success", "Ã¢Å“â€ Metadata parsati da Gemini", wizAnalyzed);
+    wizLog("success", "Metadata parsed from Gemini", wizAnalyzed);
   } catch(e) {
     wizAnalyzed = {};
-    wizLog("error", "Ã¢Å“Ëœ Analysis error: " + e.message);
-    showError("Analysis failed: " + e.message + " Ã¢â‚¬â€ fill in fields manually.");
+    wizLog("error", "Analysis error: " + e.message);
+    showError("Analysis failed: " + e.message + " - fill in fields manually.");
   }
 
   // Show detected values in the scan panel, then pause briefly for feedback
@@ -8290,14 +10656,14 @@ async function wizAnalyzeImage(b64, mimeType, dataUrl) {
 }
 
 function wizFillForm(meta) {
-  wizLog("info", "Ã°Å¸â€œÂ Compilazione form con metadataÃ¢â‚¬Â¦");
+  wizLog("info", "Filling form with metadata...");
   const set = (id, val) => {
     const el = document.getElementById(id);
     if (el) {
       el.value = val || "";
-      wizLog("info", `  Ã¢â€ â€™ #${id} = "${val || ""}"`);
+      wizLog("info", `  -> #${id} = "${val || ""}"`);
     } else {
-      wizLog("warn", `  Ã¢Å¡Â  element #${id} not found in DOM`);
+      wizLog("warn", `  element #${id} not found in DOM`);
     }
   };
   set("wfName",        meta.name        || "");
@@ -8312,7 +10678,7 @@ function wizFillForm(meta) {
   set("wfDescription", meta.description || "");
   const tagsVal = Array.isArray(meta.tags) ? meta.tags.join(", ") : (meta.tags || "");
   set("wfTags", tagsVal);
-  wizLog("success", "Ã¢Å“â€ Form compilato");
+  wizLog("success", "Form filled");
 }
 
 function wizReadForm() {
@@ -8337,10 +10703,10 @@ async function saveTalent() {
   if (!wizImageB64) return;
   const btn  = document.getElementById("wizSaveBtn");
   btn.disabled = true;
-  btn.textContent = "SavingÃ¢â‚¬Â¦";
+  btn.textContent = "Saving...";
 
   const metadata = wizReadForm();
-  if (!metadata.name) { showError("Please enter a name for the talent."); btn.disabled = false; btn.textContent = "Save Talent Ã¢Å“Â¦"; return; }
+  if (!metadata.name) { showError("Please enter a name for the talent."); btn.disabled = false; btn.textContent = "Save Talent"; return; }
 
   try {
     const r    = await fetch("/api/elements/save-talent", {
@@ -8360,19 +10726,19 @@ async function saveTalent() {
     // Reload elements grid
     elCurrentPage = 1;
     await loadElements();
-    showError(`Ã¢Å“Â¦ Talent "${metadata.name}" saved successfully!`, "success");
+    showError(`Talent "${metadata.name}" saved successfully!`, "success");
   } catch(e) {
     showError("Save failed: " + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Save Talent Ã¢Å“Â¦";
+    btn.textContent = "Save Talent";
   }
 }
 
 async function migrateCatalog() {
   const btn = document.getElementById("wizMigrateBtn");
   btn.disabled = true;
-  btn.textContent = "Ã¢Å¡â„¢ MigratingÃ¢â‚¬Â¦";
+  btn.textContent = "Migrating...";
   try {
     const r    = await fetch("/api/elements/migrate-catalog", {
       method:  "POST",
@@ -8381,13 +10747,13 @@ async function migrateCatalog() {
     });
     const data = await r.json();
     if (!data.ok) throw new Error(data.error);
-    showError("Ã¢Å“â€œ " + data.message, "success");
+    showError(data.message, "success");
     await loadElements();
   } catch(e) {
     showError("Migration failed: " + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Ã¢Å¡â„¢ Migrate catalog";
+    btn.textContent = "Migrate catalog";
   }
 }
 
@@ -8405,11 +10771,38 @@ function registerGalleryAssetItem(source, item) {
   const sourceKind = normalizeGallerySourceValue(item.kind || source);
   const baseParams = item.params || {};
   const params = Object.assign({}, baseParams, {
-    gen_date: item.date || baseParams.gen_date || "",
-    gen_filename: item.filename || baseParams.gen_filename || "",
+    gen_date: item.gen_date || item.date || baseParams.gen_date || "",
+    gen_filename: item.gen_filename || item.filename || baseParams.gen_filename || "",
+    gen_relpath: item.gen_relpath || item.relpath || baseParams.gen_relpath || "",
     generated_at: item.generated_at || baseParams.generated_at || "",
     source_kind: sourceKind,
+    assetUrl: item.url || baseParams.assetUrl || "",
   });
+  if (sourceKind === "videos" || String(item.mime_type || params.mime_type || "").toLowerCase().startsWith("video/")) {
+    const modelInfo = VIDEO_MODELS_INFO[params.model] || {};
+    const label = modelInfo.label || params.model_label || item.model_label || params.model || "Video";
+    return registerGalleryVideoEntry(
+      {
+        url: item.url,
+        mime_type: item.mime_type || params.mime_type || "video/mp4",
+        poster_url: item.poster_url || params.poster_url || "",
+      },
+      params,
+      label,
+      item.generated_at || "",
+      item.date || "",
+      {
+        assetId: item.id || "",
+        sourceKind,
+        deleteUrl: item.delete_url || "",
+        folderOpenPayload: item.folder_open_payload || null,
+        promptPreview: item.prompt_preview || item.text || params.prompt || "",
+        fileDate: item.gen_date || item.date || "",
+        fileName: item.gen_filename || item.filename || "",
+        text: item.text || params.prompt || "",
+      }
+    );
+  }
   const img = {
     mime_type: item.mime_type || params.mime_type || "",
     url: item.url,
@@ -8421,10 +10814,10 @@ function registerGalleryAssetItem(source, item) {
     sourceKind,
     deleteUrl: item.delete_url || "",
     folderOpenPayload: item.folder_open_payload || null,
-    promptPreview: item.prompt_preview || "",
-    fileDate: item.date || "",
-    fileName: item.filename || "",
-    text: item.text || "",
+    promptPreview: item.prompt_preview || item.text || params.prompt || "",
+    fileDate: item.gen_date || item.date || "",
+    fileName: item.gen_filename || item.filename || "",
+    text: item.text || params.prompt || "",
     original_url: item.original_url || "",
     masked_url: item.masked_url || "",
     has_mask: Boolean(item.has_mask),
@@ -8494,11 +10887,22 @@ async function applyLovedReuse() {
   } catch(e) {}
 }
 
+async function applySavedVideoReuse() {
+  try {
+    const raw = sessionStorage.getItem("nb_reuse_video_params");
+    if (!raw) return;
+    sessionStorage.removeItem("nb_reuse_video_params");
+    const p = JSON.parse(raw);
+    await applyReusableVideoParams(p, "Video prompt and parameters loaded into the Generator");
+  } catch(e) {}
+}
+
 async function initGeneratorPage() {
   initArPicker();
   initSidebarArGrid();
   bindDraftPersistence();
   bindPromptComposeLayout();
+  bindVideoPromptLayout();
   bindVideoComposeLayout();
   loadPendingAsyncJobs();
   gallerySource = "history";
@@ -8539,6 +10943,11 @@ async function initGeneratorPage() {
     await applyLovedReuse();
   } catch (error) {
     console.error("Reusable prompt apply failed:", error);
+  }
+  try {
+    await applySavedVideoReuse();
+  } catch (error) {
+    console.error("Reusable video prompt apply failed:", error);
   }
   try {
     syncPromptComposeLayout();
