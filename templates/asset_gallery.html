@@ -8,7 +8,7 @@
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
 <link rel="stylesheet" href="/static/style.css">
 <script>window.__ASSET_META_BOOTSTRAP__ = {{ asset_meta_bootstrap | tojson }};</script>
-<script defer src="/static/project_meta.js?v=20260330b"></script>
+  <script defer src="/static/project_meta.js?v=20260331a"></script>
 <style>
   .asset-page-main {
     max-width: 1480px;
@@ -1898,11 +1898,11 @@ function buildAssetCard(item) {
   });
   card.appendChild(badgesWrap);
 
-  const metaLine = String(item.params?.assetFilename || item.filename || "-").trim() || "-";
+  const metaLine = String(item.filename || item.params?.gen_filename || item.params?.filename || item.params?.assetFilename || "-").trim() || "-";
   const metaEl = document.createElement("div");
   metaEl.className = "img-card-meta-line";
   metaEl.textContent = metaLine;
-  metaEl.title = getAssetMetaDisplayLine(item.params || {}, item.filename || "");
+      metaEl.title = metaLine;
   card.appendChild(metaEl);
   return card;
 }

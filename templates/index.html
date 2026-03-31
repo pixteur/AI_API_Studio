@@ -7,7 +7,7 @@
 <title>AI API Studio</title>
 <script>(function(){if(localStorage.getItem('nb-theme')==='light')document.documentElement.setAttribute('data-theme','light');}());</script>
 <script>window.__ASSET_META_BOOTSTRAP__ = {{ asset_meta_bootstrap | tojson }};</script>
-<script defer src="/static/project_meta.js?v=20260330b"></script>
+  <script defer src="/static/project_meta.js?v=20260331a"></script>
 <script>
 (function () {
   const PROMPT_BAR_HEIGHT_DEFAULT = 320;
@@ -870,6 +870,11 @@
                   <button class="ref-action-btn ref-action-at" id="refElementsBtn" onclick="openElements()" title="Elements - asset library (@)">@</button>
                   <input type="file" id="refFileInput" accept="image/*" multiple style="display:none" onchange="onFileInputChange(event)">
                 </div>
+                <div class="ref-toolbar-right">
+                  <button class="ref-describe-btn" id="refDescribeBtn" type="button" onclick="describeReferenceImagesWithGemini()" title="Use Gemini to write detailed descriptions for the loaded reference images">
+                    Describe refs
+                  </button>
+                </div>
               </div>
               <div class="ref-strip-empty" id="refStripEmpty">
                 <span class="ref-strip-empty-title">Drop reference images here</span>
@@ -931,6 +936,11 @@
                     </button>
                     <input type="file" id="videoSourceInput" accept="image/*" style="display:none" onchange="onVideoSourceInputChange(event)">
                   </div>
+                  <div class="ref-toolbar-right">
+                    <button class="ref-describe-btn" type="button" id="videoSourceDescribeBtn" onclick="describeVideoStartImageWithGemini()" title="Use Gemini to describe the current start image">
+                      Describe image
+                    </button>
+                  </div>
                 </div>
                 <div class="video-source-empty ref-strip-empty" id="videoSourceEmpty">
                   <span class="ref-strip-empty-title" id="videoSourceEmptyTitle">Drop source image here</span>
@@ -974,6 +984,11 @@
                       </svg>
                     </button>
                     <input type="file" id="videoReferenceInput" accept="image/*" multiple style="display:none" onchange="onVideoReferenceInputChange(event)">
+                  </div>
+                  <div class="ref-toolbar-right">
+                    <button class="ref-describe-btn" type="button" id="videoReferenceDescribeBtn" onclick="describeVideoReferenceImagesWithGemini()" title="Use Gemini to describe the current video reference images">
+                      Describe refs
+                    </button>
                   </div>
                 </div>
                 <div class="ref-strip-empty" id="videoReferenceEmpty">
@@ -4592,6 +4607,120 @@ async function handleDroppedRefData(dataTransfer) {
   return added > 0;
 }
 
+async function describeReferenceImagesWithGemini() {
+  const promptEl = document.getElementById("promptInput");
+  if (!promptEl) return;
+  await appendGeminiDescriptionsToPrompt({
+    buttonId: "refDescribeBtn",
+    promptElement: promptEl,
+    images: refImages,
+    heading: "Reference image descriptions:",
+    emptyMessage: "Add at least one reference image first.",
+    successMessage: "Reference descriptions added to the prompt.",
+  });
+}
+
+async function requestGeminiReferenceDescriptions(images) {
+  const response = await fetch("/api/references/describe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      refImages: images.map(buildGenerationRefPayload)
+    })
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok) {
+    throw new Error(result.error || `Could not describe references (${response.status})`);
+  }
+
+  const descriptions = Array.isArray(result.descriptions) ? result.descriptions : [];
+  if (!descriptions.length) {
+    throw new Error("Gemini returned no reference descriptions.");
+  }
+  return descriptions;
+}
+
+function buildGeminiDescriptionBlock(descriptions, heading) {
+  return [
+    heading,
+    ...descriptions.map(item => {
+      const name = String(item.filename || "reference").trim() || "reference";
+      const text = String(item.description || "").trim();
+      return `[${name}]\n${text}`;
+    })
+  ].join("\n\n").trim();
+}
+
+async function appendGeminiDescriptionsToPrompt(options = {}) {
+  const {
+    buttonId,
+    promptElement,
+    images,
+    heading = "Reference image descriptions:",
+    emptyMessage = "Add at least one image first.",
+    successMessage = "Descriptions added to the prompt.",
+  } = options;
+
+  if (!promptElement) return;
+  const validImages = Array.isArray(images) ? images.filter(item => item && item.data) : [];
+  if (!validImages.length) {
+    showError(emptyMessage);
+    return;
+  }
+
+  const btn = buttonId ? document.getElementById(buttonId) : null;
+  const previousLabel = btn ? btn.textContent : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Describing...";
+  }
+
+  try {
+    const descriptions = await requestGeminiReferenceDescriptions(validImages);
+    const block = buildGeminiDescriptionBlock(descriptions, heading);
+    const existing = promptElement.value.trimEnd();
+    promptElement.value = existing ? `${existing}\n\n${block}` : block;
+    autoResize(promptElement);
+    promptElement.focus();
+    scheduleDraftSave();
+    showError(successMessage, "success");
+  } catch (error) {
+    showError(error.message || "Could not describe the reference images.");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = previousLabel;
+    }
+  }
+}
+
+async function describeVideoStartImageWithGemini() {
+  const promptEl = document.getElementById("videoPromptInput");
+  if (!promptEl) return;
+  await appendGeminiDescriptionsToPrompt({
+    buttonId: "videoSourceDescribeBtn",
+    promptElement: promptEl,
+    images: videoSourceImage && videoSourceImage.data ? [videoSourceImage] : [],
+    heading: "Video start image description:",
+    emptyMessage: "Choose or drop a start image first.",
+    successMessage: "Start image description added to the video prompt.",
+  });
+}
+
+async function describeVideoReferenceImagesWithGemini() {
+  const promptEl = document.getElementById("videoPromptInput");
+  if (!promptEl) return;
+  await appendGeminiDescriptionsToPrompt({
+    buttonId: "videoReferenceDescribeBtn",
+    promptElement: promptEl,
+    images: videoReferenceImages,
+    heading: "Video reference image descriptions:",
+    emptyMessage: "Add at least one video reference image first.",
+    successMessage: "Video reference descriptions added to the prompt.",
+  });
+}
+
 // Drag & drop
 function onDragOver(e, target = "prompt") {
   e.preventDefault();
@@ -5226,6 +5355,7 @@ function syncVideoSourceUi() {
   const nameEl = document.getElementById("videoSourceName");
   const counterEl = document.getElementById("videoSourceCounter");
   const clearBtn = document.getElementById("clearVideoSourceBtn");
+  const describeBtn = document.getElementById("videoSourceDescribeBtn");
   if (!strip || !empty || !previewWrap || !previewImage || !previewVideo || !nameEl || !counterEl || !clearBtn) return;
   const inputMode = selection.inputMode || document.getElementById("videoInputModeSelect")?.value || "text";
   const usesSourceVideo = getVideoSupportsSourceVideo(selection);
@@ -5234,6 +5364,10 @@ function syncVideoSourceUi() {
     ? Boolean(videoSourceVideo && (videoSourceVideo.data || videoSourceVideo.url || videoSourceVideo.previewUrl))
     : Boolean(videoSourceImage && (videoSourceImage.data || videoSourceImage.url || videoSourceImage.previewUrl));
   strip.style.display = (showSource || usesSourceVideo) ? "" : "none";
+  if (describeBtn) {
+    describeBtn.style.display = (showSource && !usesSourceVideo) ? "" : "none";
+    describeBtn.disabled = !Boolean(showSource && !usesSourceVideo && videoSourceImage && videoSourceImage.data);
+  }
   if (!(showSource || usesSourceVideo)) return;
   strip.classList.toggle("video-source-strip-empty", !hasSource);
   strip.classList.toggle("ref-strip-empty-state", !hasSource);
@@ -5570,7 +5704,12 @@ function renderVideoReferenceStrip() {
   const modelLabel = String(selection?.modelInfo?.label || selection?.modelId || "This video model");
   const maxRefs = getMaxVideoReferenceImages();
   const supportsRefs = getVideoSupportsReferenceImages(selection) && maxRefs > 0;
+  const describeBtn = document.getElementById("videoReferenceDescribeBtn");
   strip.style.display = supportsRefs ? "" : "none";
+  if (describeBtn) {
+    describeBtn.style.display = supportsRefs ? "" : "none";
+    describeBtn.disabled = !(supportsRefs && videoReferenceImages.length);
+  }
   if (!supportsRefs) return;
   strip.classList.toggle("ref-strip-empty-state", videoReferenceImages.length === 0);
   inner.innerHTML = "";
@@ -5580,16 +5719,15 @@ function renderVideoReferenceStrip() {
     empty.style.display = "none";
     videoReferenceImages.forEach((img, idx) => {
       const wrap = document.createElement("div");
-      wrap.className = "ref-thumb-wrap";
+      wrap.className = "ref-thumb";
 
       const el = document.createElement("img");
-      el.className = "ref-thumb";
       el.src = img.previewUrl || `data:${img.mime_type};base64,${img.data}`;
       el.alt = img.name || getVideoReferencePayloadName(idx + 1);
       wrap.appendChild(el);
 
       const removeBtn = document.createElement("button");
-      removeBtn.className = "ref-remove";
+      removeBtn.className = "ref-thumb-remove";
       removeBtn.type = "button";
       removeBtn.innerHTML = "&times;";
       removeBtn.onclick = (event) => {
@@ -5602,7 +5740,7 @@ function renderVideoReferenceStrip() {
       wrap.appendChild(removeBtn);
 
       const name = document.createElement("div");
-      name.className = "ref-name";
+      name.className = "ref-thumb-label";
       name.textContent = img.name || getVideoReferencePayloadName(idx + 1);
       wrap.appendChild(name);
 
@@ -6124,7 +6262,7 @@ function buildGalleryImageFilterOptions() {
   ];
   const seenSizes = new Set(sizeOptions.map((item) => item.value));
   galleryEntries.forEach((entry) => {
-    const size = String((entry.params || {}).imageSize || "").trim().toUpperCase();
+    const size = getEffectiveImageSize(entry.params || {});
     if (!size || seenSizes.has(size)) return;
     seenSizes.add(size);
     sizeOptions.push({ value: size, label: size });
@@ -7840,10 +7978,10 @@ function getGalleryFilteredEntries() {
     if (videoSource) {
       const durationKey = String(params.duration || "").trim();
       const inputModeKey = String(params.videoInputMode || params.inputMode || "").trim();
-      if (galleryFilters.size !== "all" && durationKey !== galleryFilters.size) return false;
+    if (galleryFilters.size !== "all" && durationKey !== galleryFilters.size) return false;
       if (galleryFilters.upscaler !== "all" && inputModeKey !== galleryFilters.upscaler) return false;
     } else {
-      if (galleryFilters.size !== "all" && params.imageSize !== galleryFilters.size) return false;
+      if (galleryFilters.size !== "all" && getEffectiveImageSize(params) !== galleryFilters.size) return false;
       if (galleryFilters.upscaler === "none" && params.upscalerType) return false;
       if (galleryFilters.upscaler !== "all" && galleryFilters.upscaler !== "none" && params.upscalerType !== galleryFilters.upscaler) return false;
     }
@@ -7881,7 +8019,8 @@ function buildTextCard(entry, options = {}) {
   const meta = document.createElement("div");
   meta.className = "text-card-meta";
   const tags = [entry.badgeLabel];
-  if (entry.params && entry.params.imageSize) tags.push(entry.params.imageSize);
+  const effectiveSize = getEffectiveImageSize(entry.params || {});
+  if (effectiveSize) tags.push(effectiveSize);
   if (entry.params && entry.params.aspectRatio) tags.push(entry.params.aspectRatio);
   meta.textContent = tags.filter(Boolean).join(" - ");
 
@@ -8060,11 +8199,11 @@ function buildVideoCard(entry, options = {}) {
   });
 
   if (!options.featured) {
-    const metaLine = String(params.assetFilename || entry.fileName || "-").trim() || "-";
+    const metaLine = String(entry.fileName || params.gen_filename || params.filename || params.assetFilename || "-").trim() || "-";
     const metaEl = document.createElement("div");
     metaEl.className = "img-card-meta-line";
     metaEl.textContent = metaLine;
-    metaEl.title = getAssetMetaDisplayLine(params, entry.fileName || "");
+      metaEl.title = metaLine;
     card.appendChild(metaEl);
   }
 
@@ -8407,7 +8546,14 @@ function getImageResolutionBadgeText(params) {
   if (!params) return "";
   if (params.upscaleDisplaySize) return String(params.upscaleDisplaySize).toUpperCase();
   if (params.upscaled && params.imageSize) return `UPSCALED ${String(params.imageSize).toUpperCase()}`;
+  const deliveredSize = String(params.deliveredImageSize || "").trim();
+  if (deliveredSize) return deliveredSize.toUpperCase();
   return params.imageSize ? String(params.imageSize).toUpperCase() : "";
+}
+
+function getEffectiveImageSize(params) {
+  if (!params) return "";
+  return String(params.deliveredImageSize || params.imageSize || "").trim().toUpperCase();
 }
 
 function getGenerationImageUrl(date, filename) {
@@ -8708,11 +8854,11 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
   }
 
   if (!options.featured) {
-    const metaLine = String(params.assetFilename || entry?.fileName || "-").trim() || "-";
+    const metaLine = String(entry?.fileName || params.gen_filename || params.filename || params.assetFilename || "-").trim() || "-";
     const metaEl = document.createElement("div");
     metaEl.className = "img-card-meta-line";
     metaEl.textContent = metaLine;
-    metaEl.title = getAssetMetaDisplayLine(params, entry?.fileName || "");
+      metaEl.title = metaLine;
     card.appendChild(metaEl);
   }
 
@@ -9497,7 +9643,7 @@ function toggleInfoPopup(params, anchorEl) {
     `<p>${escapeHtml(prompt)}</p>` +
     `<div class="info-meta">` +
       `<span class="info-tag">${escapeHtml(label)}</span>` +
-      (params.imageSize ? `<span class="info-tag">${escapeHtml(params.imageSize)}</span>` : "") +
+      (getEffectiveImageSize(params) ? `<span class="info-tag">${escapeHtml(getEffectiveImageSize(params))}</span>` : "") +
       (params.aspectRatio ? `<span class="info-tag">${escapeHtml(params.aspectRatio)}</span>` : "") +
       (params.temperature != null ? `<span class="info-tag">t=${parseFloat(params.temperature).toFixed(2)}</span>` : "") +
       (params.seedValue != null ? `<span class="info-tag">seed ${escapeHtml(params.seedValue)}</span>` : "") +
@@ -9554,7 +9700,7 @@ function showGeneratorInfoModal(params) {
   pushRow("Filename", params.assetFilename || "");
   pushRow("Model", label);
   pushRow("Provider", params.provider_label || params.provider || "");
-  pushRow("Image size", params.imageSize || "");
+  pushRow("Image size", getEffectiveImageSize(params) || params.imageSize || "");
   pushRow("Aspect ratio", params.aspectRatio || "");
   pushRow("Images", params.numberOfImages || "");
   pushRow("Seed mode", params.seedMode || "");

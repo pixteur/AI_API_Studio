@@ -99,7 +99,7 @@ REFERENCE_ARCHIVE_INDEX_FILE = os.path.join(REFERENCE_ARCHIVE_DIR, "_index.json"
 REFERENCE_MASKS_DIR = os.path.join(IMAGE_ASSETS_DIR, "reference_masks")
 REFERENCE_RENDERS_DIR = os.path.join(IMAGE_ASSETS_DIR, "reference_renders")
 POSE_OUTPUTS_DIR = os.path.join(IMAGE_ASSETS_DIR, "pose_outputs")
-ASSET_UNCATEGORIZED_VALUE = "-"
+ASSET_UNCATEGORIZED_VALUE = "uncategorized"
 ASSET_UNCATEGORIZED_FOLDER = "uncategorized"
 ASSET_META_FIELDS = ("assetClient", "assetProject", "assetShot", "assetFilename")
 
@@ -130,8 +130,15 @@ def sanitize_asset_meta_text(value) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def sanitize_asset_path_segment(value: str, fallback: str = ASSET_UNCATEGORIZED_FOLDER) -> str:
+def normalize_asset_scope_text(value) -> str:
     text = sanitize_asset_meta_text(value)
+    if not text or text == "-" or text.lower() == "uncategorized":
+        return ASSET_UNCATEGORIZED_VALUE
+    return text
+
+
+def sanitize_asset_path_segment(value: str, fallback: str = ASSET_UNCATEGORIZED_FOLDER) -> str:
+    text = normalize_asset_scope_text(value)
     if not text or text == ASSET_UNCATEGORIZED_VALUE:
         return fallback
     text = re.sub(r'[<>:"/\\\\|?*]+', "_", text)
@@ -154,9 +161,9 @@ def normalize_asset_metadata(raw: dict | None, *, require_filename: bool = False
     inferred_project = rel_parts[1] if len(rel_parts) >= 4 else ""
     inferred_shot = rel_parts[2] if len(rel_parts) >= 4 else ""
     inferred_filename = os.path.splitext(rel_parts[3])[0] if len(rel_parts) >= 4 else ""
-    client = sanitize_asset_meta_text(raw.get("assetClient", raw.get("client", inferred_client))) or ASSET_UNCATEGORIZED_VALUE
-    project = sanitize_asset_meta_text(raw.get("assetProject", raw.get("project", inferred_project))) or ASSET_UNCATEGORIZED_VALUE
-    shot = sanitize_asset_meta_text(raw.get("assetShot", raw.get("shot", inferred_shot))) or ASSET_UNCATEGORIZED_VALUE
+    client = normalize_asset_scope_text(raw.get("assetClient", raw.get("client", inferred_client))) or ASSET_UNCATEGORIZED_VALUE
+    project = normalize_asset_scope_text(raw.get("assetProject", raw.get("project", inferred_project))) or ASSET_UNCATEGORIZED_VALUE
+    shot = normalize_asset_scope_text(raw.get("assetShot", raw.get("shot", inferred_shot))) or ASSET_UNCATEGORIZED_VALUE
     filename_seed = raw.get("assetFilename", raw.get("filename_stem", raw.get("filenameStem", inferred_filename or fallback_filename)))
     filename = sanitize_asset_filename_stem(filename_seed, fallback=fallback_filename or "untitled") if (require_filename or str(filename_seed or "").strip()) else ""
     return {
@@ -248,6 +255,7 @@ def build_asset_storage_file_prefix(asset_meta: dict) -> str:
     prefix_parts = []
     for key in ("assetClient", "assetProject", "assetShot"):
         value = sanitize_asset_meta_text(asset_meta.get(key, ""))
+        value = normalize_asset_scope_text(value)
         if value and value != ASSET_UNCATEGORIZED_VALUE:
             prefix_parts.append(sanitize_asset_filename_stem(value))
     prefix_parts.append(sanitize_asset_filename_stem(asset_meta.get("assetFilename", ""), fallback="untitled"))
@@ -276,8 +284,8 @@ def build_asset_storage_paths(root_dir: str, asset_meta: dict, extension: str, *
 
 
 def asset_meta_value_matches(selected: str, actual: str) -> bool:
-    selected_text = sanitize_asset_meta_text(selected)
-    actual_text = sanitize_asset_meta_text(actual)
+    selected_text = normalize_asset_scope_text(selected)
+    actual_text = normalize_asset_scope_text(actual)
     if not selected_text:
         return True
     if selected_text == ASSET_UNCATEGORIZED_VALUE:
@@ -303,6 +311,7 @@ def update_asset_metadata_memory(config: dict, asset_meta: dict | None) -> dict:
         clean_value = sanitize_asset_meta_text(value)
         if not clean_value:
             clean_value = ASSET_UNCATEGORIZED_VALUE if allow_uncategorized else ""
+        clean_value = normalize_asset_scope_text(clean_value) if allow_uncategorized else clean_value
         if not clean_value:
             return bucket
         deduped = [item for item in bucket if sanitize_asset_meta_text(item) != clean_value]
@@ -318,7 +327,7 @@ def update_asset_metadata_memory(config: dict, asset_meta: dict | None) -> dict:
     for key in ("clients", "projects", "shots"):
         unique_values = []
         for value in memory.get(key, []):
-            clean_value = sanitize_asset_meta_text(value) or ASSET_UNCATEGORIZED_VALUE
+            clean_value = normalize_asset_scope_text(value) or ASSET_UNCATEGORIZED_VALUE
             if clean_value not in unique_values:
                 unique_values.append(clean_value)
         if ASSET_UNCATEGORIZED_VALUE not in unique_values:
@@ -3156,6 +3165,14 @@ def measure_image_dimensions(image_b64: str, mime_type: str = "image/png") -> tu
         return 0, 0
 
 
+def measure_image_file_dimensions(file_path: str) -> tuple[int, int]:
+    try:
+        with Image.open(file_path) as img:
+            return img.size
+    except Exception:
+        return 0, 0
+
+
 def resize_image_b64_to_exact_png(image_b64: str, mime_type: str, target_width: int, target_height: int) -> tuple[str, str]:
     """Resize an image payload to an exact PNG output while preserving ICC data."""
     safe_width = max(1, int(target_width or 0))
@@ -4990,6 +5007,9 @@ def build_common_asset_params(meta: dict | None, *, default_model: str = "", def
         "provider": provider,
         "provider_label": provider_label,
         "imageSize": meta.get("imageSize", ""),
+        "deliveredImageSize": meta.get("deliveredImageSize", ""),
+        "deliveredWidth": meta.get("deliveredWidth", 0),
+        "deliveredHeight": meta.get("deliveredHeight", 0),
         "aspectRatio": meta.get("aspectRatio", ""),
         "prompt": meta.get("prompt", ""),
         "temperature": meta.get("temperature", 1.0),
@@ -5062,6 +5082,12 @@ def collect_generation_records(max_load: int | None = None) -> list[dict]:
             generated_at = str(meta.get("generated_at", "") or "")
             date_key = derive_asset_date_key(relpath, generated_at)
             params = build_common_asset_params(meta)
+            if not params.get("deliveredImageSize"):
+                delivered_width, delivered_height = measure_image_file_dimensions(img_path)
+                if delivered_width and delivered_height:
+                    params["deliveredWidth"] = delivered_width
+                    params["deliveredHeight"] = delivered_height
+                    params["deliveredImageSize"] = approximate_image_size_label(delivered_width, delivered_height)
             params["assetRelpath"] = relpath
             params["assetUrl"] = build_asset_public_url("generations", relpath)
             params["gen_date"] = date_key
@@ -5104,6 +5130,12 @@ def collect_loved_records() -> list[dict]:
             published_at = str(meta.get("published_at", meta.get("generated_at", "")) or "")
             date_key = derive_asset_date_key(relpath, published_at)
             params = build_common_asset_params(meta)
+            if not params.get("deliveredImageSize"):
+                delivered_width, delivered_height = measure_image_file_dimensions(img_path)
+                if delivered_width and delivered_height:
+                    params["deliveredWidth"] = delivered_width
+                    params["deliveredHeight"] = delivered_height
+                    params["deliveredImageSize"] = approximate_image_size_label(delivered_width, delivered_height)
             params["assetRelpath"] = relpath
             params["assetUrl"] = build_asset_public_url("loved", relpath)
             result.append({
@@ -5200,9 +5232,9 @@ def collect_asset_metadata_records() -> list[dict]:
     seen: set[tuple[str, str, str, str]] = set()
 
     def append_record(client_value: str, project_value: str, shot_value: str, filename_value: str) -> None:
-        client = sanitize_asset_meta_text(client_value) or ASSET_UNCATEGORIZED_VALUE
-        project = sanitize_asset_meta_text(project_value) or ASSET_UNCATEGORIZED_VALUE
-        shot = sanitize_asset_meta_text(shot_value) or ASSET_UNCATEGORIZED_VALUE
+        client = normalize_asset_scope_text(client_value) or ASSET_UNCATEGORIZED_VALUE
+        project = normalize_asset_scope_text(project_value) or ASSET_UNCATEGORIZED_VALUE
+        shot = normalize_asset_scope_text(shot_value) or ASSET_UNCATEGORIZED_VALUE
         filename = sanitize_asset_filename_stem(filename_value, fallback="")
         if not filename:
             return
@@ -5264,9 +5296,9 @@ def collect_asset_metadata_options() -> dict:
         "filenames": set(),
     }
     for record in collect_asset_metadata_records():
-        client = sanitize_asset_meta_text(record.get("assetClient", "")) or ASSET_UNCATEGORIZED_VALUE
-        project = sanitize_asset_meta_text(record.get("assetProject", "")) or ASSET_UNCATEGORIZED_VALUE
-        shot = sanitize_asset_meta_text(record.get("assetShot", "")) or ASSET_UNCATEGORIZED_VALUE
+        client = normalize_asset_scope_text(record.get("assetClient", "")) or ASSET_UNCATEGORIZED_VALUE
+        project = normalize_asset_scope_text(record.get("assetProject", "")) or ASSET_UNCATEGORIZED_VALUE
+        shot = normalize_asset_scope_text(record.get("assetShot", "")) or ASSET_UNCATEGORIZED_VALUE
         filename = sanitize_asset_filename_stem(record.get("assetFilename", ""), fallback="")
         if client not in seen["clients"]:
             seen["clients"].add(client)
@@ -5285,7 +5317,7 @@ def collect_asset_metadata_options() -> dict:
     memory = ensure_asset_metadata_memory_shape(config.get("asset_metadata_memory"))
     for key in ("clients", "projects", "shots"):
         for value in memory.get(key, []):
-            clean_value = sanitize_asset_meta_text(value) or ASSET_UNCATEGORIZED_VALUE
+            clean_value = normalize_asset_scope_text(value) or ASSET_UNCATEGORIZED_VALUE
             if clean_value not in seen[key]:
                 seen[key].add(clean_value)
                 options[key].append(clean_value)
@@ -6170,6 +6202,144 @@ def api_analyze_talent_image():
     })
 
 
+@app.route("/api/references/describe", methods=["POST"])
+@login_required
+def api_describe_reference_images():
+    config = load_config()
+    api_key = (config.get("api_key", "") or "").strip()
+    if not api_key:
+        return jsonify({"ok": False, "error": "Gemini API key not configured."}), 400
+
+    body = request.get_json(silent=True) or {}
+    ref_images = normalize_ref_image_payloads(body.get("refImages"), 32)
+    if not ref_images:
+        return jsonify({"ok": False, "error": "No reference images provided."}), 400
+
+    describe_prompt = (
+        "You are a high-end visual prompt writer for image generation.\n"
+        "Analyze this reference image and write one detailed, production-ready descriptive prompt.\n"
+        "Focus on visible subject matter, wardrobe, materials, textures, colors, styling, pose, composition, "
+        "camera perspective, lighting, environment, mood, and any distinctive visual cues.\n"
+        "Write a single dense paragraph in clean English.\n"
+        "Do not use bullet points, markdown, labels, or filenames.\n"
+        "Do not speculate about things that are not visible.\n"
+        "Return only the prompt text."
+    )
+
+    descriptions: list[dict] = []
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_cost = 0.0
+
+    for idx, item in enumerate(ref_images, start=1):
+        image_b64 = str(item.get("data", "") or "").strip()
+        mime_type = str(item.get("mime_type", "image/jpeg") or "image/jpeg")
+        filename = (
+            str(item.get("name") or "").strip()
+            or os.path.basename(str(item.get("archive_filename") or "").strip())
+            or f"reference_{idx}.png"
+        )
+        if not image_b64:
+            continue
+
+        try:
+            image_b64, mime_type, _, _, _, _, _ = normalize_image_b64(image_b64, mime_type)
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"Image pre-processing error for {filename}: {e}"}), 400
+
+        payload = {
+            "contents": [{
+                "role": "user",
+                "parts": [
+                    {"inlineData": {"mimeType": mime_type, "data": image_b64}},
+                    {"text": describe_prompt}
+                ]
+            }],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 1024,
+            }
+        }
+
+        try:
+            resp = requests.post(
+                GEMINI_BASE_URL.format(model=TALENT_ANALYSIS_MODEL),
+                params={"key": api_key},
+                json=payload,
+                timeout=60
+            )
+        except requests.exceptions.Timeout:
+            return jsonify({"ok": False, "error": f"Description timeout for {filename} (60s)."}), 504
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+        if resp.status_code != 200:
+            try:
+                err_body = resp.json()
+                err_msg = err_body.get("error", {}).get("message", f"HTTP {resp.status_code}")
+            except Exception:
+                err_msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
+            return jsonify({"ok": False, "error": f"{filename}: {err_msg}"}), 400
+
+        result = resp.json()
+        raw_text = ""
+        for candidate in result.get("candidates", []):
+            for part in candidate.get("content", {}).get("parts", []):
+                if "text" in part and str(part["text"]).strip():
+                    raw_text = str(part["text"]).strip()
+                    break
+            if raw_text:
+                break
+
+        if not raw_text:
+            return jsonify({"ok": False, "error": f"Gemini returned no description for {filename}."}), 400
+
+        usage = result.get("usageMetadata", {})
+        input_tokens = int(usage.get("promptTokenCount", 0) or 0)
+        output_tokens = int(usage.get("candidatesTokenCount", 0) or 0)
+        vp = VISION_MODELS_INFO.get(TALENT_ANALYSIS_MODEL, {})
+        vision_cost = round(
+            input_tokens * vp.get("input_per_1m", 0.075) / 1_000_000 +
+            output_tokens * vp.get("output_per_1m", 0.30) / 1_000_000,
+            8
+        )
+        total_input_tokens += input_tokens
+        total_output_tokens += output_tokens
+        total_cost += vision_cost
+
+        descriptions.append({
+            "filename": filename,
+            "description": raw_text,
+        })
+
+    cfg_v = load_config()
+    sv = cfg_v.setdefault("stats", DEFAULT_CONFIG["stats"].copy())
+    sv["vision_calls"] = sv.get("vision_calls", 0) + len(descriptions)
+    sv["vision_cost_usd"] = round(sv.get("vision_cost_usd", 0.0) + total_cost, 8)
+    vlog = sv.setdefault("vision_log", [])
+    vlog.insert(0, {
+        "ts": utc_now_iso(),
+        "model": TALENT_ANALYSIS_MODEL,
+        "input_tok": total_input_tokens,
+        "output_tok": total_output_tokens,
+        "cost": round(total_cost, 8),
+        "refs_described": len(descriptions),
+    })
+    if len(vlog) > 200:
+        sv["vision_log"] = vlog[:200]
+    save_config(cfg_v)
+
+    return jsonify({
+        "ok": True,
+        "descriptions": descriptions,
+        "usage": {
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+            "cost_usd": round(total_cost, 8),
+        }
+    })
+
+
 # ---------------------------------------------------------------------------
 # API - Elements: save new talent
 # ---------------------------------------------------------------------------
@@ -6457,7 +6627,7 @@ def run_gemini_generation_job(body: dict, api_key: str) -> dict:
 
     modalities = ["IMAGE"] if output_mode == "images_only" else ["TEXT", "IMAGE"]
     image_config = {"aspectRatio": aspect_ratio}
-    if model_id == "gemini-3.1-flash-image-preview":
+    if model_id in {"gemini-3.1-flash-image-preview", "gemini-3-pro-image-preview"}:
         image_config["imageSize"] = image_size
 
     gen_config = {
@@ -6643,6 +6813,11 @@ def persist_generation_result(result: dict):
             )
             img["data"] = png_b64
             img["mime_type"] = png_mime
+            delivered_width, delivered_height = measure_image_dimensions(png_b64, png_mime)
+            delivered_size = approximate_image_size_label(delivered_width, delivered_height)
+            img["deliveredWidth"] = delivered_width
+            img["deliveredHeight"] = delivered_height
+            img["deliveredImageSize"] = delivered_size
             abs_dir, relpath, basename = build_asset_storage_paths(
                 GENERATIONS_DIR,
                 asset_meta,
@@ -6663,10 +6838,18 @@ def persist_generation_result(result: dict):
                 "gen_date": img["gen_date"],
                 "gen_filename": img["gen_filename"],
                 "gen_relpath": img["gen_relpath"],
+                "deliveredWidth": delivered_width,
+                "deliveredHeight": delivered_height,
+                "deliveredImageSize": delivered_size,
                 "filename": os.path.basename(img_path),
                 "assetRelpath": relpath,
                 "text": result.get("text", "") if g_idx == 0 else "",
             })
+            if g_idx == 0:
+                params["deliveredWidth"] = delivered_width
+                params["deliveredHeight"] = delivered_height
+                params["deliveredImageSize"] = delivered_size
+                result["params"] = params
             with open(meta_path, "w", encoding="utf-8") as fh:
                 json.dump(gen_meta, fh, indent=2, ensure_ascii=False)
         except Exception:

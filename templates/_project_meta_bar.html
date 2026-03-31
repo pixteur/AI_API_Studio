@@ -7,32 +7,35 @@
   <span class="project-meta-group-label">Scope</span>
   <label class="project-meta-field">
     <span class="project-meta-label">Client</span>
-    <select class="project-meta-select" id="projectMetaClient" aria-label="Client">
-      {% for value in _client_options %}
-      <option value="{{ value }}">{{ value }}</option>
-      {% endfor %}
-    </select>
+    <input class="project-meta-input" id="projectMetaClient" autocomplete="off" placeholder="Client" aria-label="Client" />
   </label>
   <label class="project-meta-field">
     <span class="project-meta-label">Project</span>
-    <select class="project-meta-select" id="projectMetaProject" aria-label="Project">
-      {% for value in _project_options %}
-      <option value="{{ value }}">{{ value }}</option>
-      {% endfor %}
-    </select>
+    <input class="project-meta-input" id="projectMetaProject" autocomplete="off" placeholder="Project" aria-label="Project" />
   </label>
   <label class="project-meta-field">
     <span class="project-meta-label">Shot</span>
-    <select class="project-meta-select" id="projectMetaShot" aria-label="Shot">
-      {% for value in _shot_options %}
-      <option value="{{ value }}">{{ value }}</option>
-      {% endfor %}
-    </select>
+    <input class="project-meta-input" id="projectMetaShot" autocomplete="off" placeholder="Shot" aria-label="Shot" />
   </label>
   <label class="project-meta-field">
     <span class="project-meta-label">Filename</span>
-    <input class="project-meta-input" id="projectMetaFilename" list="projectMetaFilenames" autocomplete="off" placeholder="Filename" aria-label="Filename" />
+    <input class="project-meta-input" id="projectMetaFilename" autocomplete="off" placeholder="Filename" aria-label="Filename" />
   </label>
+  <datalist id="projectMetaClients">
+    {% for value in _client_options %}
+    <option value="{{ value }}"></option>
+    {% endfor %}
+  </datalist>
+  <datalist id="projectMetaProjects">
+    {% for value in _project_options %}
+    <option value="{{ value }}"></option>
+    {% endfor %}
+  </datalist>
+  <datalist id="projectMetaShots">
+    {% for value in _shot_options %}
+    <option value="{{ value }}"></option>
+    {% endfor %}
+  </datalist>
   <datalist id="projectMetaFilenames">
     {% for value in _filename_options %}
     <option value="{{ value }}"></option>

@@ -7,17 +7,17 @@
   };
 
   const DEFAULT_STATE = {
-    assetClient: "-",
-    assetProject: "-",
-    assetShot: "-",
+    assetClient: "uncategorized",
+    assetProject: "uncategorized",
+    assetShot: "uncategorized",
     assetFilename: "",
   };
 
   const bootstrap = window.__ASSET_META_BOOTSTRAP__ || {};
   let optionsCache = {
-    clients: Array.isArray(bootstrap?.options?.clients) && bootstrap.options.clients.length ? bootstrap.options.clients : ["-"],
-    projects: Array.isArray(bootstrap?.options?.projects) && bootstrap.options.projects.length ? bootstrap.options.projects : ["-"],
-    shots: Array.isArray(bootstrap?.options?.shots) && bootstrap.options.shots.length ? bootstrap.options.shots : ["-"],
+    clients: Array.isArray(bootstrap?.options?.clients) && bootstrap.options.clients.length ? bootstrap.options.clients : ["uncategorized"],
+    projects: Array.isArray(bootstrap?.options?.projects) && bootstrap.options.projects.length ? bootstrap.options.projects : ["uncategorized"],
+    shots: Array.isArray(bootstrap?.options?.shots) && bootstrap.options.shots.length ? bootstrap.options.shots : ["uncategorized"],
     filenames: Array.isArray(bootstrap?.options?.filenames) ? bootstrap.options.filenames : [],
   };
 
@@ -27,7 +27,8 @@
 
   function normalizeSelectValue(value, fallback) {
     const clean = String(value || "").trim();
-    return clean || fallback;
+    if (!clean || clean === "-") return fallback;
+    return clean;
   }
 
   function normalizeFilename(value) {
@@ -88,18 +89,18 @@
     });
   }
 
-  function setSelectOptions(select, values, selectedValue, fallback = "-") {
-    if (!select) return;
+  function setInputOptions(input, datalist, values, selectedValue, fallback = "uncategorized") {
+    if (!input) return;
     const merged = mergeUniqueValues(values, [selectedValue]);
     if (!merged.includes(fallback)) merged.unshift(fallback);
-    select.innerHTML = "";
+    if (datalist) datalist.innerHTML = "";
     for (const value of merged) {
+      if (!datalist) continue;
       const option = document.createElement("option");
       option.value = value;
-      option.textContent = value;
-      select.appendChild(option);
+      datalist.appendChild(option);
     }
-    select.value = merged.includes(selectedValue) ? selectedValue : fallback;
+    input.value = merged.includes(selectedValue) ? selectedValue : fallback;
   }
 
   function setFilenameOptions(datalist, values) {
@@ -117,13 +118,93 @@
     const bar = getBar();
     if (!bar) return;
     const normalized = normalizeState(state || getCurrentState());
-    setSelectOptions(bar.querySelector("#projectMetaClient"), optionsCache.clients, normalized.assetClient, "-");
-    setSelectOptions(bar.querySelector("#projectMetaProject"), optionsCache.projects, normalized.assetProject, "-");
-    setSelectOptions(bar.querySelector("#projectMetaShot"), optionsCache.shots, normalized.assetShot, "-");
+    setInputOptions(
+      bar.querySelector("#projectMetaClient"),
+      bar.querySelector("#projectMetaClients"),
+      optionsCache.clients,
+      normalized.assetClient,
+        "uncategorized"
+      );
+    setInputOptions(
+      bar.querySelector("#projectMetaProject"),
+      bar.querySelector("#projectMetaProjects"),
+      optionsCache.projects,
+      normalized.assetProject,
+        "uncategorized"
+      );
+    setInputOptions(
+      bar.querySelector("#projectMetaShot"),
+      bar.querySelector("#projectMetaShots"),
+      optionsCache.shots,
+      normalized.assetShot,
+        "uncategorized"
+      );
     const filenameInput = bar.querySelector("#projectMetaFilename");
     if (filenameInput) filenameInput.value = normalized.assetFilename;
     setFilenameOptions(bar.querySelector("#projectMetaFilenames"), mergeUniqueValues(optionsCache.filenames, [normalized.assetFilename]));
     bar.classList.toggle("project-meta-missing-filename", !normalized.assetFilename);
+  }
+
+  function getMenuValuesForInput(input) {
+    if (!input) return [];
+    if (input.id === "projectMetaClient") return mergeUniqueValues(optionsCache.clients);
+    if (input.id === "projectMetaProject") return mergeUniqueValues(optionsCache.projects);
+    if (input.id === "projectMetaShot") return mergeUniqueValues(optionsCache.shots);
+    if (input.id === "projectMetaFilename") return mergeUniqueValues(optionsCache.filenames, [input.value]);
+    return [];
+  }
+
+  function ensureMenu(input) {
+    const field = input?.closest(".project-meta-field");
+    if (!field) return null;
+    let menu = field.querySelector(".project-meta-menu");
+    if (!menu) {
+      menu = document.createElement("div");
+      menu.className = "project-meta-menu";
+      field.appendChild(menu);
+    }
+    return menu;
+  }
+
+  function closeAllMenus() {
+    document.querySelectorAll(".project-meta-menu").forEach((menu) => {
+      menu.classList.remove("is-open");
+      menu.innerHTML = "";
+    });
+    document.querySelectorAll(".project-meta-field").forEach((field) => {
+      field.classList.remove("project-meta-field-open");
+    });
+  }
+
+  function renderMenuForInput(input, { filterWithValue = true } = {}) {
+    const menu = ensureMenu(input);
+    const field = input?.closest(".project-meta-field");
+    if (!menu || !field) return;
+    const query = filterWithValue ? String(input.value || "").trim().toLowerCase() : "";
+    const values = getMenuValuesForInput(input).filter((value) => {
+      if (!query) return true;
+      return String(value).toLowerCase().includes(query);
+    });
+    if (!values.length) {
+      closeAllMenus();
+      return;
+    }
+    menu.innerHTML = "";
+    values.forEach((value) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "project-meta-menu-option";
+      option.textContent = value;
+      option.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        input.value = value;
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        closeAllMenus();
+      });
+      menu.appendChild(option);
+    });
+    field.classList.add("project-meta-field-open");
+    menu.classList.add("is-open");
   }
 
   async function fetchOptions() {
@@ -136,9 +217,9 @@
       const payload = await response.json();
       if (!payload?.ok || !payload.options) return;
       optionsCache = {
-        clients: Array.isArray(payload.options.clients) && payload.options.clients.length ? payload.options.clients : ["-"],
-        projects: Array.isArray(payload.options.projects) && payload.options.projects.length ? payload.options.projects : ["-"],
-        shots: Array.isArray(payload.options.shots) && payload.options.shots.length ? payload.options.shots : ["-"],
+          clients: Array.isArray(payload.options.clients) && payload.options.clients.length ? payload.options.clients : ["uncategorized"],
+          projects: Array.isArray(payload.options.projects) && payload.options.projects.length ? payload.options.projects : ["uncategorized"],
+          shots: Array.isArray(payload.options.shots) && payload.options.shots.length ? payload.options.shots : ["uncategorized"],
         filenames: Array.isArray(payload.options.filenames) ? payload.options.filenames : [],
       };
       refreshControls(getCurrentState());
@@ -186,15 +267,39 @@
       queueMemorySave();
     };
 
-    [client, project, shot].forEach((select) => {
-      if (!select) return;
-      select.addEventListener("focus", fetchOptions);
-      select.addEventListener("click", fetchOptions);
-      select.addEventListener("change", commit);
+    [client, project, shot].forEach((input) => {
+      if (!input) return;
+      input.addEventListener("focus", async () => {
+        await fetchOptions();
+        renderMenuForInput(input, { filterWithValue: false });
+      });
+      input.addEventListener("click", async () => {
+        await fetchOptions();
+        renderMenuForInput(input, { filterWithValue: false });
+      });
+      input.addEventListener("input", () => {
+        renderMenuForInput(input, { filterWithValue: true });
+      });
+      input.addEventListener("change", commit);
+      input.addEventListener("blur", () => {
+        window.setTimeout(() => {
+          closeAllMenus();
+          commit();
+        }, 120);
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+          closeAllMenus();
+        }
+        if (event.key === "Escape") {
+          closeAllMenus();
+        }
+      });
     });
 
     if (filename) {
-      filename.addEventListener("focus", fetchOptions);
       filename.addEventListener("change", commit);
       filename.addEventListener("blur", commit);
       filename.addEventListener("keydown", (event) => {
@@ -204,6 +309,12 @@
         }
       });
     }
+
+    document.addEventListener("pointerdown", (event) => {
+      if (!event.target.closest(".project-meta-field")) {
+        closeAllMenus();
+      }
+    });
   }
 
   window.getAssetMetaSelection = function () {
