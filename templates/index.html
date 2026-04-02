@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -165,8 +165,7 @@
     const creationPane = document.getElementById('promptPaneCreation');
     const editPane = document.getElementById('promptPaneEdit');
     const videoPane = document.getElementById('promptPaneVideo');
-    const posePane = document.getElementById('promptPanePose');
-    if (!bar || !creationBtn || !editBtn || !videoBtn || !creationPane || !editPane || !videoPane || !posePane) return;
+    if (!bar || !creationBtn || !editBtn || !videoBtn || !creationPane || !editPane || !videoPane) return;
     const allowedModes = new Set(['creation', 'edit', 'video']);
     const mode = allowedModes.has(bar.dataset.promptMode) ? bar.dataset.promptMode : 'creation';
     const creationActive = mode === 'creation';
@@ -183,15 +182,11 @@
     videoPane.style.display = videoActive ? '' : 'none';
     if (creationControls) creationControls.style.display = creationActive ? '' : 'none';
     if (videoControls) videoControls.style.display = videoActive ? '' : 'none';
-    posePane.style.display = 'none';
     if (videoActive && typeof window.syncVideoModeUi === 'function') {
       window.requestAnimationFrame(() => window.syncVideoModeUi());
     }
     if (typeof window.syncGalleryModeUi === 'function') {
       window.requestAnimationFrame(() => window.syncGalleryModeUi());
-    }
-    if (typeof window.syncPoseWorkspace === 'function') {
-      window.requestAnimationFrame(() => window.syncPoseWorkspace());
     }
   }
 
@@ -370,7 +365,7 @@
     <button class="nav-hamburger" id="navHamburger" onclick="toggleSidebar()" title="Toggle sidebar" aria-label="Toggle sidebar">
       <span></span><span></span><span></span>
     </button>
-    <a href="/index" class="nav-logo">AI API Studio <span class="nav-version">1.2 beta</span></a>
+      <a href="/index" class="nav-logo">AI API Studio <span class="nav-version">1.3</span></a>
     {% include "_project_meta_bar.html" %}
   </div>
   <div class="nav-links">
@@ -815,6 +810,13 @@
                   <span>On</span>
                 </label>
               </div>
+              <div class="prompt-safety prompt-safety-inline prompt-safety-inline-toggle" id="videoOutputSafetyCheckerWrap" style="display:none">
+                <span class="prompt-safety-label">Output safety</span>
+                <label class="prompt-safety-check" for="videoOutputSafetyCheckerToggle">
+                  <input type="checkbox" id="videoOutputSafetyCheckerToggle" checked>
+                  <span>On</span>
+                </label>
+              </div>
               <div class="meta-sep"></div>
               <button class="btn-generate btn-generate-video" id="generateVideoBtn" onclick="generateVideo()">
                 Generate Video <span class="gen-icon">*</span>
@@ -1121,117 +1123,6 @@
         </div>
         </div>
 
-        <div class="prompt-pane" id="promptPanePose" style="display:none">
-        <div class="pose-panel-shell">
-          <div class="pose-panel-stage">
-            <div class="pose-panel-stage-frame">
-              <iframe
-                id="poseToolEmbedFrame"
-                class="pose-tool-embed-frame"
-                title="Embedded pose tool"
-                src="/pose/embed/openpose"
-                loading="lazy"
-              ></iframe>
-              <div class="pose-stage-meta" id="poseStageMeta" style="display:none">
-                <span class="pose-stage-chip" id="poseStageSourceChip">Reference</span>
-                <span class="pose-stage-chip" id="poseStageSizeChip">-</span>
-              </div>
-              <div class="pose-stage-overlay">
-                <div class="pose-stage-overlay-header">
-                  <div class="pose-stage-overlay-label">Pose Canvas</div>
-                  <span class="pose-stage-route-chip" id="poseStageToolChip">OpenPose Editor</span>
-                </div>
-                <p id="poseStageOverlayText">Use the selected History image, or bring in an upload, video frame, or webcam frame, then work inside the embedded pose tools.</p>
-              </div>
-            </div>
-          </div>
-          <aside class="pose-panel-sidebar">
-            <div class="pose-panel-card">
-              <div class="pose-panel-card-label">ComfyUI</div>
-              <label class="pose-field">
-                <span>Server</span>
-                <div class="pose-connection-row">
-                  <input type="text" id="poseComfyUrlInput" class="pose-text-input" value="{{ comfyui_url|e }}" placeholder="http://127.0.0.1:8188" spellcheck="false">
-                  <button class="pose-secondary-btn" id="poseComfyCheckBtn" type="button" onclick="checkPoseComfyUi()">Check</button>
-                </div>
-              </label>
-              <div class="pose-status-row">
-                <span class="pose-status-chip" id="poseComfyStatusChip">Not checked</span>
-                <span class="pose-inline-note" id="poseComfyStatusMeta">Checks the ComfyUI server status</span>
-              </div>
-            </div>
-            <div class="pose-panel-card">
-              <div class="pose-panel-card-label">Route</div>
-              <label class="pose-field">
-                <span>Pose tool</span>
-                <select id="poseToolSelect" class="pose-select" onchange="syncPoseToolUi()">
-                  <option value="openpose_editor">OpenPose Editor</option>
-                  <option value="action_director">Action Director</option>
-                  <option value="yedp_mocap">Webcam / Video Mocap</option>
-                </select>
-              </label>
-              <div class="pose-tool-hint" id="poseToolHint">Editable 2D skeleton workflow over a reference image.</div>
-            </div>
-            <div class="pose-panel-card">
-              <div class="pose-panel-card-label">Source</div>
-              <label class="pose-field">
-                <span>Input source</span>
-                <select id="poseSourceSelect" class="pose-select" onchange="syncPoseSourceUi()">
-                  <option value="selected_image">Selected History image</option>
-                  <option value="upload_image">Upload image</option>
-                  <option value="video_frame">Video frame</option>
-                  <option value="webcam_frame">Webcam frame</option>
-                </select>
-              </label>
-
-              <div class="pose-source-panel" id="poseSourceSelectedPanel">
-                <div class="pose-source-note" id="poseSelectedSourceNote">Uses the currently selected image from History.</div>
-              </div>
-
-              <div class="pose-source-panel" id="poseSourceUploadPanel" style="display:none">
-                <div class="pose-inline-actions">
-                  <button class="pose-secondary-btn" type="button" onclick="document.getElementById('poseUploadInput').click()">Choose image</button>
-                  <span class="pose-source-file" id="poseUploadName">No upload yet</span>
-                </div>
-                <input type="file" id="poseUploadInput" accept="image/*" style="display:none" onchange="onPoseUploadChange(event)">
-              </div>
-
-              <div class="pose-source-panel" id="poseSourceVideoPanel" style="display:none">
-                <div class="pose-inline-actions">
-                  <button class="pose-secondary-btn" type="button" onclick="document.getElementById('poseVideoInput').click()">Choose video</button>
-                  <button class="pose-secondary-btn" type="button" id="poseVideoCaptureBtn" onclick="capturePoseVideoFrame()" disabled>Capture frame</button>
-                </div>
-                <input type="file" id="poseVideoInput" accept="video/*" style="display:none" onchange="onPoseVideoInputChange(event)">
-                <div class="pose-source-file" id="poseVideoName">No video loaded</div>
-                <video id="poseVideoPreview" class="pose-media-preview" controls muted playsinline style="display:none"></video>
-              </div>
-
-              <div class="pose-source-panel" id="poseSourceWebcamPanel" style="display:none">
-                <div class="pose-inline-actions">
-                  <button class="pose-secondary-btn" type="button" id="poseWebcamStartBtn" onclick="startPoseWebcam()">Start camera</button>
-                  <button class="pose-secondary-btn" type="button" id="poseWebcamCaptureBtn" onclick="capturePoseWebcamFrame()" disabled>Capture frame</button>
-                  <button class="pose-secondary-btn" type="button" id="poseWebcamStopBtn" onclick="stopPoseWebcam()" disabled>Stop</button>
-                </div>
-                <div class="pose-source-file" id="poseWebcamName">Camera is off</div>
-                <video id="poseWebcamPreview" class="pose-media-preview" autoplay muted playsinline style="display:none"></video>
-              </div>
-            </div>
-
-            <div class="pose-panel-card">
-              <div class="pose-panel-card-label">Send</div>
-              <div class="pose-send-actions">
-                <button class="btn-upscale pose-send-btn" id="poseSendBtn" type="button" onclick="sendPoseToComfyUi()">Stage source</button>
-                <button class="pose-secondary-btn pose-queue-btn" id="poseQueueBtn" type="button" onclick="queuePoseWorkflow()">Queue workflow</button>
-              </div>
-              <div class="pose-template-actions">
-                <button class="pose-secondary-btn" id="poseTemplateCopyBtn" type="button" onclick="copyPoseWorkflowTemplate()">Copy template JSON</button>
-              </div>
-              <div class="pose-send-hint" id="poseSendHint">Uploads the current pose source into ComfyUI input so you can continue in your pose workflow there.</div>
-              <div class="pose-template-note" id="poseTemplateNote">OpenPose can queue directly. Action Director and Yedp MoCap still rely on their interactive ComfyUI frontends.</div>
-            </div>
-          </aside>
-        </div>
-        </div>
       </div>
     </div>
       </div>
@@ -1397,7 +1288,7 @@
 </div>
 
 <!-- ================================================================
-     MODAL Ã¢â‚¬â€ Loved image picker
+     MODAL ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Loved image picker
 ================================================================ -->
 <div class="modal-overlay" id="pubPickerOverlay" onclick="closeLovedPickerOnBg(event)">
     <div class="modal-box pub-picker-box">
@@ -1471,7 +1362,7 @@
 </div>
 
 <!-- ================================================================
-     MODAL Ã¢â‚¬â€ Elements (asset library)
+     MODAL ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Elements (asset library)
 ================================================================ -->
 <div class="modal-overlay elements-overlay" id="elementsOverlay" onclick="closeElementsOnBg(event)">
   <div class="modal-box elements-box">
@@ -1785,20 +1676,18 @@ function cloneRefImageDraftRecord(img, idx = 0) {
 }
 
 function buildGenerationRefPayload(item) {
-  return {
+  const payload = {
     mime_type: item.mime_type,
     data: item.data,
     name: item.name || "",
-    original_data: item.original_data || "",
-    original_mime_type: item.original_mime_type || "",
-    mask_png_data: item.mask_png_data || "",
     archive_date: item.archive_date || "",
     archive_filename: item.archive_filename || "",
-    original_url: item.original_url || "",
-    masked_url: item.masked_url || "",
-    mask_url: item.mask_url || "",
-    has_mask: Boolean(item.has_mask),
   };
+  if (item.mask_png_data) {
+    payload.mask_png_data = item.mask_png_data;
+    payload.has_mask = Boolean(item.has_mask);
+  }
+  return payload;
 }
 
 function loadImageElement(src) {
@@ -2130,7 +2019,7 @@ function getVideoModelsForSelection(familyId, provider, inputMode = "") {
 }
 
 function getAvailableVideoModesForSelection(familyId, provider) {
-  const order = ["text", "image", "reference"];
+  const order = ["text", "image", "reference", "video"];
   const modes = new Set();
   getVideoModelsForSelection(familyId, provider).forEach(([, info]) => {
     (Array.isArray(info.input_modes) ? info.input_modes : []).forEach(mode => modes.add(mode));
@@ -2163,11 +2052,12 @@ function syncVideoInputModeOptions(options = {}) {
   const provider = options.provider || document.getElementById("videoProviderFooterSelect")?.value || "kling";
   const select = document.getElementById("videoInputModeSelect");
   if (!select) return { inputMode: "text" };
+  const familyInfo = VIDEO_MODEL_FAMILIES[familyId] || {};
   const modeLabels = {
     text: "Text to Video",
     image: "Image to Video",
     reference: "Reference to Video",
-    video: "Video Upscale",
+    video: familyId === "seedvr-video" ? "Video Upscale" : "Video to Video",
   };
   const availableModes = getAvailableVideoModesForSelection(familyId, provider);
   const preferredMode = options.inputMode || select.value || availableModes[0] || "text";
@@ -2369,12 +2259,49 @@ function syncVideoAspectRatioOptions(info = {}) {
   select.value = allowed.includes(currentValue) ? currentValue : (allowed[0] || "16:9");
 }
 
-function syncVideoResolutionOptions(info = {}) {
+function getVideoResolutionInfo(selection = getCurrentVideoSelection()) {
+  const info = selection?.modelInfo || {};
+  const explicit = Array.isArray(info.resolutions)
+    ? info.resolutions.map(value => String(value || "").trim().toLowerCase()).filter(Boolean)
+    : [];
+  if (explicit.length) {
+    return {
+      show: true,
+      resolutions: explicit,
+    };
+  }
+  const familyId = String(selection?.familyId || "").trim().toLowerCase();
+  if (familyId === "kling") {
+    return {
+      show: true,
+      resolutions: ["1080p"],
+    };
+  }
+  if (familyId === "seedance") {
+    return {
+      show: true,
+      resolutions: ["480p", "720p", "1080p"],
+    };
+  }
+  if (familyId === "wan" || familyId === "wan-video") {
+    return {
+      show: true,
+      resolutions: ["720p", "1080p"],
+    };
+  }
+  return {
+    show: Boolean(info.supports_resolution),
+    resolutions: ["720p"],
+  };
+}
+
+function syncVideoResolutionOptions(selection = getCurrentVideoSelection()) {
   const select = document.getElementById("videoResolutionSelect");
   if (!select) return;
-  const allowed = Array.isArray(info.resolutions) && info.resolutions.length
-    ? info.resolutions.map(value => String(value || "").trim().toLowerCase()).filter(Boolean)
-    : ["480p", "720p", "1080p"];
+  const resolutionInfo = getVideoResolutionInfo(selection);
+  const allowed = Array.isArray(resolutionInfo.resolutions) && resolutionInfo.resolutions.length
+    ? resolutionInfo.resolutions
+    : ["720p"];
   const currentValue = String(select.value || "").trim().toLowerCase();
   select.innerHTML = "";
   allowed.forEach(value => {
@@ -2415,6 +2342,7 @@ function syncVideoModeUi() {
   const durationWrap = document.getElementById("videoDurationWrap");
   const resolutionWrap = document.getElementById("videoResolutionWrap");
   const safetyWrap = document.getElementById("videoSafetyCheckerWrap");
+  const outputSafetyWrap = document.getElementById("videoOutputSafetyCheckerWrap");
   const refStrip = document.getElementById("videoReferenceStrip");
   const promptWrap = document.getElementById("videoPromptWrap");
   const promptBox = promptWrap?.querySelector(".video-prompt-box");
@@ -2428,7 +2356,8 @@ function syncVideoModeUi() {
   const showSeedvrSettings = getVideoSupportsSeedvrSettings(selection);
   syncVideoDurationOptions(info);
   syncVideoAspectRatioOptions(info);
-  syncVideoResolutionOptions(info);
+  const resolutionInfo = getVideoResolutionInfo(selection);
+  syncVideoResolutionOptions(selection);
   if (sourceStrip) sourceStrip.style.display = (showSource || showSourceVideo) ? "" : "none";
   if (sourceLabel) {
     sourceLabel.textContent = showSourceVideo ? "Source video" : "Start image";
@@ -2460,10 +2389,13 @@ function syncVideoModeUi() {
     durationWrap.style.display = info.supports_duration === false ? "none" : "";
   }
   if (resolutionWrap) {
-    resolutionWrap.style.display = info.supports_resolution ? "" : "none";
+    resolutionWrap.style.display = resolutionInfo.show ? "" : "none";
   }
   if (safetyWrap) {
     safetyWrap.style.display = info.supports_safety_checker ? "flex" : "none";
+  }
+  if (outputSafetyWrap) {
+    outputSafetyWrap.style.display = info.supports_output_safety_checker ? "flex" : "none";
   }
   if (refStrip) {
     refStrip.style.display = showRefs ? "" : "none";
@@ -2701,6 +2633,7 @@ function collectGeneratorDraft() {
     videoDuration: parseInt(document.getElementById("videoDurationSelect")?.value || "5", 10),
     videoResolution: document.getElementById("videoResolutionSelect")?.value || "720p",
     videoSafetyChecker: Boolean(document.getElementById("videoSafetyCheckerToggle")?.checked),
+    videoOutputSafetyChecker: Boolean(document.getElementById("videoOutputSafetyCheckerToggle")?.checked),
     videoUpscaleMode: document.getElementById("videoUpscaleModeSelect")?.value || "factor",
     videoUpscaleFactor: parseFloat(document.getElementById("videoUpscaleFactorInput")?.value || "2"),
     videoUpscaleTargetResolution: document.getElementById("videoUpscaleTargetResolutionSelect")?.value || "1080p",
@@ -2946,6 +2879,10 @@ function applyDraftState(draft, options = {}) {
       const el = document.getElementById("videoSafetyCheckerToggle");
       if (el) el.checked = draft.videoSafetyChecker;
     }
+    if (typeof draft.videoOutputSafetyChecker === "boolean") {
+      const el = document.getElementById("videoOutputSafetyCheckerToggle");
+      if (el) el.checked = draft.videoOutputSafetyChecker;
+    }
     if (draft.videoUpscaleMode) {
       const el = document.getElementById("videoUpscaleModeSelect");
       if (el) el.value = draft.videoUpscaleMode;
@@ -3055,6 +2992,7 @@ function bindDraftPersistence() {
     "videoDurationSelect",
     "videoResolutionSelect",
     "videoSafetyCheckerToggle",
+    "videoOutputSafetyCheckerToggle",
     "videoUpscaleModeSelect",
     "videoUpscaleFactorInput",
     "videoUpscaleTargetResolutionSelect",
@@ -4186,7 +4124,7 @@ async function openRefMaskEditor(index) {
   setRefMaskTool("mask");
   setRefMaskBrushSize(document.getElementById("refMaskBrushRange")?.value || 42);
   const editorOverlay = document.getElementById("refMaskEditorOverlay");
-  document.getElementById("refMaskEditorSub").textContent = item.name ? `${item.name} • non-destructive mask` : "Non-destructive. The original reference stays untouched.";
+  document.getElementById("refMaskEditorSub").textContent = item.name ? `${item.name} â€¢ non-destructive mask` : "Non-destructive. The original reference stays untouched.";
 
   let originalSrc = "";
   if (item.original_data && item.original_mime_type) {
@@ -4590,6 +4528,36 @@ async function resolveRefImageSource(url, label) {
   }
 }
 
+async function fetchArchivedReferencePayload(item, fallbackLabel = "reference") {
+  const inferredArchive = inferArchiveMetaFromReferenceUrls(item);
+  const archiveDate = String(item?.date || inferredArchive.archive_date || "").trim();
+  const archiveFilename = String(item?.filename || inferredArchive.archive_filename || "").trim();
+  if (!archiveDate || !archiveFilename) return null;
+
+  const response = await fetch(
+    `/api/reference-archive-payload/${encodeURIComponent(archiveDate)}/${encodeURIComponent(archiveFilename)}`
+  );
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok || !result.data) {
+    throw new Error(result.error || `Could not restore archived reference (${response.status})`);
+  }
+  return {
+    mime_type: result.mime_type || "image/png",
+    data: result.data || "",
+    previewUrl: buildInlineImagePreviewUrl(result.mime_type || "image/png", result.data || "") || result.masked_url || result.original_url || "",
+    name: String(item?.name || result.name || archiveFilename || fallbackLabel),
+    original_data: result.original_data || "",
+    original_mime_type: result.original_mime_type || "image/png",
+    mask_png_data: result.mask_png_data || "",
+    archive_date: archiveDate,
+    archive_filename: archiveFilename,
+    original_url: result.original_url || "",
+    masked_url: result.masked_url || "",
+    mask_url: result.mask_url || "",
+    has_mask: Boolean(result.has_mask),
+  };
+}
+
 async function handleDroppedRefData(dataTransfer) {
   const files = Array.from(dataTransfer?.files || []).filter(f => f.type.startsWith("image/"));
   let added = 0;
@@ -4835,7 +4803,7 @@ function renderLovedPickerList(list, maxRef) {
 
       const check = document.createElement("div");
       check.className = "picker-check";
-      check.textContent = "✓";
+      check.textContent = "âœ“";
 
       const caption = document.createElement("div");
       caption.className = "picker-caption";
@@ -5977,7 +5945,7 @@ async function generateVideo() {
     return;
   }
   if (usesSourceVideo && modelInfo.source_video_required && !(videoSourceVideo && (videoSourceVideo.data || videoSourceVideo.url))) {
-    showError("Choose or drop a source video for this video upscaler.");
+    showError("Choose or drop a source video for this video model.");
     return;
   }
   if (usesReferenceImages && modelInfo.reference_images_required && !videoReferenceImages.length) {
@@ -5996,6 +5964,7 @@ async function generateVideo() {
     duration: parseInt(document.getElementById("videoDurationSelect")?.value || "5", 10),
     resolution: document.getElementById("videoResolutionSelect")?.value || "720p",
     videoSafetyChecker: Boolean(document.getElementById("videoSafetyCheckerToggle")?.checked),
+    videoOutputSafetyChecker: Boolean(document.getElementById("videoOutputSafetyCheckerToggle")?.checked),
     videoUpscaleMode: document.getElementById("videoUpscaleModeSelect")?.value || "factor",
     videoUpscaleFactor: parseFloat(document.getElementById("videoUpscaleFactorInput")?.value || "2"),
     videoUpscaleTargetResolution: document.getElementById("videoUpscaleTargetResolutionSelect")?.value || "1080p",
@@ -6830,959 +6799,6 @@ async function openGalleryEntryFolder(entry) {
   }
 }
 
-const POSE_TOOL_LIBRARY = Object.freeze({
-  openpose_editor: {
-    label: "OpenPose Editor",
-    hint: "Best for editable 2D keypoints over a reference image, now embedded directly inside AI API Studio.",
-    stageText: "OpenPose route ready. Edit the skeleton locally, then save the pose map or add it straight into your references.",
-  },
-  action_director: {
-    label: "Action Director",
-    hint: "Best for richer 3D pose blocking, staging, and camera-aware character motion inside ComfyUI.",
-    stageText: "Action Director route ready. Use this for broader action, staging, and character blocking workflows.",
-  },
-  yedp_mocap: {
-    label: "Webcam / Video Mocap",
-    hint: "Best for turning webcam, video, or image input into a live mocap workflow directly inside AI API Studio.",
-    stageText: "Live mocap route ready. Capture a source frame, extract the rig locally, then save it or add it to your references.",
-  },
-});
-
-const POSE_SOURCE_LABELS = Object.freeze({
-  selected_image: "History image",
-  upload_image: "Upload",
-  video_frame: "Video frame",
-  webcam_frame: "Webcam frame",
-});
-
-let poseWorkspaceSyncToken = 0;
-const poseWorkspaceState = {
-  uploadedImage: null,
-  videoFrame: null,
-  webcamFrame: null,
-  videoObjectUrl: "",
-  webcamStream: null,
-  sending: false,
-  checking: false,
-  queueing: false,
-  templating: false,
-  embedReady: false,
-  embedRoute: "",
-  embedTool: "",
-  lastExport: null,
-};
-
-function getPoseToolMeta(value) {
-  const key = String(value || "openpose_editor").trim().toLowerCase();
-  return POSE_TOOL_LIBRARY[key] || POSE_TOOL_LIBRARY.openpose_editor;
-}
-
-function getPoseSourceKind() {
-  const select = document.getElementById("poseSourceSelect");
-  const kind = select ? String(select.value || "selected_image").trim() : "selected_image";
-  return Object.prototype.hasOwnProperty.call(POSE_SOURCE_LABELS, kind) ? kind : "selected_image";
-}
-
-function getPoseToolCapabilities(toolKey) {
-  const key = String(toolKey || "openpose_editor").trim().toLowerCase();
-  if (key === "openpose_editor") {
-    return {
-      queueSupported: true,
-      note: "OpenPose is embedded locally now. You can still queue the OpenPose workflow in ComfyUI when you want that route.",
-    };
-  }
-  if (key === "action_director") {
-    return {
-      queueSupported: false,
-      note: "Action Director templates are ready, but its real payload is authored inside the interactive Action Director UI in ComfyUI.",
-    };
-  }
-  return {
-    queueSupported: false,
-    note: "Yedp MoCap is embedded locally now. The ComfyUI template route is still optional when you want to continue there.",
-  };
-}
-
-function getPoseToolEmbedPath(toolKey) {
-  const key = String(toolKey || "openpose_editor").trim().toLowerCase();
-  if (key === "yedp_mocap") return "/pose/embed/yedp-mocap";
-  if (key === "action_director") return "/pose/embed/action-director";
-  return "/pose/embed/openpose";
-}
-
-function postPoseMessageToEmbed(type, payload = {}) {
-  const frame = document.getElementById("poseToolEmbedFrame");
-  if (!frame?.contentWindow || !poseWorkspaceState.embedReady) return false;
-  frame.contentWindow.postMessage({
-    channel: "ai-api-studio-pose-embed",
-    type,
-    payload,
-  }, window.location.origin);
-  return true;
-}
-
-async function addRefImageFromPayload(payload) {
-  const maxRef = getMaxRefImages();
-  if (refImages.length >= maxRef) {
-    showError(`Limit reached: this model accepts at most ${maxRef} reference images.`);
-    return false;
-  }
-  const imageData = String(payload?.imageData || payload?.data || "").trim();
-  if (!imageData) return false;
-  const mimeType = String(payload?.mimeType || payload?.mime_type || "image/png").trim() || "image/png";
-  const name = String(payload?.name || payload?.filename || "reference").trim() || "reference";
-  refImages.push({
-    mime_type: mimeType,
-    data: imageData,
-    previewUrl: `data:${mimeType};base64,${imageData}`,
-    name,
-    original_data: String(payload?.original_data || "").trim(),
-    original_mime_type: String(payload?.original_mime_type || "").trim(),
-    mask_png_data: String(payload?.mask_png_data || "").trim(),
-    archive_date: String(payload?.archive_date || payload?.date || "").trim(),
-    archive_filename: String(payload?.archive_filename || payload?.filename || "").trim(),
-    original_url: String(payload?.original_url || "").trim(),
-    masked_url: String(payload?.masked_url || "").trim(),
-    mask_url: String(payload?.mask_url || "").trim(),
-    has_mask: Boolean(payload?.has_mask),
-  });
-  renderRefStrip();
-  scheduleDraftSave();
-  return true;
-}
-
-async function saveEmbeddedPoseOutput(payload) {
-  const response = await fetch("/api/pose/save-output", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      tool: payload?.meta?.label || payload?.tool || document.getElementById("poseToolSelect")?.value || "pose_tool",
-      image_data: payload?.imageData || payload?.data || "",
-      mime_type: payload?.mimeType || payload?.mime_type || "image/png",
-      filename: payload?.filename || payload?.name || "",
-      json_data: payload?.jsonData || payload?.json_data || null,
-      extra_images: Array.isArray(payload?.extraImages) ? payload.extraImages : [],
-      meta: payload?.meta || {},
-    }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data.ok) {
-    throw new Error(data.error || `Could not save pose output (${response.status})`);
-  }
-  poseWorkspaceState.lastExport = data;
-  return data;
-}
-
-function setPoseComfyStatus(text, tone = "idle", metaText = "") {
-  const chip = document.getElementById("poseComfyStatusChip");
-  const meta = document.getElementById("poseComfyStatusMeta");
-  if (chip) {
-    chip.textContent = text || "Not checked";
-    chip.dataset.tone = tone || "idle";
-  }
-  if (meta) meta.textContent = metaText || "";
-}
-
-function rememberPoseComfyUrl(value) {
-  const safeValue = String(value || "").trim();
-  try {
-    localStorage.setItem("nb_pose_comfy_url", safeValue);
-  } catch (e) {}
-}
-
-function getPoseComfyUrl() {
-  const input = document.getElementById("poseComfyUrlInput");
-  return input ? String(input.value || "").trim() : "";
-}
-
-function clearPoseVideoObjectUrl() {
-  if (poseWorkspaceState.videoObjectUrl) {
-    URL.revokeObjectURL(poseWorkspaceState.videoObjectUrl);
-    poseWorkspaceState.videoObjectUrl = "";
-  }
-}
-
-async function buildPosePayloadFromFile(file) {
-  if (!file) return null;
-  const payload = {
-    mime_type: file.type || "image/png",
-    data: await fileToBase64(file),
-    name: file.name || `pose-source-${Date.now()}.png`,
-  };
-  try {
-    const dims = await loadImageNaturalSize(getImageSource(payload));
-    payload.width = dims.width || 0;
-    payload.height = dims.height || 0;
-  } catch (e) {
-    payload.width = 0;
-    payload.height = 0;
-  }
-  return payload;
-}
-
-function buildPosePayloadFromCanvas(canvas, filename) {
-  if (!canvas) return null;
-  const dataUrl = canvas.toDataURL("image/png");
-  return {
-    mime_type: "image/png",
-    data: (dataUrl.split(",")[1] || "").trim(),
-    name: filename || `pose-capture-${Date.now()}.png`,
-    width: canvas.width || 0,
-    height: canvas.height || 0,
-  };
-}
-
-function getPoseCustomSourcePayload(kind) {
-  if (kind === "upload_image") return poseWorkspaceState.uploadedImage;
-  if (kind === "video_frame") return poseWorkspaceState.videoFrame;
-  if (kind === "webcam_frame") return poseWorkspaceState.webcamFrame;
-  return null;
-}
-
-function getPoseEmptyStateCopy(kind, toolMeta) {
-  if (kind === "upload_image") {
-    return {
-      title: "Upload a pose source image",
-      sub: `Choose a reference image to stage it for ${toolMeta.label}.`,
-    };
-  }
-  if (kind === "video_frame") {
-    return {
-      title: "Load a video and capture a frame",
-      sub: `Pick a video, scrub to the right moment, and capture a still for ${toolMeta.label}.`,
-    };
-  }
-  if (kind === "webcam_frame") {
-    return {
-      title: "Start the camera and capture a frame",
-      sub: `Capture a live webcam frame, then continue the pose workflow in ${toolMeta.label}.`,
-    };
-  }
-  return {
-    title: "Select an image from History",
-    sub: `The selected image will appear here as the pose reference canvas for ${toolMeta.label}.`,
-  };
-}
-
-async function resolvePoseStageDescriptor() {
-  const sourceKind = getPoseSourceKind();
-  const toolMeta = getPoseToolMeta(document.getElementById("poseToolSelect")?.value);
-  if (sourceKind === "selected_image") {
-    const entry = getSelectedGalleryImageEntry();
-    if (!entry) {
-      return {
-        hasSource: false,
-        ...getPoseEmptyStateCopy(sourceKind, toolMeta),
-        overlayText: toolMeta.stageText,
-      };
-    }
-    let width = 0;
-    let height = 0;
-    try {
-      const dims = await resolveGalleryEntrySourceDimensions(entry);
-      width = dims?.width || 0;
-      height = dims?.height || 0;
-    } catch (e) {}
-    const dimensionLabel = formatUpscaleDimensionPair(width, height);
-    return {
-      hasSource: true,
-      sourceUrl: getImageSource(entry.image),
-      sourceLabel: (entry.params?.model_label || entry.badgeLabel || POSE_SOURCE_LABELS.selected_image).toUpperCase(),
-      sizeLabel: dimensionLabel
-        ? `${(entry.params?.imageSize || "IMAGE").toUpperCase()} - ${dimensionLabel}`
-        : (entry.params?.imageSize || "IMAGE").toUpperCase(),
-      overlayText: `${toolMeta.label} ready. The selected History image is synced into the embedded pose workspace.`,
-    };
-  }
-
-  const payload = getPoseCustomSourcePayload(sourceKind);
-  if (!payload || !payload.data) {
-    return {
-      hasSource: false,
-      ...getPoseEmptyStateCopy(sourceKind, toolMeta),
-      overlayText: toolMeta.stageText,
-    };
-  }
-
-  let width = normalizeUpscaleDimensionValue(payload.width, 0);
-  let height = normalizeUpscaleDimensionValue(payload.height, 0);
-  if ((!width || !height) && getImageSource(payload)) {
-    try {
-      const dims = await loadImageNaturalSize(getImageSource(payload));
-      width = dims.width || 0;
-      height = dims.height || 0;
-      payload.width = width;
-      payload.height = height;
-    } catch (e) {}
-  }
-  const dimensionLabel = formatUpscaleDimensionPair(width, height);
-  return {
-    hasSource: true,
-    sourceUrl: getImageSource(payload),
-    sourceLabel: (POSE_SOURCE_LABELS[sourceKind] || "Source").toUpperCase(),
-    sizeLabel: dimensionLabel ? `IMAGE - ${dimensionLabel}` : "IMAGE",
-    overlayText: `${toolMeta.label} ready. This ${POSE_SOURCE_LABELS[sourceKind].toLowerCase()} is loaded into the embedded pose workspace.`,
-  };
-}
-
-function ensurePoseEmbeddedToolFrame(force = false) {
-  const frame = document.getElementById("poseToolEmbedFrame");
-  if (!frame) return;
-  const route = getPoseToolEmbedPath(document.getElementById("poseToolSelect")?.value || "openpose_editor");
-  if (force || poseWorkspaceState.embedRoute !== route || frame.getAttribute("src") !== route) {
-    poseWorkspaceState.embedReady = false;
-    poseWorkspaceState.embedRoute = route;
-    frame.setAttribute("src", route);
-  }
-}
-
-async function resolvePoseEmbeddedSourceMessage() {
-  const sourceKind = getPoseSourceKind();
-  if (sourceKind === "selected_image") {
-    const entry = getSelectedGalleryImageEntry();
-    if (!entry) {
-      return {
-        hasSource: false,
-        sourceKind,
-        image: null,
-        meta: { title: "Select a History image" },
-      };
-    }
-    let width = 0;
-    let height = 0;
-    try {
-      const dims = await resolveGalleryEntrySourceDimensions(entry);
-      width = dims?.width || 0;
-      height = dims?.height || 0;
-    } catch (e) {}
-    return {
-      hasSource: true,
-      sourceKind,
-      image: {
-        url: getImageSource(entry.image),
-        data: entry.image?.data || "",
-        mimeType: entry.image?.mime_type || "",
-        name: (entry.params?.gen_filename || entry.id || "history-image").trim(),
-        width,
-        height,
-      },
-      meta: {
-        badgeLabel: entry.params?.model_label || entry.badgeLabel || "History image",
-      },
-    };
-  }
-  const payload = getPoseCustomSourcePayload(sourceKind);
-  if (!payload || !payload.data) {
-    return {
-      hasSource: false,
-      sourceKind,
-      image: null,
-      meta: { title: "Source not ready" },
-    };
-  }
-  return {
-    hasSource: true,
-    sourceKind,
-    image: {
-      data: payload.data || "",
-      mimeType: payload.mime_type || "image/png",
-      name: payload.name || `${sourceKind}-${Date.now()}.png`,
-      width: payload.width || 0,
-      height: payload.height || 0,
-    },
-    meta: {
-      badgeLabel: POSE_SOURCE_LABELS[sourceKind] || "Source",
-    },
-  };
-}
-
-async function syncPoseWorkspace() {
-  const meta = document.getElementById("poseStageMeta");
-  const sourceChip = document.getElementById("poseStageSourceChip");
-  const sizeChip = document.getElementById("poseStageSizeChip");
-  const toolChip = document.getElementById("poseStageToolChip");
-  const overlayText = document.getElementById("poseStageOverlayText");
-  const selectedNote = document.getElementById("poseSelectedSourceNote");
-  if (!meta || !sourceChip || !sizeChip) return;
-
-  ensurePoseEmbeddedToolFrame();
-
-  const syncToken = ++poseWorkspaceSyncToken;
-  const descriptor = await resolvePoseStageDescriptor();
-  const sourceMessage = await resolvePoseEmbeddedSourceMessage();
-  if (syncToken !== poseWorkspaceSyncToken) return;
-
-  const toolValue = document.getElementById("poseToolSelect")?.value || "openpose_editor";
-  if (toolChip) {
-    toolChip.textContent = getPoseToolMeta(toolValue).label;
-  }
-  if (overlayText) {
-    overlayText.textContent = descriptor.overlayText || "";
-  }
-  if (selectedNote) {
-    selectedNote.textContent = getSelectedGalleryImageEntry()
-      ? "Uses the currently selected image from History."
-      : "No History image is selected yet.";
-  }
-
-  meta.style.display = descriptor.hasSource ? "flex" : "none";
-  if (descriptor.hasSource) {
-    sourceChip.textContent = descriptor.sourceLabel || "REFERENCE";
-    sizeChip.textContent = descriptor.sizeLabel || "IMAGE";
-  }
-
-  if (poseWorkspaceState.embedReady) {
-    postPoseMessageToEmbed("set-source", sourceMessage);
-  }
-  syncPoseSendState();
-}
-
-window.syncPoseWorkspace = syncPoseWorkspace;
-
-function syncPoseToolUi(options = {}) {
-  const select = document.getElementById("poseToolSelect");
-  const hint = document.getElementById("poseToolHint");
-  if (!select) return;
-  const toolMeta = getPoseToolMeta(select.value);
-  if (hint) hint.textContent = toolMeta.hint;
-  if (options.persist !== false) {
-    try {
-      localStorage.setItem("nb_pose_tool", select.value);
-    } catch (e) {}
-  }
-  ensurePoseEmbeddedToolFrame(true);
-  syncPoseWorkspace();
-}
-
-function syncPoseSourceUi(options = {}) {
-  const kind = getPoseSourceKind();
-  const selectedPanel = document.getElementById("poseSourceSelectedPanel");
-  const uploadPanel = document.getElementById("poseSourceUploadPanel");
-  const videoPanel = document.getElementById("poseSourceVideoPanel");
-  const webcamPanel = document.getElementById("poseSourceWebcamPanel");
-  if (selectedPanel) selectedPanel.style.display = kind === "selected_image" ? "" : "none";
-  if (uploadPanel) uploadPanel.style.display = kind === "upload_image" ? "" : "none";
-  if (videoPanel) videoPanel.style.display = kind === "video_frame" ? "" : "none";
-  if (webcamPanel) webcamPanel.style.display = kind === "webcam_frame" ? "" : "none";
-  if (kind !== "webcam_frame") {
-    stopPoseWebcam(true);
-  }
-  if (options.persist !== false) {
-    try {
-      localStorage.setItem("nb_pose_source", kind);
-    } catch (e) {}
-  }
-  syncPoseWorkspace();
-}
-
-function syncPoseSendState() {
-  const btn = document.getElementById("poseSendBtn");
-  const queueBtn = document.getElementById("poseQueueBtn");
-  const copyBtn = document.getElementById("poseTemplateCopyBtn");
-  const hint = document.getElementById("poseSendHint");
-  const note = document.getElementById("poseTemplateNote");
-  if (!btn || !hint) return;
-  const toolMeta = getPoseToolMeta(document.getElementById("poseToolSelect")?.value);
-  const toolCaps = getPoseToolCapabilities(document.getElementById("poseToolSelect")?.value);
-  const sourceKind = getPoseSourceKind();
-  let ready = false;
-  let hintText = `Uploads the current pose source into ComfyUI input for ${toolMeta.label}.`;
-  if (note) note.textContent = toolCaps.note;
-  if (poseWorkspaceState.sending) {
-    btn.disabled = true;
-    btn.textContent = "Staging...";
-    if (queueBtn) queueBtn.disabled = true;
-    if (copyBtn) copyBtn.disabled = true;
-    hint.textContent = "Uploading the pose source to ComfyUI...";
-    return;
-  }
-  if (poseWorkspaceState.queueing) {
-    btn.disabled = true;
-    if (queueBtn) {
-      queueBtn.disabled = true;
-      queueBtn.textContent = "Queueing...";
-    }
-    if (copyBtn) copyBtn.disabled = true;
-    hint.textContent = "Queueing the pose workflow in ComfyUI...";
-    return;
-  }
-  if (poseWorkspaceState.templating) {
-    btn.disabled = true;
-    if (queueBtn) queueBtn.disabled = true;
-    if (copyBtn) {
-      copyBtn.disabled = true;
-      copyBtn.textContent = "Building template...";
-    }
-    hint.textContent = "Building the pose workflow template...";
-    return;
-  }
-  if (sourceKind === "selected_image") {
-    ready = Boolean(getSelectedGalleryImageEntry());
-    if (!ready) hintText = "Select a History image to send it into ComfyUI.";
-  } else if (sourceKind === "upload_image") {
-    ready = Boolean(poseWorkspaceState.uploadedImage && poseWorkspaceState.uploadedImage.data);
-    if (!ready) hintText = "Choose an image file for the pose workflow.";
-  } else if (sourceKind === "video_frame") {
-    ready = Boolean(poseWorkspaceState.videoFrame && poseWorkspaceState.videoFrame.data);
-    if (!ready) hintText = "Load a video and capture a frame before sending it.";
-  } else if (sourceKind === "webcam_frame") {
-    ready = Boolean(poseWorkspaceState.webcamFrame && poseWorkspaceState.webcamFrame.data);
-    if (!ready) hintText = "Start the camera and capture a frame before sending it.";
-  }
-  btn.disabled = !ready;
-  btn.textContent = "Stage source";
-  if (queueBtn) {
-    queueBtn.disabled = !ready || !toolCaps.queueSupported;
-    queueBtn.textContent = "Queue workflow";
-    queueBtn.title = toolCaps.queueSupported ? "Upload and queue this pose workflow in ComfyUI" : toolCaps.note;
-  }
-  if (copyBtn) {
-    copyBtn.disabled = !ready;
-    copyBtn.textContent = "Copy template JSON";
-  }
-  hint.textContent = hintText;
-}
-
-async function onPoseUploadChange(event) {
-  const file = event?.target?.files?.[0];
-  const nameEl = document.getElementById("poseUploadName");
-  if (!file) {
-    if (nameEl) nameEl.textContent = "No upload yet";
-    poseWorkspaceState.uploadedImage = null;
-    syncPoseWorkspace();
-    return;
-  }
-  try {
-    poseWorkspaceState.uploadedImage = await buildPosePayloadFromFile(file);
-    if (nameEl) nameEl.textContent = file.name;
-    syncPoseWorkspace();
-    showStatus("Pose source image loaded.", "success", 2200);
-  } catch (e) {
-    poseWorkspaceState.uploadedImage = null;
-    if (nameEl) nameEl.textContent = "Upload failed";
-    showStatus(`Could not load the pose image: ${e.message}`, "error", 8000);
-    syncPoseWorkspace();
-  }
-}
-
-async function onPoseVideoInputChange(event) {
-  const file = event?.target?.files?.[0];
-  const nameEl = document.getElementById("poseVideoName");
-  const preview = document.getElementById("poseVideoPreview");
-  const captureBtn = document.getElementById("poseVideoCaptureBtn");
-  clearPoseVideoObjectUrl();
-  poseWorkspaceState.videoFrame = null;
-  if (!file || !preview) {
-    if (nameEl) nameEl.textContent = "No video loaded";
-    if (preview) {
-      preview.pause();
-      preview.removeAttribute("src");
-      preview.style.display = "none";
-    }
-    if (captureBtn) captureBtn.disabled = true;
-    syncPoseWorkspace();
-    return;
-  }
-  poseWorkspaceState.videoObjectUrl = URL.createObjectURL(file);
-  preview.src = poseWorkspaceState.videoObjectUrl;
-  preview.style.display = "block";
-  if (nameEl) nameEl.textContent = file.name;
-  if (captureBtn) captureBtn.disabled = true;
-  preview.onloadeddata = () => {
-    if (captureBtn) captureBtn.disabled = false;
-  };
-  try {
-    preview.currentTime = 0;
-  } catch (e) {}
-  syncPoseWorkspace();
-}
-
-function capturePoseVideoFrame() {
-  const preview = document.getElementById("poseVideoPreview");
-  const nameEl = document.getElementById("poseVideoName");
-  if (!preview || !preview.videoWidth || !preview.videoHeight) {
-    showStatus("Load a video before capturing a frame.", "error", 6000);
-    return;
-  }
-  const canvas = document.createElement("canvas");
-  canvas.width = preview.videoWidth;
-  canvas.height = preview.videoHeight;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(preview, 0, 0, canvas.width, canvas.height);
-  poseWorkspaceState.videoFrame = buildPosePayloadFromCanvas(canvas, `video-frame-${Date.now()}.png`);
-  if (nameEl) {
-    const dims = formatUpscaleDimensionPair(canvas.width, canvas.height);
-    nameEl.textContent = dims ? `Captured frame ${dims}` : "Captured frame";
-  }
-  syncPoseWorkspace();
-  showStatus("Video frame captured for Pose mode.", "success", 2200);
-}
-
-async function startPoseWebcam() {
-  const preview = document.getElementById("poseWebcamPreview");
-  const nameEl = document.getElementById("poseWebcamName");
-  const startBtn = document.getElementById("poseWebcamStartBtn");
-  const captureBtn = document.getElementById("poseWebcamCaptureBtn");
-  const stopBtn = document.getElementById("poseWebcamStopBtn");
-  if (!preview || poseWorkspaceState.webcamStream) return;
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    showStatus("This browser does not support webcam capture.", "error", 9000);
-    return;
-  }
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    poseWorkspaceState.webcamStream = stream;
-    preview.srcObject = stream;
-    preview.style.display = "block";
-    if (startBtn) startBtn.disabled = true;
-    if (captureBtn) captureBtn.disabled = false;
-    if (stopBtn) stopBtn.disabled = false;
-    if (nameEl) nameEl.textContent = "Camera live";
-    try {
-      await preview.play();
-    } catch (e) {}
-    syncPoseSendState();
-  } catch (e) {
-    showStatus(`Could not start the camera: ${e.message}`, "error", 9000);
-  }
-}
-
-function stopPoseWebcam(silent = false) {
-  const preview = document.getElementById("poseWebcamPreview");
-  const nameEl = document.getElementById("poseWebcamName");
-  const startBtn = document.getElementById("poseWebcamStartBtn");
-  const captureBtn = document.getElementById("poseWebcamCaptureBtn");
-  const stopBtn = document.getElementById("poseWebcamStopBtn");
-  if (poseWorkspaceState.webcamStream) {
-    poseWorkspaceState.webcamStream.getTracks().forEach(track => {
-      try {
-        track.stop();
-      } catch (e) {}
-    });
-    poseWorkspaceState.webcamStream = null;
-  }
-  if (preview) {
-    try { preview.pause(); } catch (e) {}
-    preview.srcObject = null;
-    preview.style.display = "none";
-  }
-  if (startBtn) startBtn.disabled = false;
-  if (captureBtn) captureBtn.disabled = true;
-  if (stopBtn) stopBtn.disabled = true;
-  if (nameEl) nameEl.textContent = poseWorkspaceState.webcamFrame ? "Captured frame ready" : "Camera is off";
-  if (!silent) {
-    syncPoseSendState();
-  }
-}
-
-function capturePoseWebcamFrame() {
-  const preview = document.getElementById("poseWebcamPreview");
-  const nameEl = document.getElementById("poseWebcamName");
-  if (!preview || !preview.videoWidth || !preview.videoHeight) {
-    showStatus("Start the camera before capturing a frame.", "error", 6000);
-    return;
-  }
-  const canvas = document.createElement("canvas");
-  canvas.width = preview.videoWidth;
-  canvas.height = preview.videoHeight;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(preview, 0, 0, canvas.width, canvas.height);
-  poseWorkspaceState.webcamFrame = buildPosePayloadFromCanvas(canvas, `webcam-frame-${Date.now()}.png`);
-  if (nameEl) {
-    const dims = formatUpscaleDimensionPair(canvas.width, canvas.height);
-    nameEl.textContent = dims ? `Captured frame ${dims}` : "Captured frame";
-  }
-  syncPoseWorkspace();
-  showStatus("Webcam frame captured for Pose mode.", "success", 2200);
-}
-
-async function checkPoseComfyUi() {
-  const btn = document.getElementById("poseComfyCheckBtn");
-  const url = getPoseComfyUrl();
-  if (!btn || poseWorkspaceState.checking) return;
-  poseWorkspaceState.checking = true;
-  btn.disabled = true;
-  setPoseComfyStatus("Checking...", "loading", "Trying to reach the ComfyUI server");
-  try {
-    const response = await fetch("/api/comfyui/status", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        server_url: url,
-        remember_url: true,
-      }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.ok) {
-      throw new Error(data.error || `ComfyUI check failed (${response.status})`);
-    }
-    if (data.server_url) {
-      const input = document.getElementById("poseComfyUrlInput");
-      if (input) input.value = data.server_url;
-      rememberPoseComfyUrl(data.server_url);
-    }
-    const deviceLabel = data.devices === 1 ? "1 device" : `${data.devices || 0} devices`;
-    setPoseComfyStatus("Connected", "success", `${data.server_url} - ${deviceLabel}`);
-    showStatus("ComfyUI connection looks good.", "success", 2200);
-  } catch (e) {
-    setPoseComfyStatus("Unavailable", "error", e.message || "ComfyUI check failed");
-    showStatus(`ComfyUI check failed: ${e.message}`, "error", 9000);
-  } finally {
-    poseWorkspaceState.checking = false;
-    btn.disabled = false;
-  }
-}
-
-async function resolvePoseSourcePayload() {
-  const sourceKind = getPoseSourceKind();
-  if (sourceKind === "selected_image") {
-    const entry = getSelectedGalleryImageEntry();
-    if (!entry) throw new Error("Select a History image first.");
-    const payload = await ensureImagePayload(entry.image);
-    return {
-      payload,
-      filename: (entry.params?.gen_filename || `history-image-${Date.now()}.png`).trim(),
-    };
-  }
-  const payload = getPoseCustomSourcePayload(sourceKind);
-  if (!payload || !payload.data) {
-    if (sourceKind === "upload_image") throw new Error("Choose an image to use as the pose source.");
-    if (sourceKind === "video_frame") throw new Error("Capture a video frame first.");
-    if (sourceKind === "webcam_frame") throw new Error("Capture a webcam frame first.");
-    throw new Error("Pose source unavailable.");
-  }
-  return {
-    payload,
-    filename: (payload.name || `${sourceKind}-${Date.now()}.png`).trim(),
-  };
-}
-
-async function buildPoseWorkflowRequestBody() {
-  const { payload, filename } = await resolvePoseSourcePayload();
-  return {
-    server_url: getPoseComfyUrl(),
-    remember_url: true,
-    pose_tool: document.getElementById("poseToolSelect")?.value || "openpose_editor",
-    source_kind: getPoseSourceKind(),
-    data: payload.data,
-    mime_type: payload.mime_type || "image/png",
-    filename,
-  };
-}
-
-async function fetchPoseWorkflowTemplate(options = {}) {
-  const body = await buildPoseWorkflowRequestBody();
-  body.upload_first = options.uploadFirst !== false;
-  const response = await fetch("/api/comfyui/workflow-template", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data.ok) {
-    throw new Error(data.error || `Workflow template failed (${response.status})`);
-  }
-  return data;
-}
-
-async function sendPoseToComfyUi() {
-  if (poseWorkspaceState.sending) return;
-  const toolMeta = getPoseToolMeta(document.getElementById("poseToolSelect")?.value);
-  try {
-    poseWorkspaceState.sending = true;
-    syncPoseSendState();
-    const body = await buildPoseWorkflowRequestBody();
-    const response = await fetch("/api/comfyui/send-pose", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.ok) {
-      throw new Error(data.error || `ComfyUI upload failed (${response.status})`);
-    }
-    if (data.server_url) {
-      const input = document.getElementById("poseComfyUrlInput");
-      if (input) input.value = data.server_url;
-      rememberPoseComfyUrl(data.server_url);
-      setPoseComfyStatus("Connected", "success", data.server_url);
-    }
-    const upload = data.upload || {};
-    const dims = formatUpscaleDimensionPair(upload.width || 0, upload.height || 0);
-    const hint = document.getElementById("poseSendHint");
-    if (hint) {
-      hint.textContent = `Staged ${toolMeta.label} source in ComfyUI: ${(upload.subfolder || "input")}/${upload.name || body.filename}${dims ? ` (${dims})` : ""}`;
-    }
-    showStatus("Pose source sent to ComfyUI.", "success", 2600);
-  } catch (e) {
-    showStatus(`Pose send failed: ${e.message}`, "error", 9000);
-  } finally {
-    poseWorkspaceState.sending = false;
-    syncPoseSendState();
-  }
-}
-
-async function copyPoseWorkflowTemplate() {
-  if (poseWorkspaceState.templating) return;
-  try {
-    poseWorkspaceState.templating = true;
-    syncPoseSendState();
-    let data;
-    try {
-      data = await fetchPoseWorkflowTemplate({ uploadFirst: true });
-    } catch (e) {
-      data = await fetchPoseWorkflowTemplate({ uploadFirst: false });
-    }
-    if (data.server_url) {
-      const input = document.getElementById("poseComfyUrlInput");
-      if (input) input.value = data.server_url;
-      rememberPoseComfyUrl(data.server_url);
-    }
-    const template = data.template || {};
-    const jsonText = JSON.stringify(template.prompt || {}, null, 2);
-    await navigator.clipboard.writeText(jsonText);
-    const note = document.getElementById("poseTemplateNote");
-    if (note) note.textContent = template.notes || note.textContent;
-    showStatus("Pose workflow template copied to clipboard.", "success", 2600);
-  } catch (e) {
-    showStatus(`Template copy failed: ${e.message}`, "error", 9000);
-  } finally {
-    poseWorkspaceState.templating = false;
-    syncPoseSendState();
-  }
-}
-
-async function queuePoseWorkflow() {
-  if (poseWorkspaceState.queueing) return;
-  const toolMeta = getPoseToolMeta(document.getElementById("poseToolSelect")?.value);
-  try {
-    poseWorkspaceState.queueing = true;
-    syncPoseSendState();
-    const body = await buildPoseWorkflowRequestBody();
-    const response = await fetch("/api/comfyui/queue-pose-workflow", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.ok) {
-      const template = data.template || {};
-      if (template.notes) {
-        const note = document.getElementById("poseTemplateNote");
-        if (note) note.textContent = template.notes;
-      }
-      throw new Error(data.error || `Workflow queue failed (${response.status})`);
-    }
-    if (data.server_url) {
-      const input = document.getElementById("poseComfyUrlInput");
-      if (input) input.value = data.server_url;
-      rememberPoseComfyUrl(data.server_url);
-      setPoseComfyStatus("Connected", "success", data.server_url);
-    }
-    const promptId = data.queue?.prompt_id || "";
-    const upload = data.upload || {};
-    const hint = document.getElementById("poseSendHint");
-    if (hint) {
-      hint.textContent = `Queued ${toolMeta.label} in ComfyUI${promptId ? ` - prompt ${promptId}` : ""}${upload.name ? ` from ${upload.name}` : ""}.`;
-    }
-    const note = document.getElementById("poseTemplateNote");
-    if (note && data.template?.notes) note.textContent = data.template.notes;
-    showStatus("Pose workflow queued in ComfyUI.", "success", 2600);
-  } catch (e) {
-    showStatus(`Queue failed: ${e.message}`, "error", 9000);
-  } finally {
-    poseWorkspaceState.queueing = false;
-    syncPoseSendState();
-  }
-}
-
-async function handlePoseEmbedExport(payload) {
-  const action = String(payload?.action || "save").trim().toLowerCase();
-  if (action === "add_ref") {
-    const ok = await addRefImageFromPayload({
-      imageData: payload?.imageData || payload?.data || "",
-      mimeType: payload?.mimeType || payload?.mime_type || "image/png",
-      name: payload?.filename || payload?.name || "pose-reference.png",
-    });
-    if (ok) showStatus("Pose output added to the reference strip.", "success", 2600);
-    return;
-  }
-  const result = await saveEmbeddedPoseOutput(payload || {});
-  showStatus(`Pose output saved: ${result.filename}`, "success", 3200);
-}
-
-async function onPoseEmbedMessage(event) {
-  if (event.origin !== window.location.origin) return;
-  const data = event.data || {};
-  if (data.channel !== "ai-api-studio-pose-embed") return;
-
-  const type = String(data.type || "").trim();
-  if (type === "tool-ready") {
-    poseWorkspaceState.embedReady = true;
-    poseWorkspaceState.embedTool = String(data.tool || "").trim();
-    syncPoseWorkspace();
-    return;
-  }
-
-  if (type === "request-source") {
-    syncPoseWorkspace();
-    return;
-  }
-
-  if (type === "pose-export") {
-    try {
-      await handlePoseEmbedExport(data.payload || {});
-    } catch (error) {
-      showStatus(`Pose export failed: ${error.message}`, "error", 9000);
-    }
-    return;
-  }
-}
-
-function initPoseWorkspace() {
-  const urlInput = document.getElementById("poseComfyUrlInput");
-  const toolSelect = document.getElementById("poseToolSelect");
-  const sourceSelect = document.getElementById("poseSourceSelect");
-  const frame = document.getElementById("poseToolEmbedFrame");
-  const storedUrl = (() => {
-    try { return localStorage.getItem("nb_pose_comfy_url") || ""; } catch (e) { return ""; }
-  })();
-  if (urlInput) {
-    if (storedUrl) urlInput.value = storedUrl;
-    urlInput.addEventListener("change", () => rememberPoseComfyUrl(urlInput.value));
-  }
-  if (toolSelect) {
-    try {
-      const storedTool = localStorage.getItem("nb_pose_tool") || "";
-      if (storedTool && POSE_TOOL_LIBRARY[storedTool]) {
-        toolSelect.value = storedTool;
-      }
-    } catch (e) {}
-  }
-  if (sourceSelect) {
-    try {
-      const storedSource = localStorage.getItem("nb_pose_source") || "";
-      if (storedSource && POSE_SOURCE_LABELS[storedSource]) {
-        sourceSelect.value = storedSource;
-      }
-    } catch (e) {}
-  }
-  if (frame) {
-    frame.addEventListener("load", () => {
-      poseWorkspaceState.embedReady = false;
-    });
-  }
-  window.addEventListener("message", onPoseEmbedMessage);
-  setPoseComfyStatus("Not checked", "idle", "Checks the ComfyUI server status");
-  syncPoseToolUi({ persist: false });
-  syncPoseSourceUi({ persist: false });
-}
-
-window.addEventListener("beforeunload", () => {
-  clearPoseVideoObjectUrl();
-  stopPoseWebcam(true);
-});
-
 function syncGallerySelectionUi() {
   const selectBtn = document.getElementById("gallerySelectModeBtn");
   const deleteBtn = document.getElementById("galleryBulkDeleteBtn");
@@ -8413,7 +7429,6 @@ function renderGalleryEntries() {
 
     window.requestAnimationFrame(updateGalleryRailLayout);
     syncUpscaleControlsState();
-    syncPoseWorkspace();
     return;
   }
 
@@ -8422,7 +7437,6 @@ function renderGalleryEntries() {
     emptyState.style.display = "none";
     viewer.style.display = "none";
     syncUpscaleControlsState();
-    syncPoseWorkspace();
     return;
   }
 
@@ -8482,7 +7496,6 @@ function renderGalleryEntries() {
   });
   window.requestAnimationFrame(updateGalleryRailLayout);
   syncUpscaleControlsState();
-  syncPoseWorkspace();
 }
 
 function readGalleryFiltersFromUi() {
@@ -8757,11 +7770,11 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
     image.onclick = () => openLightbox(img, idx, params);
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Icone hover (colonna top-right) Ã¢â‚¬â€ SVG icons Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Icone hover (colonna top-right) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â SVG icons ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   const actions = document.createElement("div");
   actions.className = options.featured ? "img-actions img-actions-featured" : "img-actions img-actions-rail";
 
-  // Ã¢â„¢Â¡ Love (favorite)
+  // ÃƒÂ¢Ã¢â€žÂ¢Ã‚Â¡ Love (favorite)
   const favBtn = makeActionBtn(SVG_HEART_EMPTY, "Love this image");
   favBtn.onclick = (e) => {
     e.stopPropagation();
@@ -8769,7 +7782,7 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
     publishImage(img, idx, params, favBtn);
   };
 
-  // Ã¢â€ â€œ Download
+  // ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“ Download
   const dlBtn = makeActionBtn(SVG_DOWNLOAD, "Download");
   dlBtn.onclick = async (e) => { e.stopPropagation(); await downloadImage(img, idx); };
 
@@ -8800,7 +7813,7 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
   const folderBtn = makeActionBtn(SVG_FOLDER_OPEN, "Show file in folder");
   folderBtn.onclick = (e) => { e.stopPropagation(); void openGalleryEntryFolder(entry); };
 
-  // Ã°Å¸â€”â€˜ Delete generation from disk
+  // ÃƒÂ°Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬Ëœ Delete generation from disk
   const delBtn = makeActionBtn(SVG_TRASH, "Delete");
   delBtn.onclick = (e) => { e.stopPropagation(); void deleteGalleryEntry(entry, { confirm: true }); };
 
@@ -8821,7 +7834,7 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
     card.append(selectToggle);
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Badge modello bottom-left Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Badge modello bottom-left ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   const badges = document.createElement("div");
   badges.className = "img-card-badges";
   const badgeValues = options.featured
@@ -8962,7 +7975,7 @@ function buildImgCard(img, idx, params, badgeLabel, options = {}) {
   return card;
 }
 
-/* Ã¢â€â‚¬Ã¢â€â‚¬ SVG Icon Library (Lucide-style, 15Ãƒâ€”15) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
+/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ SVG Icon Library (Lucide-style, 15ÃƒÆ’Ã¢â‚¬â€15) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
 const FEATURED_IMAGE_ZOOM_MIN = 1;
 const FEATURED_IMAGE_ZOOM_MAX = 5;
 const FEATURED_IMAGE_ZOOM_STEP = 0.18;
@@ -9318,19 +8331,24 @@ async function restoreRefArchive(refArchive) {
     if (!item || (!item.url && !item.original_url && !item.masked_url)) continue;
     const inferredArchive = inferArchiveMetaFromReferenceUrls(item);
     const sourceUrl = item.masked_url || item.url || item.original_url;
-    const payload = await resolveRefImageSource(
-      sourceUrl,
-      item.name || item.filename || "reference"
-    );
+    let payload = null;
+    try {
+      payload = await fetchArchivedReferencePayload(item, item.name || item.filename || "reference");
+    } catch (error) {
+      payload = await resolveRefImageSource(
+        sourceUrl,
+        item.name || item.filename || "reference"
+      );
+    }
     refImages.push({
       ...payload,
-      previewUrl: buildInlineImagePreviewUrl(payload.mime_type, payload.data) || sourceUrl,
-      archive_date: item.date || inferredArchive.archive_date || "",
-      archive_filename: item.filename || inferredArchive.archive_filename || "",
-      original_url: item.original_url || "",
-      masked_url: item.masked_url || "",
-      mask_url: item.mask_url || "",
-      has_mask: Boolean(item.has_mask),
+      previewUrl: payload.previewUrl || buildInlineImagePreviewUrl(payload.mime_type, payload.data) || sourceUrl,
+      archive_date: payload.archive_date || item.date || inferredArchive.archive_date || "",
+      archive_filename: payload.archive_filename || item.filename || inferredArchive.archive_filename || "",
+      original_url: payload.original_url || item.original_url || "",
+      masked_url: payload.masked_url || item.masked_url || "",
+      mask_url: payload.mask_url || item.mask_url || "",
+      has_mask: payload.has_mask != null ? Boolean(payload.has_mask) : Boolean(item.has_mask),
     });
   }
   renderRefStrip();
@@ -9341,18 +8359,23 @@ async function restoreVideoSourceArchive(sourceArchive) {
   clearVideoSource();
   const item = (sourceArchive && typeof sourceArchive === "object") ? sourceArchive : null;
   if (!item || (!item.url && !item.original_url && !item.masked_url)) return;
-  const payload = await resolveRefImageSource(
-    item.masked_url || item.url || item.original_url,
-    item.name || item.filename || "video-source.png"
-  );
+  let payload = null;
+  try {
+    payload = await fetchArchivedReferencePayload(item, item.name || item.filename || "video-source.png");
+  } catch (error) {
+    payload = await resolveRefImageSource(
+      item.masked_url || item.url || item.original_url,
+      item.name || item.filename || "video-source.png"
+    );
+  }
   setVideoSourceImage({
     ...payload,
-    archive_date: item.date || "",
-    archive_filename: item.filename || "",
-    original_url: item.original_url || "",
-    masked_url: item.masked_url || "",
-    mask_url: item.mask_url || "",
-    has_mask: Boolean(item.has_mask),
+    archive_date: payload.archive_date || item.date || "",
+    archive_filename: payload.archive_filename || item.filename || "",
+    original_url: payload.original_url || item.original_url || "",
+    masked_url: payload.masked_url || item.masked_url || "",
+    mask_url: payload.mask_url || item.mask_url || "",
+    has_mask: payload.has_mask != null ? Boolean(payload.has_mask) : Boolean(item.has_mask),
   });
 }
 
@@ -9375,18 +8398,26 @@ async function restoreVideoRefArchive(refArchive) {
   const items = Array.isArray(refArchive) ? refArchive : [];
   for (const item of items) {
     if (!item || (!item.url && !item.original_url && !item.masked_url)) continue;
-    const payload = await resolveRefImageSource(
-      item.masked_url || item.url || item.original_url,
-      item.name || item.filename || getVideoReferencePayloadName(videoReferenceImages.length + 1)
-    );
+    let payload = null;
+    try {
+      payload = await fetchArchivedReferencePayload(
+        item,
+        item.name || item.filename || getVideoReferencePayloadName(videoReferenceImages.length + 1)
+      );
+    } catch (error) {
+      payload = await resolveRefImageSource(
+        item.masked_url || item.url || item.original_url,
+        item.name || item.filename || getVideoReferencePayloadName(videoReferenceImages.length + 1)
+      );
+    }
     addVideoReferenceImage({
       ...payload,
-      archive_date: item.date || "",
-      archive_filename: item.filename || "",
-      original_url: item.original_url || "",
-      masked_url: item.masked_url || "",
-      mask_url: item.mask_url || "",
-      has_mask: Boolean(item.has_mask),
+      archive_date: payload.archive_date || item.date || "",
+      archive_filename: payload.archive_filename || item.filename || "",
+      original_url: payload.original_url || item.original_url || "",
+      masked_url: payload.masked_url || item.masked_url || "",
+      mask_url: payload.mask_url || item.mask_url || "",
+      has_mask: payload.has_mask != null ? Boolean(payload.has_mask) : Boolean(item.has_mask),
     });
   }
 }
@@ -9553,6 +8584,10 @@ async function applyReusableVideoParams(params, successMessage) {
   if (safetyEl && params.videoSafetyChecker != null) {
     safetyEl.checked = Boolean(params.videoSafetyChecker);
   }
+  const outputSafetyEl = document.getElementById("videoOutputSafetyCheckerToggle");
+  if (outputSafetyEl && params.videoOutputSafetyChecker != null) {
+    outputSafetyEl.checked = Boolean(params.videoOutputSafetyChecker);
+  }
   if (params.videoUpscaleMode) {
     const el = document.getElementById("videoUpscaleModeSelect");
     if (el) el.value = params.videoUpscaleMode;
@@ -9718,6 +8753,7 @@ function showGeneratorInfoModal(params) {
   pushRow("Resolution", params.resolution || "");
   pushRow("Video mode", params.videoInputMode || "");
   pushRow("Video safety", typeof params.videoSafetyChecker === "boolean" ? (params.videoSafetyChecker ? "On" : "Off") : "");
+  pushRow("Video output safety", typeof params.videoOutputSafetyChecker === "boolean" ? (params.videoOutputSafetyChecker ? "On" : "Off") : "");
   pushRow("Upscale mode", params.videoUpscaleMode || params.upscaleMode || "");
   pushRow("Upscale factor", params.videoUpscaleFactor != null ? params.videoUpscaleFactor : (params.upscaleFactor != null ? params.upscaleFactor : ""));
   pushRow("Upscale target", params.videoUpscaleTargetResolution || params.upscaleTargetResolution || "");
@@ -9737,7 +8773,7 @@ function showGeneratorInfoModal(params) {
     <div class="modal-box gallery-info-modal-box" role="dialog" aria-modal="true" aria-label="Prompt info">
       <div class="modal-header">
         <h3>Prompt Info</h3>
-        <button class="modal-close-btn" type="button" aria-label="Close">×</button>
+        <button class="modal-close-btn" type="button" aria-label="Close">Ã—</button>
       </div>
       <div class="gallery-info-modal-body">
         <div class="gallery-info-prompt-block">
@@ -9904,7 +8940,6 @@ document.addEventListener("DOMContentLoaded", () => {
       layout.classList.add("sidebar-collapsed");
     }
   } catch (e) {}
-  initPoseWorkspace();
 });
 
 // ============================================================
@@ -10075,7 +9110,7 @@ async function ensureImagePayload(img) {
 }
 
 // ============================================================
-// ELEMENTS Ã¢â‚¬â€ asset library
+// ELEMENTS ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â asset library
 // ============================================================
 let elCurrentCat   = "all";
 let elCurrentPage  = 1;
@@ -10092,10 +9127,10 @@ let elementsTarget = "refs";
 // Character metadata filters
 const EL_FILTER_DEFS = [
   { group: "gender", label: "Gender", options: [
-    { v: "female",      l: "Ã¢â„¢â‚¬ Female"     },
-    { v: "male",        l: "Ã¢â„¢â€š Male"       },
-    { v: "non-binary",  l: "Ã¢Å â€¢ Non-binary" },
-    { v: "androgynous", l: "Ã¢â€”Ë† Androg."    },
+    { v: "female",      l: "ÃƒÂ¢Ã¢â€žÂ¢Ã¢â€šÂ¬ Female"     },
+    { v: "male",        l: "ÃƒÂ¢Ã¢â€žÂ¢Ã¢â‚¬Å¡ Male"       },
+    { v: "non-binary",  l: "ÃƒÂ¢Ã…Â Ã¢â‚¬Â¢ Non-binary" },
+    { v: "androgynous", l: "ÃƒÂ¢Ã¢â‚¬â€Ã‹â€  Androg."    },
   ]},
   { group: "age_group", label: "Age", options: [
     { v: "teen",        l: "Teen"        },
@@ -10149,7 +9184,7 @@ const EL_FILTER_DEFS = [
     { v: "silver",          l: "Silver",       dot: "#ccc"    },
     { v: "white",           l: "White",        dot: "#f0f0f0" },
     { v: "bald",            l: "Bald",         dot: "#e0c8b0" },
-    { v: "colored",         l: "Ã¢Å“Â¦ Colored",    dot: "linear-gradient(135deg,#f0f,#0ff)" },
+    { v: "colored",         l: "ÃƒÂ¢Ã…â€œÃ‚Â¦ Colored",    dot: "linear-gradient(135deg,#f0f,#0ff)" },
   ]},
   { group: "hair_style", label: "Acconciatura", options: [
     { v: "bald",           l: "Bald/Shaved"  },
@@ -10174,7 +9209,7 @@ const EL_FILTER_DEFS = [
     { v: "ponytail",       l: "Ponytail"     },
     { v: "updo",           l: "Updo"         },
     { v: "tied_back",      l: "Tied Back"    },
-    { v: "fantasy_styled", l: "Ã¢Å“Â¦ Fantasy"    },
+    { v: "fantasy_styled", l: "ÃƒÂ¢Ã…â€œÃ‚Â¦ Fantasy"    },
   ]},
   { group: "body_type", label: "Body Type", options: [
     { v: "slim",         l: "Slim"         },
@@ -10265,7 +9300,7 @@ function renderElFiltersBar() {
     clearRow.className = "el-filter-clear-row";
     const clearBtn = document.createElement("button");
     clearBtn.className = "el-filter-clear-btn";
-    clearBtn.textContent = "Ãƒâ€” Cancella filtri";
+    clearBtn.textContent = "ÃƒÆ’Ã¢â‚¬â€ Cancella filtri";
     clearBtn.onclick = elClearFilters;
     clearRow.appendChild(clearBtn);
     bar.appendChild(clearRow);
@@ -11139,7 +10174,7 @@ if (!window.__generatorRehydrateBound) {
   });
 }
 
-/* Ã¢â€â‚¬Ã¢â€â‚¬ Theme toggle Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ */
+/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Theme toggle ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
 function toggleTheme() {
   const html = document.documentElement;
   const isLight = html.getAttribute('data-theme') === 'light';
@@ -11158,6 +10193,7 @@ updateThemeBtn();
 </script>
 </body>
 </html>
+
 
 
 

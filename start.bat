@@ -1,7 +1,7 @@
 @echo off
 title AI API Studio
 echo.
-echo   AI API Studio 1.2 beta
+echo   AI API Studio 1.3
 echo   ============================
 echo.
 

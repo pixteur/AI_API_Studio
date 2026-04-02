@@ -16,8 +16,6 @@ Image_assets/reference_masks/*
 !Image_assets/reference_masks/.gitkeep
 Image_assets/reference_renders/*
 !Image_assets/reference_renders/.gitkeep
-Image_assets/pose_outputs/*
-!Image_assets/pose_outputs/.gitkeep
 Image_assets/videos/*
 !Image_assets/videos/.gitkeep
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 AI API Studio (nbs.py)
 AI image generator powered by Google Gemini
@@ -6,14 +6,14 @@ Run: python nbs.py
 """
 
 # ---------------------------------------------------------------------------
-# Bootstrap â€” auto-install missing dependencies on first run
+# Bootstrap Ã¢â‚¬â€ auto-install missing dependencies on first run
 # ---------------------------------------------------------------------------
 import sys
 import subprocess
 import importlib.util
 import os as _os
 
-APP_VERSION = "1.2 beta"
+APP_VERSION = "1.3"
 
 def _bootstrap():
     deps = [
@@ -44,7 +44,7 @@ def _bootstrap():
 _bootstrap()
 
 # ---------------------------------------------------------------------------
-# End bootstrap â€” normal imports follow
+# End bootstrap Ã¢â‚¬â€ normal imports follow
 # ---------------------------------------------------------------------------
 import base64
 import glob
@@ -98,7 +98,6 @@ REFERENCE_ARCHIVE_DIR = os.path.join(IMAGE_ASSETS_DIR, "reference_archive")
 REFERENCE_ARCHIVE_INDEX_FILE = os.path.join(REFERENCE_ARCHIVE_DIR, "_index.json")
 REFERENCE_MASKS_DIR = os.path.join(IMAGE_ASSETS_DIR, "reference_masks")
 REFERENCE_RENDERS_DIR = os.path.join(IMAGE_ASSETS_DIR, "reference_renders")
-POSE_OUTPUTS_DIR = os.path.join(IMAGE_ASSETS_DIR, "pose_outputs")
 ASSET_UNCATEGORIZED_VALUE = "uncategorized"
 ASSET_UNCATEGORIZED_FOLDER = "uncategorized"
 ASSET_META_FIELDS = ("assetClient", "assetProject", "assetShot", "assetFilename")
@@ -205,6 +204,7 @@ SAFE_REQUEST_SETTING_KEYS = {
     "resolution",
     "negativePrompt",
     "videoSafetyChecker",
+    "videoOutputSafetyChecker",
     "videoUpscaleMode",
     "videoUpscaleFactor",
     "videoUpscaleTargetResolution",
@@ -451,7 +451,6 @@ def migrate_image_assets_layout() -> None:
         os.path.join(BASE_DIR, "reference_archive"): REFERENCE_ARCHIVE_DIR,
         os.path.join(BASE_DIR, "reference_masks"): REFERENCE_MASKS_DIR,
         os.path.join(BASE_DIR, "reference_renders"): REFERENCE_RENDERS_DIR,
-        os.path.join(BASE_DIR, "pose_outputs"): POSE_OUTPUTS_DIR,
     }
     for legacy_dir, target_dir in legacy_dirs.items():
         if os.path.realpath(legacy_dir) == os.path.realpath(target_dir):
@@ -474,7 +473,6 @@ DEFAULT_CONFIG = {
     "fal_api_key": "",
     "byteplus_api_key": "",
     "kling_api_token": "",
-    "comfyui_url": "http://127.0.0.1:8188",
     "asset_metadata_memory": {
         "clients": [ASSET_UNCATEGORIZED_VALUE],
         "projects": [ASSET_UNCATEGORIZED_VALUE],
@@ -839,9 +837,11 @@ FAL_KLING_O1_PRO_REF_I2V_ID     = "fal-ai/kling-video/o1/reference-to-video"
 FAL_KLING_O3_STD_T2V_ID         = "fal-ai/kling-video/o3/standard/text-to-video"
 FAL_KLING_O3_STD_I2V_ID         = "fal-ai/kling-video/o3/standard/image-to-video"
 FAL_KLING_O3_REF_I2V_ID         = "fal-ai/kling-video/o3/standard/reference-to-video"
+FAL_KLING_O3_STD_V2V_ID         = "fal-ai/kling-video/o3/standard/video-to-video/edit"
 FAL_KLING_O3_PRO_T2V_ID         = "fal-ai/kling-video/o3/pro/text-to-video"
 FAL_KLING_O3_PRO_I2V_ID         = "fal-ai/kling-video/o3/pro/image-to-video"
 FAL_KLING_O3_PRO_REF_I2V_ID     = "fal-ai/kling-video/o3/pro/reference-to-video"
+FAL_KLING_O3_PRO_V2V_ID         = "fal-ai/kling-video/o3/pro/video-to-video/edit"
 FAL_SEEDANCE_V1_LITE_T2V_ID     = "fal-ai/bytedance/seedance/v1/lite/text-to-video"
 FAL_SEEDANCE_V1_LITE_I2V_ID     = "fal-ai/bytedance/seedance/v1/lite/image-to-video"
 FAL_SEEDANCE_V1_LITE_REF_ID     = "fal-ai/bytedance/seedance/v1/lite/reference-to-video"
@@ -1151,6 +1151,9 @@ def normalize_video_image_payload(image: dict | None, default_name: str) -> dict
     }
     if payload["data"]:
         try:
+            clamped_b64, clamped_mime = clamp_image_b64_max_side(payload["data"], payload["mime_type"])
+            payload["data"] = clamped_b64
+            payload["mime_type"] = clamped_mime
             safe_b64, safe_mime = compress_video_input_image(payload["data"], payload["mime_type"])
             payload["data"] = safe_b64
             payload["mime_type"] = safe_mime
@@ -1261,6 +1264,7 @@ def normalize_video_request(body: dict | None) -> dict:
     payload["resolution"] = normalize_video_resolution(payload.get("resolution", "720p"))
     payload["negativePrompt"] = str(payload.get("negativePrompt", "") or "").strip()
     payload["videoSafetyChecker"] = bool(payload.get("videoSafetyChecker", True))
+    payload["videoOutputSafetyChecker"] = bool(payload.get("videoOutputSafetyChecker", True))
     payload["sourceImage"] = normalize_video_image_payload(payload.get("sourceImage"), "video-source.png") if supports_start_image else {}
     payload["sourceVideo"] = normalize_video_file_payload(payload.get("sourceVideo"), "video-source.mp4") if supports_source_video else {}
     payload["referenceImages"] = normalize_video_image_payloads(payload.get("referenceImages")) if supports_reference_images else []
@@ -1282,7 +1286,7 @@ def normalize_video_request(body: dict | None) -> dict:
     return payload
 
 # ---------------------------------------------------------------------------
-# Vocabolario canonico â€” caricato da talent_vocabulary.json se presente
+# Vocabolario canonico Ã¢â‚¬â€ caricato da talent_vocabulary.json se presente
 # Used to constrain Gemini to return normalized values only
 # ---------------------------------------------------------------------------
 _VOCAB_PATH = os.path.join(BASE_DIR, "talent_vocabulary.json")
@@ -1315,7 +1319,7 @@ else:
 
 def _build_vocab_prompt_block() -> str:
     """Costruisce il blocco testo del vocabolario da inserire nel prompt Gemini."""
-    lines = ["MANDATORY ALLOWED VALUES â€” use ONLY these exact strings, no variations:"]
+    lines = ["MANDATORY ALLOWED VALUES Ã¢â‚¬â€ use ONLY these exact strings, no variations:"]
     for field, values in TALENT_VOCABULARY.items():
         lines.append(f'  "{field}": {" | ".join(values)}')
     return "\n".join(lines)
@@ -1336,16 +1340,16 @@ VISION_MODELS_INFO = {
         "badge":         "Vis",
         "input_per_1m":  0.15,    # USD per 1M input tokens
         "output_per_1m": 0.60,    # USD per 1M output tokens
-        "free_tier":     "Preview â€” free *",
-        "note":          "Recommended for talent analysis â€” best JSON quality"
+        "free_tier":     "Preview Ã¢â‚¬â€ free *",
+        "note":          "Recommended for talent analysis Ã¢â‚¬â€ best JSON quality"
     },
     "gemini-3.1-flash-lite-preview": {
         "label":         "Gemini 3.1 Flash-Lite",
         "badge":         "Vis",
         "input_per_1m":  0.075,
         "output_per_1m": 0.30,
-        "free_tier":     "Preview â€” free *",
-        "note":          "Lite version â€” faster but less accurate on JSON"
+        "free_tier":     "Preview Ã¢â‚¬â€ free *",
+        "note":          "Lite version Ã¢â‚¬â€ faster but less accurate on JSON"
     },
     "gemini-2.0-flash-lite": {
         "label":         "Gemini 2.0 Flash-Lite",
@@ -1359,7 +1363,7 @@ VISION_MODELS_INFO = {
 
 
 # ---------------------------------------------------------------------------
-# Helpers â€” Talent individual JSON
+# Helpers Ã¢â‚¬â€ Talent individual JSON
 # Talent JSON files for "Model Managment" live in the json/ subfolder
 # ---------------------------------------------------------------------------
 TALENT_JSON_SUBDIR = "json"   # subfolder inside Model Managment/
@@ -1975,9 +1979,9 @@ def save_talent_json(json_path: str, data: dict):
 
 # ---------------------------------------------------------------------------
 # Helper - image normalization
-#   â€¢ Se larghezza > MAX_IMG_WIDTH: ridimensiona mantenendo aspect ratio
+#   Ã¢â‚¬Â¢ Se larghezza > MAX_IMG_WIDTH: ridimensiona mantenendo aspect ratio
 #   - Always converts to JPG with JPEG_QUALITY quality
-#   â€¢ Ritorna (b64_string, "image/jpeg", orig_w, orig_h, new_w, new_h)
+#   Ã¢â‚¬Â¢ Ritorna (b64_string, "image/jpeg", orig_w, orig_h, new_w, new_h)
 # ---------------------------------------------------------------------------
 MAX_IMG_WIDTH  = 4000   # px sulla dimensione orizzontale
 JPEG_QUALITY   = 90     # JPG output quality %
@@ -1988,6 +1992,7 @@ VIDEO_MAX_INPUT_PIXELS = 36_000_000
 VIDEO_MAX_INPUT_BYTES = 10 * 1024 * 1024
 VIDEO_TARGET_INPUT_BYTES = int(VIDEO_MAX_INPUT_BYTES * 0.92)
 REMOTE_REF_FETCH_MAX_BYTES = 30 * 1024 * 1024
+MAX_REFERENCE_IMAGE_PIXELS = 5504 * 3072
 
 
 def open_base64_image(image_b64: str) -> tuple[Image.Image, dict]:
@@ -2072,10 +2077,6 @@ def name_to_slug(name: str) -> str:
     slug = re.sub(r"[\s\-]+", "_", slug)
     return slug or "talent"
 
-
-def safe_output_stem(name: str, fallback: str = "pose_output") -> str:
-    stem = os.path.splitext(os.path.basename(str(name or "").strip()))[0]
-    return name_to_slug(stem or fallback)
 
 
 def get_next_image_number(folder_path: str, slug: str) -> int:
@@ -2250,19 +2251,111 @@ def is_reference_archive_entry_still_used(date_str: str, filename: str) -> bool:
     for root_dir in (GENERATIONS_DIR, VIDEOS_DIR):
         if not os.path.isdir(root_dir):
             continue
-        for item_date in os.listdir(root_dir):
-            day_path = os.path.join(root_dir, item_date)
-            if not os.path.isdir(day_path):
+        for meta_file in list_meta_files_recursive(root_dir):
+            try:
+                with open(meta_file, encoding="utf-8") as fh:
+                    meta = json.load(fh)
+            except Exception:
                 continue
-            for meta_file in glob.glob(os.path.join(day_path, "*.json")):
-                try:
-                    with open(meta_file, encoding="utf-8") as fh:
-                        meta = json.load(fh)
-                except Exception:
-                    continue
-                if meta_uses_reference_archive_entry(meta, safe_date, safe_filename):
-                    return True
+            if meta_uses_reference_archive_entry(meta, safe_date, safe_filename):
+                return True
     return False
+
+
+def normalize_reference_recovery_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def iter_candidate_reference_source_files() -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    search_roots = (
+        GENERATIONS_DIR,
+        VIDEOS_DIR,
+        os.path.join(ELEMENTS_DIR, "Model Managment"),
+        REFERENCE_ARCHIVE_DIR,
+    )
+    allowed_exts = {".png", ".jpg", ".jpeg", ".webp"}
+    for root_dir in search_roots:
+        if not os.path.isdir(root_dir):
+            continue
+        for current_root, _, filenames in os.walk(root_dir):
+            for name in filenames:
+                ext = os.path.splitext(name)[1].lower()
+                if ext not in allowed_exts:
+                    continue
+                path = os.path.join(current_root, name)
+                if path in seen:
+                    continue
+                seen.add(path)
+                candidates.append(path)
+    return candidates
+
+
+def find_reference_recovery_source(filename: str) -> tuple[str, str] | tuple[None, None]:
+    safe_filename = os.path.basename(str(filename or "").strip())
+    stem = os.path.splitext(safe_filename)[0]
+    stem = re.sub(r"^\d+_ref_\d+_[0-9a-f]{10}_", "", stem)
+    search_key = normalize_reference_recovery_key(stem)
+    if not search_key:
+        return None, None
+
+    best_path = None
+    best_name = None
+    best_score = -1
+    best_delta = 10**9
+    for path in iter_candidate_reference_source_files():
+        base_name = os.path.basename(path)
+        base_stem = os.path.splitext(base_name)[0]
+        candidate_key = normalize_reference_recovery_key(base_stem)
+        if not candidate_key:
+            continue
+        score = -1
+        if candidate_key == search_key:
+            score = 100
+        elif candidate_key.startswith(search_key) or search_key.startswith(candidate_key):
+            score = 80
+        elif search_key in candidate_key or candidate_key in search_key:
+            score = 60
+        if score < 0:
+            continue
+        delta = abs(len(candidate_key) - len(search_key))
+        if score < best_score:
+            continue
+        if score == best_score and delta >= best_delta:
+            continue
+        best_score = score
+        best_delta = delta
+        best_path = path
+        best_name = base_name
+    if best_path and best_score >= 60:
+        return best_path, best_name
+    return None, None
+
+
+def build_reference_payload_from_file(file_path: str, display_name: str = "") -> dict:
+    with open(file_path, "rb") as fh:
+        payload_b64 = base64.b64encode(fh.read()).decode("utf-8")
+    mime_type = "image/png"
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext in {".jpg", ".jpeg"}:
+        mime_type = "image/jpeg"
+    elif ext == ".webp":
+        mime_type = "image/webp"
+    return {
+        "ok": True,
+        "name": display_name or os.path.basename(file_path),
+        "mime_type": mime_type,
+        "data": payload_b64,
+        "original_data": payload_b64,
+        "original_mime_type": mime_type,
+        "mask_png_data": "",
+        "original_url": "",
+        "masked_url": "",
+        "mask_url": "",
+        "has_mask": False,
+        "recovered": True,
+    }
 
 
 def compute_reference_archive_file_hash(date_str: str, filename: str) -> str:
@@ -2426,6 +2519,12 @@ def normalize_ref_image_payloads(ref_images: list[dict] | None, max_ref: int) ->
             "data": data,
             "name": str(img.get("name", "") or ""),
         }
+        try:
+            clamped_b64, clamped_mime = clamp_image_b64_max_side(item["data"], item["mime_type"])
+            item["data"] = clamped_b64
+            item["mime_type"] = clamped_mime
+        except Exception:
+            pass
         extra_fields = (
             "original_data",
             "original_mime_type",
@@ -2767,223 +2866,6 @@ def fetch_remote_reference_image(url: str) -> tuple[str, str, str]:
     return base64.b64encode(raw).decode("utf-8"), content_type, filename
 
 
-def normalize_comfyui_url(value: str) -> str:
-    value = str(value or "").strip()
-    if not value:
-        raise ValueError("ComfyUI URL is empty.")
-    if not re.match(r"^https?://", value, re.IGNORECASE):
-        value = f"http://{value}"
-    parsed = urlparse(value)
-    if not parsed.scheme or not parsed.netloc:
-        raise ValueError("ComfyUI URL is invalid.")
-    return f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}"
-
-
-def comfyui_request_json(base_url: str, path: str, *, timeout: int = 20) -> dict:
-    response = requests.get(f"{base_url}{path}", timeout=timeout)
-    response.raise_for_status()
-    try:
-        return response.json()
-    except Exception as exc:
-        raise ValueError("ComfyUI did not return valid JSON.") from exc
-
-
-def encode_image_payload_as_png(image_b64: str, mime_type: str = "image/png") -> tuple[bytes, int, int]:
-    img, _ = open_base64_image(image_b64)
-    out = io.BytesIO()
-    img.save(out, format="PNG")
-    width, height = img.size
-    return out.getvalue(), width, height
-
-
-def upload_pose_image_to_comfyui(
-    base_url: str,
-    image_b64: str,
-    mime_type: str,
-    filename: str,
-    *,
-    subfolder: str = "ai_api_pose",
-    upload_type: str = "input",
-) -> dict:
-    png_bytes, width, height = encode_image_payload_as_png(image_b64, mime_type)
-    stem = os.path.splitext(filename or "")[0] or "pose-source"
-    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-._") or "pose-source"
-    upload_name = f"{safe_stem}-{uuid4().hex[:8]}.png"
-    files = {"image": (upload_name, png_bytes, "image/png")}
-    data = {"subfolder": subfolder, "overwrite": "false", "type": upload_type}
-    response = requests.post(
-        f"{base_url}/upload/image",
-        files=files,
-        data=data,
-        timeout=120,
-    )
-    response.raise_for_status()
-    try:
-        payload = response.json()
-    except Exception as exc:
-        raise ValueError("ComfyUI returned an invalid upload response.") from exc
-    payload.setdefault("name", upload_name)
-    payload.setdefault("subfolder", subfolder)
-    payload["width"] = width
-    payload["height"] = height
-    return payload
-
-
-def comfyui_annotated_upload_name(upload: dict) -> str:
-    name = str(upload.get("name") or "").strip()
-    subfolder = str(upload.get("subfolder") or "").strip().strip("/\\")
-    upload_type = str(upload.get("type") or "input").strip() or "input"
-    rel_path = f"{subfolder}/{name}" if subfolder else name
-    if upload_type in {"input", "output", "temp"}:
-        rel_path = f"{rel_path}[{upload_type}]"
-    return rel_path
-
-
-def comfyui_post_prompt(base_url: str, prompt: dict, *, client_id: str = "", extra_data: dict | None = None) -> dict:
-    body = {"prompt": prompt}
-    if client_id:
-        body["client_id"] = client_id
-    if extra_data:
-        body["extra_data"] = extra_data
-    response = requests.post(
-        f"{base_url}/prompt",
-        json=body,
-        timeout=120,
-    )
-    response.raise_for_status()
-    try:
-        return response.json()
-    except Exception as exc:
-        raise ValueError("ComfyUI returned an invalid prompt response.") from exc
-
-
-def build_action_director_seed_payload(image_b64: str, mime_type: str) -> str:
-    data_uri = f"data:{mime_type};base64,{image_b64}"
-    payload = {
-        "pose": [data_uri],
-        "depth": [],
-        "canny": [],
-        "normal": [],
-        "shaded": [],
-        "alpha": [],
-        "textured": [],
-    }
-    return json.dumps(payload, separators=(",", ":"))
-
-
-def build_pose_workflow_template(
-    pose_tool: str,
-    source_kind: str,
-    upload: dict | None = None,
-    *,
-    image_b64: str = "",
-    mime_type: str = "image/png",
-) -> dict:
-    tool = str(pose_tool or "openpose_editor").strip().lower()
-    source_kind = str(source_kind or "selected_image").strip().lower()
-    width = int(upload.get("width", 0) or 0) if isinstance(upload, dict) else 0
-    height = int(upload.get("height", 0) or 0) if isinstance(upload, dict) else 0
-    safe_width = max(512, width or 1024)
-    safe_height = max(512, height or 1024)
-    if tool == "openpose_editor":
-        image_name = comfyui_annotated_upload_name(upload or {
-            "name": "pose-source.png",
-            "subfolder": "ai_api_pose",
-            "type": "input",
-        })
-        prompt = {
-            "1": {
-                "class_type": "Nui.OpenPoseEditor",
-                "inputs": {"image": image_name},
-                "_meta": {"title": "OpenPose Editor"},
-            },
-            "2": {
-                "class_type": "PreviewImage",
-                "inputs": {"images": ["1", 0]},
-                "_meta": {"title": "Preview Pose"},
-            },
-        }
-        return {
-            "tool": tool,
-            "label": "OpenPose Editor",
-            "queue_supported": True,
-            "interactive_ui_required": True,
-            "notes": (
-                "This template is queueable, but the real value is opening the OpenPose Editor "
-                "node in ComfyUI and adjusting keypoints there. The uploaded image is already staged."
-            ),
-            "prompt": prompt,
-        }
-
-    if tool == "action_director":
-        client_data = (
-            build_action_director_seed_payload(image_b64, mime_type)
-            if image_b64
-            else "PASTE_YEDP_PAYLOAD_ID_OR_JSON_HERE"
-        )
-        prompt = {
-            "1": {
-                "class_type": "YedpActionDirector",
-                "inputs": {
-                    "width": safe_width,
-                    "height": safe_height,
-                    "frame_count": 1,
-                    "fps": 12,
-                    "client_data": client_data,
-                },
-                "_meta": {"title": "Yedp Action Director"},
-            },
-            "2": {
-                "class_type": "PreviewImage",
-                "inputs": {"images": ["1", 0]},
-                "_meta": {"title": "Preview Pose Batch"},
-            },
-        }
-        return {
-            "tool": tool,
-            "label": "Action Director",
-            "queue_supported": False,
-            "interactive_ui_required": True,
-            "notes": (
-                "Action Director is mainly an interactive 3D browser tool. This template seeds the node, "
-                "but the proper client_data payload is normally authored inside the Action Director UI."
-            ),
-            "prompt": prompt,
-        }
-
-    filename_placeholder = "capture.png"
-    if upload:
-        filename_placeholder = str(upload.get("name") or filename_placeholder).strip() or filename_placeholder
-    node_class = "YedpImageMoCap" if source_kind in {"selected_image", "upload_image", "webcam_frame"} else "YedpVideoMoCap"
-    prompt = {
-        "1": {
-            "class_type": node_class,
-            "inputs": {
-                "video_filename": filename_placeholder,
-                "smoothing": 0.5,
-                "include_dense_face": False,
-            },
-            "_meta": {"title": "Yedp MoCap"},
-        },
-        "2": {
-            "class_type": "PreviewImage",
-            "inputs": {"images": ["1", 1]},
-            "_meta": {"title": "Preview Rig Image"},
-        },
-    }
-    return {
-        "tool": tool,
-        "label": "Webcam / Video Mocap",
-        "queue_supported": False,
-        "interactive_ui_required": True,
-        "notes": (
-            "Yedp MoCap relies on its browser UI to produce pose JSON sidecar data. "
-            "This template shows the target node wiring, but the capture UI still needs to run in ComfyUI."
-        ),
-        "prompt": prompt,
-    }
-
-
 def build_byteplus_seedream_ref_inputs(ref_images: list[dict]) -> list[str]:
     items = []
     for img in ref_images:
@@ -3199,6 +3081,39 @@ def resize_image_b64_to_exact_png(image_b64: str, mime_type: str, target_width: 
     img.save(buf, **save_kwargs)
     buf.seek(0)
     return base64.b64encode(buf.read()).decode("utf-8"), "image/png"
+
+
+def clamp_image_b64_max_side(image_b64: str, mime_type: str, max_pixels: int = MAX_REFERENCE_IMAGE_PIXELS) -> tuple[str, str]:
+    """Resize an image proportionally when it exceeds the app's 4K-equivalent pixel budget."""
+    img, info = open_base64_image(image_b64)
+    width, height = img.size
+    if (width * height) <= max_pixels:
+        return image_b64, mime_type
+
+    new_width, new_height = constrain_image_to_max_pixels(width, height, max_pixels)
+    img = img.resize((new_width, new_height), Image.LANCZOS)
+
+    has_alpha = ("A" in img.getbands()) or (img.mode == "P" and "transparency" in img.info)
+    buf = io.BytesIO()
+    icc_profile = info.get("icc_profile")
+    if has_alpha:
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
+        save_kwargs = {"format": "PNG", "optimize": True}
+        if icc_profile:
+            save_kwargs["icc_profile"] = icc_profile
+        img.save(buf, **save_kwargs)
+        out_mime = "image/png"
+    else:
+        img = flatten_image_for_jpeg(img)
+        save_kwargs = {"format": "JPEG", "quality": JPEG_QUALITY, "optimize": True}
+        if icc_profile:
+            save_kwargs["icc_profile"] = icc_profile
+        img.save(buf, **save_kwargs)
+        out_mime = "image/jpeg"
+
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("utf-8"), out_mime
 
 
 def get_reference_mask_file_paths(date_str: str, filename: str) -> dict[str, str]:
@@ -3493,7 +3408,7 @@ def login_required(f):
 
 
 # ---------------------------------------------------------------------------
-# Routes â€” Auth
+# Routes Ã¢â‚¬â€ Auth
 # ---------------------------------------------------------------------------
 @app.route("/")
 def root():
@@ -3522,7 +3437,7 @@ def logout():
 
 
 # ---------------------------------------------------------------------------
-# Routes â€” App
+# Routes Ã¢â‚¬â€ App
 # ---------------------------------------------------------------------------
 @app.route("/index")
 @login_required
@@ -3540,27 +3455,8 @@ def index():
                            video_models=VIDEO_MODELS_INFO,
                            video_model_families=VIDEO_MODEL_FAMILIES,
                            provider_labels=PROVIDER_LABELS,
-                           comfyui_url=(config.get("comfyui_url", "") or DEFAULT_CONFIG["comfyui_url"]),
                            has_key=has_key,
                            user=session["user"])
-
-
-@app.route("/pose/embed/openpose")
-@login_required
-def pose_embed_openpose():
-    return render_template("pose_openpose.html", user=session["user"])
-
-
-@app.route("/pose/embed/yedp-mocap")
-@login_required
-def pose_embed_yedp_mocap():
-    return render_template("pose_yedp.html", user=session["user"])
-
-
-@app.route("/pose/embed/action-director")
-@login_required
-def pose_embed_action_director():
-    return render_template("pose_action_director.html", user=session["user"])
 
 
 @app.route("/settings")
@@ -3588,7 +3484,7 @@ def settings():
 
 
 # ---------------------------------------------------------------------------
-# Route â€” Credits
+# Route Ã¢â‚¬â€ Credits
 # ---------------------------------------------------------------------------
 @app.route("/credits")
 @login_required
@@ -3659,6 +3555,7 @@ VIDEO_DURATION_OPTIONS = [5, 10]
 VIDEO_DURATION_EXTENDED_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 VIDEO_DURATION_OMNI_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10]
 VIDEO_DURATION_ALL_OPTIONS = sorted({*VIDEO_DURATION_OPTIONS, *VIDEO_DURATION_EXTENDED_OPTIONS})
+KLING_RESOLUTION_OPTIONS = ["1080p"]
 WAN_RESOLUTION_OPTIONS = ["720p", "1080p"]
 SEEDANCE_RESOLUTION_OPTIONS = ["480p", "720p", "1080p"]
 
@@ -4253,6 +4150,17 @@ FAL_KLING_MODEL_SPECS = [
         "start_image_field": "image_url",
     },
     {
+        "id": FAL_KLING_O3_STD_V2V_ID,
+        "label": "Kling O3 Standard V2V",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["video"],
+        "sort_order": 171,
+        "video_mode_kind": "video_to_video",
+        "supports_source_video": True,
+        "source_video_required": True,
+        "source_video_field": "video_url",
+    },
+    {
         "id": FAL_KLING_O3_REF_I2V_ID,
         "label": "Kling O3 Reference",
         "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
@@ -4287,6 +4195,17 @@ FAL_KLING_MODEL_SPECS = [
         "start_image_field": "image_url",
     },
     {
+        "id": FAL_KLING_O3_PRO_V2V_ID,
+        "label": "Kling O3 Pro V2V",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["video"],
+        "sort_order": 176,
+        "video_mode_kind": "video_to_video",
+        "supports_source_video": True,
+        "source_video_required": True,
+        "source_video_field": "video_url",
+    },
+    {
         "id": FAL_KLING_O3_PRO_REF_I2V_ID,
         "label": "Kling O3 Pro Reference",
         "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
@@ -4302,6 +4221,12 @@ FAL_KLING_MODEL_SPECS = [
         "max_reference_images": 4,
     },
 ]
+
+for _spec in KLING_DIRECT_MODEL_SPECS:
+    _spec.setdefault("resolutions", list(KLING_RESOLUTION_OPTIONS))
+
+for _spec in FAL_KLING_MODEL_SPECS:
+    _spec.setdefault("resolutions", list(KLING_RESOLUTION_OPTIONS))
 
 FAL_SEEDANCE_MODEL_SPECS = [
     {
@@ -4417,7 +4342,8 @@ def _build_video_models_info() -> dict:
             "aspect_ratios": list(spec.get("aspect_ratios", VIDEO_ASPECT_RATIOS)),
             "supports_negative_prompt": True,
             "supports_safety_checker": False,
-            "supports_resolution": False,
+            "supports_resolution": True,
+            "resolutions": list(spec.get("resolutions", KLING_RESOLUTION_OPTIONS)),
             "supports_start_image": bool(spec.get("supports_start_image", False)),
             "start_image_required": bool(spec.get("start_image_required", False)),
             "supports_reference_images": bool(spec.get("supports_reference_images", False)),
@@ -4443,7 +4369,8 @@ def _build_video_models_info() -> dict:
             "aspect_ratios": list(spec.get("aspect_ratios", VIDEO_ASPECT_RATIOS)),
             "supports_negative_prompt": True,
             "supports_safety_checker": False,
-            "supports_resolution": False,
+            "supports_resolution": True,
+            "resolutions": list(spec.get("resolutions", KLING_RESOLUTION_OPTIONS)),
             "supports_start_image": bool(spec.get("supports_start_image", False)),
             "start_image_required": bool(spec.get("start_image_required", False)),
             "start_image_field": spec.get("start_image_field", "image_url"),
@@ -4451,6 +4378,9 @@ def _build_video_models_info() -> dict:
             "reference_images_required": bool(spec.get("reference_images_required", False)),
             "reference_images_field": spec.get("reference_images_field", "image_urls"),
             "max_reference_images": int(spec.get("max_reference_images", 0) or 0),
+            "supports_source_video": bool(spec.get("supports_source_video", False)),
+            "source_video_required": bool(spec.get("source_video_required", False)),
+            "source_video_field": spec.get("source_video_field", "video_url"),
             "sort_order": int(spec.get("sort_order", 999)),
             "video_mode_kind": spec.get("video_mode_kind", "text_to_video"),
         }
@@ -4465,7 +4395,7 @@ def _build_video_models_info() -> dict:
             "durations": list(spec.get("durations", VIDEO_DURATION_OPTIONS)),
             "aspect_ratios": list(spec.get("aspect_ratios", VIDEO_ASPECT_RATIOS)),
             "supports_negative_prompt": True,
-            "supports_safety_checker": False,
+            "supports_safety_checker": True,
             "supports_resolution": True,
             "resolutions": list(spec.get("resolutions", SEEDANCE_RESOLUTION_OPTIONS)),
             "supports_start_image": bool(spec.get("supports_start_image", False)),
@@ -4489,6 +4419,7 @@ def _build_video_models_info() -> dict:
         "aspect_ratios": VIDEO_ASPECT_RATIOS,
         "supports_negative_prompt": True,
         "supports_safety_checker": True,
+        "supports_output_safety_checker": True,
         "supports_resolution": True,
         "resolutions": WAN_RESOLUTION_OPTIONS,
         "supports_start_image": False,
@@ -4509,6 +4440,7 @@ def _build_video_models_info() -> dict:
         "aspect_ratios": VIDEO_ASPECT_RATIOS,
         "supports_negative_prompt": True,
         "supports_safety_checker": True,
+        "supports_output_safety_checker": True,
         "supports_resolution": True,
         "resolutions": WAN_RESOLUTION_OPTIONS,
         "supports_start_image": True,
@@ -4748,13 +4680,6 @@ def serve_video(asset_relpath):
     return send_from_directory(os.path.dirname(local_path), os.path.basename(local_path))
 
 
-@app.route("/pose-outputs/<date_str>/<filename>")
-@login_required
-def serve_pose_output(date_str, filename):
-    day_path = os.path.join(POSE_OUTPUTS_DIR, date_str)
-    return send_from_directory(day_path, filename)
-
-
 def open_file_in_folder(img_path: str):
     if sys.platform.startswith("win"):
         subprocess.Popen(["explorer", "/select,", img_path])
@@ -4828,7 +4753,7 @@ def api_open_asset_folder():
 
 
 # ---------------------------------------------------------------------------
-# API â€” Delete a loved image (image + JSON sidecar, never touches generations/)
+# API Ã¢â‚¬â€ Delete a loved image (image + JSON sidecar, never touches generations/)
 # ---------------------------------------------------------------------------
 @app.route("/api/loved/<path:asset_relpath>", methods=["DELETE"])
 @login_required
@@ -4959,7 +4884,7 @@ def api_reference_mask(date_str, filename):
 
 
 # ---------------------------------------------------------------------------
-# API â€” Loved list (for reference image picker)
+# API Ã¢â‚¬â€ Loved list (for reference image picker)
 # ---------------------------------------------------------------------------
 @app.route("/api/loved-list")
 @login_required
@@ -5396,6 +5321,61 @@ def api_reference_archive_list():
     return jsonify(result)
 
 
+@app.route("/api/reference-archive-payload/<date_str>/<filename>")
+@login_required
+def api_reference_archive_payload(date_str, filename):
+    safe_date = str(date_str or "").strip()
+    safe_filename = os.path.basename(str(filename or "").strip())
+    if not safe_date or not safe_filename:
+        return jsonify({"ok": False, "error": "Invalid archive reference"}), 400
+
+    paths = get_reference_mask_file_paths(safe_date, safe_filename)
+    original_path = paths["original_path"]
+    if not os.path.exists(original_path):
+        recovered_path, recovered_name = find_reference_recovery_source(safe_filename)
+        if recovered_path:
+            try:
+                payload = build_reference_payload_from_file(recovered_path, recovered_name or safe_filename)
+                payload.update({
+                    "date": safe_date,
+                    "filename": safe_filename,
+                })
+                return jsonify(payload)
+            except Exception as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "Reference archive entry not found"}), 404
+
+    bundle = build_reference_mask_bundle(safe_date, safe_filename)
+    display_path = paths["render_path"] if bundle["has_mask"] and os.path.exists(paths["render_path"]) else original_path
+
+    try:
+        with open(original_path, "rb") as fh:
+            original_b64 = base64.b64encode(fh.read()).decode("utf-8")
+        with open(display_path, "rb") as fh:
+            display_b64 = base64.b64encode(fh.read()).decode("utf-8")
+        mask_b64 = ""
+        if bundle["has_mask"] and os.path.exists(paths["mask_path"]):
+            with open(paths["mask_path"], "rb") as fh:
+                mask_b64 = base64.b64encode(fh.read()).decode("utf-8")
+        return jsonify({
+            "ok": True,
+            "date": safe_date,
+            "filename": safe_filename,
+            "name": safe_filename,
+            "mime_type": "image/png",
+            "data": display_b64,
+            "original_data": original_b64,
+            "original_mime_type": "image/png",
+            "mask_png_data": mask_b64,
+            "original_url": bundle["original_url"],
+            "masked_url": bundle["masked_url"],
+            "mask_url": bundle["mask_url"],
+            "has_mask": bundle["has_mask"],
+        })
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @app.route("/api/asset-gallery/<kind>")
 @login_required
 def api_asset_gallery(kind):
@@ -5424,305 +5404,8 @@ def api_import_ref_image():
         "name": filename,
     })
 
-
 # ---------------------------------------------------------------------------
-# API - Embedded pose tools
-# ---------------------------------------------------------------------------
-@app.route("/api/pose/save-output", methods=["POST"])
-@login_required
-def api_pose_save_output():
-    body = request.get_json(silent=True) or {}
-    tool = str(body.get("tool") or "pose_tool").strip() or "pose_tool"
-    image_b64 = str(body.get("image_data") or body.get("data") or "").strip()
-    mime_type = str(body.get("mime_type") or body.get("mimeType") or "image/png").strip() or "image/png"
-    filename = str(body.get("filename") or body.get("name") or "").strip()
-    json_data = body.get("json_data")
-    extra_images = body.get("extra_images") if isinstance(body.get("extra_images"), list) else []
-    meta = body.get("meta") if isinstance(body.get("meta"), dict) else {}
-
-    if not image_b64:
-        return jsonify({"ok": False, "error": "Pose output image is missing."}), 400
-
-    try:
-        image_b64, mime_type = convert_image_b64_to_png(image_b64, mime_type)
-        img_obj, _ = open_base64_image(image_b64)
-    except Exception as exc:
-        return jsonify({"ok": False, "error": f"Could not prepare the pose image: {exc}"}), 400
-
-    now = datetime.now()
-    date_str = now.strftime("%Y-%m-%d")
-    time_str = now.strftime("%H%M%S%f")
-    safe_tool = safe_output_stem(tool, "pose_tool")
-    safe_name = safe_output_stem(filename, safe_tool)
-    day_dir = os.path.join(POSE_OUTPUTS_DIR, date_str)
-    os.makedirs(day_dir, exist_ok=True)
-
-    saved_images = []
-
-    def _write_image(image_payload_b64: str, image_mime: str, suffix: str, requested_name: str = ""):
-        prepared_b64, prepared_mime = convert_image_b64_to_png(image_payload_b64, image_mime)
-        stem = safe_output_stem(requested_name, safe_name)
-        final_name = f"{time_str}_{stem}{suffix}.png"
-        final_path = os.path.join(day_dir, final_name)
-        with open(final_path, "wb") as f:
-            f.write(base64.b64decode(prepared_b64))
-        saved_images.append({
-            "filename": final_name,
-            "url": f"/pose-outputs/{date_str}/{final_name}",
-            "mime_type": prepared_mime,
-        })
-        return final_name
-
-    try:
-        primary_filename = _write_image(image_b64, mime_type, "", filename)
-        for idx, extra in enumerate(extra_images):
-            if not isinstance(extra, dict):
-                continue
-            extra_b64 = str(extra.get("image_data") or extra.get("data") or "").strip()
-            if not extra_b64:
-                continue
-            extra_mime = str(extra.get("mime_type") or extra.get("mimeType") or "image/png").strip() or "image/png"
-            extra_name = str(extra.get("filename") or extra.get("name") or f"{safe_name}_{idx + 1}").strip()
-            _write_image(extra_b64, extra_mime, f"_{idx + 1}", extra_name)
-    except Exception as exc:
-        return jsonify({"ok": False, "error": f"Could not save pose output: {exc}"}), 500
-
-    sidecar_payload = {
-        "tool": tool,
-        "saved_at": utc_now_iso(),
-        "width": img_obj.width,
-        "height": img_obj.height,
-        "meta": meta,
-        "json_data": json_data,
-        "images": saved_images,
-    }
-    sidecar_path = os.path.join(day_dir, os.path.splitext(primary_filename)[0] + ".json")
-    try:
-        with open(sidecar_path, "w", encoding="utf-8") as f:
-            json.dump(sidecar_payload, f, ensure_ascii=False, indent=2)
-    except Exception as exc:
-        return jsonify({"ok": False, "error": f"Could not save pose metadata: {exc}"}), 500
-
-    return jsonify({
-        "ok": True,
-        "tool": tool,
-        "date": date_str,
-        "filename": primary_filename,
-        "url": f"/pose-outputs/{date_str}/{primary_filename}",
-        "json_url": f"/pose-outputs/{date_str}/{os.path.basename(sidecar_path)}",
-        "width": img_obj.width,
-        "height": img_obj.height,
-        "images": saved_images,
-    })
-
-
-# ---------------------------------------------------------------------------
-# API - ComfyUI Pose bridge
-# ---------------------------------------------------------------------------
-
-@app.route("/api/comfyui/status", methods=["POST"])
-@login_required
-def api_comfyui_status():
-    body = request.get_json(silent=True) or {}
-    config = load_config()
-    raw_url = str(body.get("server_url") or config.get("comfyui_url") or "").strip()
-    remember = bool(body.get("remember_url", True))
-    try:
-        base_url = normalize_comfyui_url(raw_url)
-        stats = comfyui_request_json(base_url, "/system_stats", timeout=12)
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    except requests.exceptions.Timeout:
-        return jsonify({"ok": False, "error": "Timed out while checking ComfyUI."}), 504
-    except requests.exceptions.RequestException as exc:
-        return jsonify({"ok": False, "error": f"Could not reach ComfyUI: {exc}"}), 502
-
-    if remember:
-        config["comfyui_url"] = base_url
-        save_config(config)
-
-    system = stats.get("system") if isinstance(stats, dict) else {}
-    devices = []
-    if isinstance(system, dict):
-        devices = system.get("devices") or []
-    return jsonify({
-        "ok": True,
-        "server_url": base_url,
-        "devices": len(devices) if isinstance(devices, list) else 0,
-        "raw": stats,
-    })
-
-
-@app.route("/api/comfyui/send-pose", methods=["POST"])
-@login_required
-def api_comfyui_send_pose():
-    body = request.get_json(silent=True) or {}
-    config = load_config()
-    raw_url = str(body.get("server_url") or config.get("comfyui_url") or "").strip()
-    remember = bool(body.get("remember_url", True))
-    pose_tool = str(body.get("pose_tool") or "openpose_editor").strip() or "openpose_editor"
-    source_kind = str(body.get("source_kind") or "selected_image").strip() or "selected_image"
-    image_data = str(body.get("data") or "").strip()
-    mime_type = str(body.get("mime_type") or "image/png").strip() or "image/png"
-    filename = str(body.get("filename") or "pose-source.png").strip() or "pose-source.png"
-    if not image_data:
-        return jsonify({"ok": False, "error": "No pose source image was provided."}), 400
-
-    try:
-        base_url = normalize_comfyui_url(raw_url)
-        upload = upload_pose_image_to_comfyui(base_url, image_data, mime_type, filename)
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    except requests.exceptions.Timeout:
-        return jsonify({"ok": False, "error": "Timed out while uploading to ComfyUI."}), 504
-    except requests.exceptions.RequestException as exc:
-        error_message = f"Could not upload to ComfyUI: {exc}"
-        response = getattr(exc, "response", None)
-        if response is not None:
-            try:
-                payload = response.json()
-                if isinstance(payload, dict):
-                    error_message = str(payload.get("error") or payload.get("message") or error_message)
-            except Exception:
-                pass
-        return jsonify({"ok": False, "error": error_message}), 502
-
-    if remember:
-        config["comfyui_url"] = base_url
-        save_config(config)
-
-    return jsonify({
-        "ok": True,
-        "server_url": base_url,
-        "pose_tool": pose_tool,
-        "source_kind": source_kind,
-        "upload": upload,
-    })
-
-
-@app.route("/api/comfyui/workflow-template", methods=["POST"])
-@login_required
-def api_comfyui_workflow_template():
-    body = request.get_json(silent=True) or {}
-    pose_tool = str(body.get("pose_tool") or "openpose_editor").strip() or "openpose_editor"
-    source_kind = str(body.get("source_kind") or "selected_image").strip() or "selected_image"
-    image_data = str(body.get("data") or "").strip()
-    mime_type = str(body.get("mime_type") or "image/png").strip() or "image/png"
-    filename = str(body.get("filename") or "pose-source.png").strip() or "pose-source.png"
-    upload_first = bool(body.get("upload_first", False))
-    upload = None
-    server_url = ""
-
-    if upload_first:
-        config = load_config()
-        raw_url = str(body.get("server_url") or config.get("comfyui_url") or "").strip()
-        remember = bool(body.get("remember_url", True))
-        if not image_data:
-            return jsonify({"ok": False, "error": "No pose source image was provided."}), 400
-        try:
-            base_url = normalize_comfyui_url(raw_url)
-            upload = upload_pose_image_to_comfyui(base_url, image_data, mime_type, filename)
-        except ValueError as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
-        except requests.exceptions.Timeout:
-            return jsonify({"ok": False, "error": "Timed out while uploading to ComfyUI."}), 504
-        except requests.exceptions.RequestException as exc:
-            return jsonify({"ok": False, "error": f"Could not upload to ComfyUI: {exc}"}), 502
-        if remember:
-            config["comfyui_url"] = base_url
-            save_config(config)
-        server_url = base_url
-
-    template = build_pose_workflow_template(
-        pose_tool,
-        source_kind,
-        upload,
-        image_b64=image_data,
-        mime_type=mime_type,
-    )
-    return jsonify({
-        "ok": True,
-        "server_url": server_url,
-        "upload": upload,
-        "template": template,
-    })
-
-
-@app.route("/api/comfyui/queue-pose-workflow", methods=["POST"])
-@login_required
-def api_comfyui_queue_pose_workflow():
-    body = request.get_json(silent=True) or {}
-    config = load_config()
-    raw_url = str(body.get("server_url") or config.get("comfyui_url") or "").strip()
-    remember = bool(body.get("remember_url", True))
-    pose_tool = str(body.get("pose_tool") or "openpose_editor").strip() or "openpose_editor"
-    source_kind = str(body.get("source_kind") or "selected_image").strip() or "selected_image"
-    image_data = str(body.get("data") or "").strip()
-    mime_type = str(body.get("mime_type") or "image/png").strip() or "image/png"
-    filename = str(body.get("filename") or "pose-source.png").strip() or "pose-source.png"
-    client_id = str(body.get("client_id") or "").strip()
-    if not image_data:
-        return jsonify({"ok": False, "error": "No pose source image was provided."}), 400
-
-    try:
-        base_url = normalize_comfyui_url(raw_url)
-        upload = upload_pose_image_to_comfyui(base_url, image_data, mime_type, filename)
-        template = build_pose_workflow_template(
-            pose_tool,
-            source_kind,
-            upload,
-            image_b64=image_data,
-            mime_type=mime_type,
-        )
-        if not template.get("queue_supported"):
-            return jsonify({
-                "ok": False,
-                "error": template.get("notes") or "This workflow requires its interactive ComfyUI UI.",
-                "template": template,
-                "upload": upload,
-                "server_url": base_url,
-            }), 400
-        prompt_result = comfyui_post_prompt(
-            base_url,
-            template["prompt"],
-            client_id=client_id,
-            extra_data={"ai_api_pose_tool": pose_tool},
-        )
-    except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    except requests.exceptions.Timeout:
-        return jsonify({"ok": False, "error": "Timed out while queueing the ComfyUI workflow."}), 504
-    except requests.exceptions.RequestException as exc:
-        message = f"Could not queue the ComfyUI workflow: {exc}"
-        response = getattr(exc, "response", None)
-        if response is not None:
-            try:
-                payload = response.json()
-                if isinstance(payload, dict):
-                    error_obj = payload.get("error")
-                    if isinstance(error_obj, dict):
-                        message = str(error_obj.get("message") or error_obj.get("details") or message)
-                    else:
-                        message = str(payload.get("message") or error_obj or message)
-            except Exception:
-                pass
-        return jsonify({"ok": False, "error": message}), 502
-
-    if remember:
-        config["comfyui_url"] = base_url
-        save_config(config)
-
-    return jsonify({
-        "ok": True,
-        "server_url": base_url,
-        "upload": upload,
-        "template": template,
-        "queue": prompt_result,
-    })
-
-
-# ---------------------------------------------------------------------------
-# Routes â€” Elements (asset library)
+# Routes Ã¢â‚¬â€ Elements (asset library)
 # ---------------------------------------------------------------------------
 
 @app.route("/elements/<path:filepath>")
@@ -5746,7 +5429,7 @@ def api_elements_catalog():
     search_query    = request.args.get("q", "").strip().lower()
     page            = int(request.args.get("page", 1))
     per_page        = int(request.args.get("per_page", 60))
-    # Filtri metadati (solo characters) â€” tutti exact-match con vocabolario canonico
+    # Filtri metadati (solo characters) Ã¢â‚¬â€ tutti exact-match con vocabolario canonico
     def _fset(param): return {v.strip().lower() for v in request.args.get(param,"").split(",") if v.strip()}
     f_gender     = _fset("gender")
     f_age        = _fset("age_group")
@@ -5864,7 +5547,7 @@ def api_elements_catalog():
                     search_query in item.get("ethnicity", "").lower())
         unique_items = [i for i in unique_items if matches(i)]
 
-    # Filtri metadati â€” exact match (vocabolario canonico, tutti underscored)
+    # Filtri metadati Ã¢â‚¬â€ exact match (vocabolario canonico, tutti underscored)
     def _exact(items, field, fset):
         return [i for i in items if i.get(field, "").lower() in fset] if fset else items
     unique_items = _exact(unique_items, "gender",     f_gender)
@@ -5962,7 +5645,7 @@ def api_migrate_catalog():
     raw_items = data.get("talents", data.get("items", []))
     now_ts    = datetime.now().isoformat()
 
-    # Deduplica per id â€” per ogni id teniamo il record con image_path valido
+    # Deduplica per id Ã¢â‚¬â€ per ogni id teniamo il record con image_path valido
     seen: dict[str, dict] = {}
     for item in raw_items:
         tid = item.get("id")
@@ -6061,18 +5744,18 @@ def api_analyze_talent_image():
     vocab_block = _build_vocab_prompt_block()
     analysis_prompt = (
         "You are a professional talent catalog specialist. Analyze this portrait photo carefully and extract structured metadata.\n"
-        "Your task: fill in EVERY field â€” never leave anything empty or use values outside the allowed lists.\n\n"
+        "Your task: fill in EVERY field Ã¢â‚¬â€ never leave anything empty or use values outside the allowed lists.\n\n"
         f"{vocab_block}\n\n"
         "Additional field rules:\n"
         "- name: INVENT a realistic first+last name that fits the person's apparent ethnicity and vibe "
         "(e.g. Sofia Esposito, Kai Nakamura, Amara Diallo, Luca Ferretti, Yuki Tanaka, Zara Osei)\n"
-        "- description: 2 precise sentences for AI image generation â€” describe face shape, skin quality, "
+        "- description: 2 precise sentences for AI image generation Ã¢â‚¬â€ describe face shape, skin quality, "
         "distinctive features (nose, lips, jawline, cheekbones), eye shape, expression, overall aesthetic vibe\n"
-        "- tags: JSON array of 4â€“6 lowercase, single-word or hyphenated tags useful for searching "
+        "- tags: JSON array of 4Ã¢â‚¬â€œ6 lowercase, single-word or hyphenated tags useful for searching "
         "(e.g. [\"editorial\", \"beauty\", \"runway\", \"high-fashion\", \"dark-skin\", \"versatile\"])\n\n"
         "CRITICAL: You MUST use ONLY the exact string values listed above. "
         "Do NOT invent new values, do NOT use variations, plurals, or spaces instead of underscores.\n\n"
-        "Return ONLY a valid JSON object â€” no markdown fences, no extra text, no comments:\n"
+        "Return ONLY a valid JSON object Ã¢â‚¬â€ no markdown fences, no extra text, no comments:\n"
         "{\n"
         '  "name": "...",\n'
         '  "gender": "...",\n'
@@ -6372,7 +6055,7 @@ def api_save_talent():
     except Exception as e:
         return jsonify({"ok": False, "error": f"Image pre-processing error: {e}"})
 
-    # Numero progressivo immagine â€” sempre .jpg dopo normalizzazione
+    # Numero progressivo immagine Ã¢â‚¬â€ sempre .jpg dopo normalizzazione
     num      = get_next_image_number(folder_path, slug)
     img_file = f"{slug}_{num:03d}.jpg"
     img_full = os.path.join(folder_path, img_file)
@@ -6396,7 +6079,7 @@ def api_save_talent():
     }
 
     if os.path.exists(jpath):
-        # Talent esistente â†’ aggiungi immagine
+        # Talent esistente Ã¢â€ â€™ aggiungi immagine
         talent = load_talent_json(jpath)
         if talent:
             talent["images"].append(new_img)
@@ -6434,7 +6117,7 @@ def api_save_talent():
 
 
 # ---------------------------------------------------------------------------
-# API â€” Config / Key
+# API Ã¢â‚¬â€ Config / Key
 # ---------------------------------------------------------------------------
 @app.route("/api/save-config", methods=["POST"])
 @login_required
@@ -6453,8 +6136,6 @@ def api_save_config():
         config["seedream_api_key"] = data["seedream_api_key"].strip()
     if "kling_api_token" in data:
         config["kling_api_token"] = data["kling_api_token"].strip()
-    if "comfyui_url" in data:
-        config["comfyui_url"] = str(data["comfyui_url"] or "").strip()
     save_config(config)
     return jsonify({"ok": True})
 
@@ -6560,7 +6241,7 @@ def api_verify_key():
         elif resp.status_code == 400:
             return jsonify({"ok": False, "error": "Invalid API key (400)"})
         elif resp.status_code == 403:
-            return jsonify({"ok": False, "error": "Access denied â€” check billing is active (403)"})
+            return jsonify({"ok": False, "error": "Access denied Ã¢â‚¬â€ check billing is active (403)"})
         else:
             return jsonify({"ok": False, "error": f"HTTP error {resp.status_code}"})
     except requests.exceptions.Timeout:
@@ -6570,7 +6251,7 @@ def api_verify_key():
 
 
 # ---------------------------------------------------------------------------
-# API â€” Generate (con supporto immagini di riferimento)
+# API Ã¢â‚¬â€ Generate (con supporto immagini di riferimento)
 # ---------------------------------------------------------------------------
 def run_gemini_generation_job(body: dict, api_key: str) -> dict:
     body = normalize_generation_request(body)
@@ -7167,6 +6848,7 @@ def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
     aspect_ratio = body.get("aspectRatio", "16:9")
     negative_prompt = str(body.get("negativePrompt") or "").strip()
     source_image = body.get("sourceImage") or {}
+    source_video = body.get("sourceVideo") or {}
     reference_images = list(body.get("referenceImages") or [])
     endpoint = str(body.get("model") or "").strip()
     model_info = VIDEO_MODELS_INFO.get(endpoint, {})
@@ -7191,6 +6873,13 @@ def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
         if source_image.get("data"):
             start_field = str(model_info.get("start_image_field") or "image_url")
             payload[start_field] = f"data:{source_image.get('mime_type', 'image/png')};base64,{source_image.get('data', '')}"
+    if input_mode == "video" and model_info.get("supports_source_video"):
+        if model_info.get("source_video_required") and not str(source_video.get("data") or source_video.get("url") or "").strip():
+            raise ValueError("Choose a source video for this Kling video-to-video model.")
+        if str(source_video.get("data") or source_video.get("url") or "").strip():
+            client = fal_client.SyncClient(key=api_key)
+            source_field = str(model_info.get("source_video_field") or "video_url")
+            payload[source_field] = upload_video_payload_to_fal(client, source_video)
     if input_mode == "reference" and model_info.get("supports_reference_images"):
         if model_info.get("reference_images_required") and not reference_images:
             raise ValueError("Add at least one reference image for this Kling reference-to-video model.")
@@ -7243,6 +6932,7 @@ def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
         "model_label": model_info.get("label", "Kling"),
         "params": params_meta,
         "_input_source_image": source_image if str(source_image.get("data") or "").strip() else None,
+        "_input_source_video": source_video if str(source_video.get("data") or source_video.get("url") or "").strip() else None,
         "_input_reference_images": reference_images,
     }
 
@@ -7259,6 +6949,7 @@ def run_fal_wan_video_job(body: dict, api_key: str) -> dict:
     negative_prompt = str(body.get("negativePrompt") or "").strip()
     resolution = normalize_video_resolution(body.get("resolution", "720p"))
     safety_checker = bool(body.get("videoSafetyChecker", True))
+    output_safety_checker = bool(body.get("videoOutputSafetyChecker", True))
     source_image = body.get("sourceImage") or {}
     endpoint = FAL_WAN_T2V_ID if input_mode == "text" else FAL_WAN_I2V_ID
     payload = {
@@ -7269,7 +6960,7 @@ def run_fal_wan_video_job(body: dict, api_key: str) -> dict:
         "resolution": resolution,
         "aspect_ratio": aspect_ratio,
         "enable_safety_checker": safety_checker,
-        "enable_output_safety_checker": False,
+        "enable_output_safety_checker": output_safety_checker,
         "enable_prompt_expansion": True,
         "sync_mode": True,
     }
@@ -7307,6 +6998,7 @@ def run_fal_wan_video_job(body: dict, api_key: str) -> dict:
         "prompt": prompt,
         "resolution": resolution,
         "videoSafetyChecker": safety_checker,
+        "videoOutputSafetyChecker": output_safety_checker,
     }, body), body)
     return {
         "ok": True,
@@ -7330,6 +7022,7 @@ def run_fal_seedance_video_job(body: dict, api_key: str) -> dict:
     aspect_ratio = body.get("aspectRatio", "16:9")
     negative_prompt = str(body.get("negativePrompt") or "").strip()
     resolution = normalize_video_resolution(body.get("resolution", "720p"))
+    safety_checker = bool(body.get("videoSafetyChecker", True))
     source_image = body.get("sourceImage") or {}
     reference_images = list(body.get("referenceImages") or [])
     endpoint = str(body.get("model") or "").strip()
@@ -7346,6 +7039,7 @@ def run_fal_seedance_video_job(body: dict, api_key: str) -> dict:
         "duration": duration,
         "aspect_ratio": aspect_ratio,
         "resolution": resolution,
+        "enable_safety_checker": safety_checker,
         "sync_mode": True,
     }
     if negative_prompt:
@@ -7399,6 +7093,7 @@ def run_fal_seedance_video_job(body: dict, api_key: str) -> dict:
         "negativePrompt": negative_prompt,
         "prompt": prompt,
         "resolution": resolution,
+        "videoSafetyChecker": safety_checker,
     }, body), body)
     return {
         "ok": True,
@@ -8252,7 +7947,7 @@ def api_delete_video(asset_relpath):
 
 
 # ---------------------------------------------------------------------------
-# API â€” Delete a generation (image + sidecar JSON only, never loved/)
+# API Ã¢â‚¬â€ Delete a generation (image + sidecar JSON only, never loved/)
 # ---------------------------------------------------------------------------
 @app.route("/api/generations/<path:asset_relpath>", methods=["DELETE"])
 @login_required
@@ -8296,7 +7991,7 @@ def api_delete_generation(asset_relpath):
 
 
 # ---------------------------------------------------------------------------
-# API â€” Publish (save to loved/)
+# API Ã¢â‚¬â€ Publish (save to loved/)
 # ---------------------------------------------------------------------------
 @app.route("/api/publish", methods=["POST"])
 @login_required
@@ -8386,7 +8081,7 @@ def api_workbench_plan():
 
 
 # ---------------------------------------------------------------------------
-# API â€” Stats
+# API Ã¢â‚¬â€ Stats
 # ---------------------------------------------------------------------------
 @app.route("/api/stats")
 @login_required
@@ -8435,7 +8130,6 @@ if __name__ == "__main__":
     os.makedirs(REFERENCE_ARCHIVE_DIR, exist_ok=True)
     os.makedirs(REFERENCE_MASKS_DIR, exist_ok=True)
     os.makedirs(REFERENCE_RENDERS_DIR, exist_ok=True)
-    os.makedirs(POSE_OUTPUTS_DIR, exist_ok=True)
     init_studio_db()
     # Migrate old published/ folder to loved/ if it exists and loved/ is empty
     _old_pub = os.path.join(BASE_DIR, "published")
@@ -8453,6 +8147,7 @@ if __name__ == "__main__":
     print("  Max ref images: NB=0, Pro=8, NB2=14")
     print("="*52 + "\n")
     app.run(debug=True, port=5000)
+
 
 
 
