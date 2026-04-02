@@ -54,6 +54,7 @@ import json
 import os
 import random
 import re
+import secrets
 import shutil
 import sqlite3
 import threading
@@ -70,7 +71,7 @@ from PIL import Image, ImageOps
 import fal_client
 
 app = Flask(__name__)
-app.secret_key = "nb-studio-secret-2024-change-me"
+app.secret_key = None
 
 
 def utc_now_iso() -> str:
@@ -473,6 +474,7 @@ DEFAULT_CONFIG = {
     "fal_api_key": "",
     "byteplus_api_key": "",
     "kling_api_token": "",
+    "flask_secret_key": "",
     "asset_metadata_memory": {
         "clients": [ASSET_UNCATEGORIZED_VALUE],
         "projects": [ASSET_UNCATEGORIZED_VALUE],
@@ -2636,6 +2638,23 @@ def load_config():
 def save_config(config):
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
+
+
+def ensure_flask_secret_key() -> str:
+    env_secret = (_os.environ.get("FLASK_SECRET_KEY", "") or "").strip()
+    if env_secret:
+        return env_secret
+
+    config = load_config()
+    secret = str(config.get("flask_secret_key", "") or "").strip()
+    if not secret:
+        secret = secrets.token_hex(32)
+        config["flask_secret_key"] = secret
+        save_config(config)
+    return secret
+
+
+app.secret_key = ensure_flask_secret_key()
 
 
 def mask_api_key(value: str) -> str:
