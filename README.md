@@ -22,6 +22,10 @@ AI API Studio is a local Flask app for image generation, video generation, and u
 - Gemini reference description tools
 - Prompt reuse from previous generations
 
+![Image generation workflow](docs/images/image-generation-workflow.png)
+
+Image mode combines prompt writing, archived references, reference description, and project metadata in one workspace.
+
 ### Video generation
 
 - Text-to-video
@@ -30,12 +34,20 @@ AI API Studio is a local Flask app for image generation, video generation, and u
 - Video-to-video for supported Kling routes
 - Model-aware video safety controls where supported
 
+![Video generation workflow](docs/images/video-generation-workflow.png)
+
+Video mode supports start images, reference images, model-aware controls, and generated video review in the main viewer.
+
 ### Upscale
 
 - Image upscale
 - Video upscale with SeedVR2
 - Main-viewer driven upscale workflow
 - Before/after compare for supported results
+
+![Upscale compare view](docs/images/upscale-compare-view.png)
+
+Upscale mode works from the asset currently loaded in the main viewer and supports before/after comparison for review.
 
 ### Project metadata
 
@@ -54,6 +66,14 @@ AI API Studio is a local Flask app for image generation, video generation, and u
 - Favorites / categories
 - New Talent workflow
 - Gemini vision-assisted image analysis for talent metadata
+
+### Reference masking
+
+- Non-destructive mask editing for archived references
+- Reopen and refine masks before rerunning a generation
+- Masked references remain linked for repeatable workflows
+
+![Reference mask editor](docs/images/reference-mask-editor.png)
 
 ## Supported Providers
 
