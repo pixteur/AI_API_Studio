@@ -1,4 +1,4 @@
-# AI API Studio 1.3 Installation Guide
+# AI API Studio 1.4 Installation Guide
 
 ## Requirements
 
@@ -133,4 +133,4 @@ Use a hard refresh:
 ## Related Docs
 
 - Main overview: [E:\Code\comfy_app\AI_API_Studio\README.md](E:/Code/comfy_app/AI_API_Studio/README.md)
-- Release notes: [E:\Code\comfy_app\AI_API_Studio\RELEASE_v1.3.md](E:/Code/comfy_app/AI_API_Studio/RELEASE_v1.3.md)
+- Release notes: [E:\Code\comfy_app\AI_API_Studio\RELEASE_v1.4.md](E:/Code/comfy_app/AI_API_Studio/RELEASE_v1.4.md)

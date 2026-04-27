@@ -2,15 +2,15 @@
 
 AI API Studio is a local Flask app for image generation, video generation, and upscale workflows across multiple providers. It combines prompt writing, reference-image management, project metadata, character/talent management, and asset browsing in one desktop-friendly workspace.
 
-## What's in v1.3
+## What's in v1.4
 
-- App renamed to `AI API Studio`
-- Expanded image model support across Gemini, Fal, and BytePlus
-- Expanded video model support across Kling, Seedance, Wan, and SeedVR2
-- Gemini-powered `Describe refs` tools for image and video reference images
-- Unified asset metadata with `Client / Project / Shot / Filename`
-- Improved archived reference reuse for repeatable generations
-- Shared `Assets` browser for images, references, loved assets, and videos
+- New edit workspace with persistent edit sessions and segment-based generation
+- Expanded image support with `GPT Image 2` and `GPT Image 2 Edit`
+- Expanded video support with `Seedance 2.0`, `Wan 2.7`, `LTX`, `Kling 4K`, and `Luma`
+- Live cost estimates across image, edit, video, and upscale workflows
+- Model-aware video controls for safety, audio generation, Wan driving audio, reference videos, and multi-shot
+- Improved gallery/history bootstrapping, reusable params, and persistent error handling
+- New `edit_sessions` asset storage with ignore rules for generated session history
 
 ## Core Features
 
@@ -86,7 +86,8 @@ Upscale mode works from the asset currently loaded in the main viewer and suppor
 ### Video
 
 - `Kling` direct API
-- `Fal` for Kling, Seedance, Wan, and SeedVR2
+- `Fal` for Kling, Seedance, Wan, LTX, and SeedVR2
+- `Luma`
 
 ## Image Models
 
@@ -95,6 +96,7 @@ Current image families exposed in the app include:
 - `Nano Banana`
 - `Nano Banana Pro`
 - `Nano Banana 2`
+- `GPT Image 2`
 - `Seedream 4.5`
 - `Seedream 5 Lite`
 
@@ -107,6 +109,8 @@ Current video families exposed in the app include:
 - `Kling`
 - `Seedance`
 - `Wan Video`
+- `LTX Video`
+- `Luma`
 - `SeedVR2`
 
 These include multiple text, image, reference, video-to-video, and upscale-capable routes where supported by the provider.
@@ -135,6 +139,7 @@ Main folders include:
 - [E:\Code\comfy_app\AI_API_Studio\Image_assets\reference_archive](E:/Code/comfy_app/AI_API_Studio/Image_assets/reference_archive)
 - [E:\Code\comfy_app\AI_API_Studio\Image_assets\reference_masks](E:/Code/comfy_app/AI_API_Studio/Image_assets/reference_masks)
 - [E:\Code\comfy_app\AI_API_Studio\Image_assets\reference_renders](E:/Code/comfy_app/AI_API_Studio/Image_assets/reference_renders)
+- [E:\Code\comfy_app\AI_API_Studio\Image_assets\edit_sessions](E:/Code/comfy_app/AI_API_Studio/Image_assets/edit_sessions)
 
 ### Folder logic
 
@@ -155,6 +160,7 @@ Configure keys in the Settings page:
 - `Google Gemini API Key`
 - `Fal API Key`
 - `Kling API Token`
+- `Luma API Key`
 - `BytePlus API Key`
 
 The app verifies and stores these from the UI.
@@ -228,4 +234,4 @@ The app auto-installs missing Python packages on first launch:
 ## Additional Docs
 
 - Install guide: [E:\Code\comfy_app\AI_API_Studio\INSTALL.md](E:/Code/comfy_app/AI_API_Studio/INSTALL.md)
-- Release notes: [E:\Code\comfy_app\AI_API_Studio\RELEASE_v1.3.md](E:/Code/comfy_app/AI_API_Studio/RELEASE_v1.3.md)
+- Release notes: [E:\Code\comfy_app\AI_API_Studio\RELEASE_v1.4.md](E:/Code/comfy_app/AI_API_Studio/RELEASE_v1.4.md)

@@ -81,7 +81,7 @@
 
   <section class="settings-card">
     <h2>Fal API Key</h2>
-          <p class="settings-desc">Enter your Fal API key for Fal Nano Banana, Seedream 4.5, Seedream 5 Lite, Kling video, Seedance video, Wan video, and SeedVR upscaling. Fal acts as the alternate provider for both image and video families.</p>
+          <p class="settings-desc">Enter your Fal API key for Fal Nano Banana, Seedream 4.5, Seedream 5 Lite, Kling video, Seedance 1.x / 2.0, Wan video, and SeedVR upscaling. Fal acts as the alternate provider for both image and video families.</p>
 
     <div class="key-row">
       <div class="input-wrap">
@@ -125,6 +125,31 @@
     {% if has_kling_token %}
     <div class="key-current">
       Current token: <code>{{ masked_kling_token }}</code>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="settings-card">
+    <h2>Luma API Key</h2>
+    <p class="settings-desc">Enter your Luma Dream Machine API key for Luma Ray 2 and Ray Flash 2 video generation in the Video tab. Luma image-to-video currently needs a public image URL; if you also save a Fal key, Studio can upload the source image temporarily for you.</p>
+
+    <div class="key-row">
+      <div class="input-wrap">
+        <input type="password" id="lumaApiKeyInput" placeholder="luma_..." autocomplete="off"
+               value="{{ '*' * 20 if has_luma_key else '' }}">
+        <button class="btn-icon" id="toggleLumaKeyBtn" title="Show/Hide" onclick="toggleLumaKeyVisibility()">Show</button>
+      </div>
+      <button class="btn-verify" id="verifyLumaBtn" onclick="verifyLumaKey()">
+        <span id="verifyLumaLabel">Verify</span>
+      </button>
+      <button class="btn-save" id="saveLumaBtn" onclick="saveLumaKey()">Save</button>
+    </div>
+
+    <div id="lumaKeyStatus" class="key-status"></div>
+
+    {% if has_luma_key %}
+    <div class="key-current">
+      Current key: <code>{{ masked_luma_key }}</code>
     </div>
     {% endif %}
   </section>
@@ -590,6 +615,69 @@ async function saveKlingToken() {
 
 function showKlingTokenStatus(msg, type) {
   const el = document.getElementById("klingTokenStatus");
+  el.textContent = msg;
+  el.className = "key-status " + type;
+  el.style.display = "block";
+}
+
+function toggleLumaKeyVisibility() {
+  const inp = document.getElementById("lumaApiKeyInput");
+  inp.type = inp.type === "password" ? "text" : "password";
+}
+
+async function verifyLumaKey() {
+  const inp = document.getElementById("lumaApiKeyInput");
+  const key = inp.value.trim();
+  if (!key || key.startsWith("*")) {
+    showLumaKeyStatus("Please enter the new Luma key to verify first", "error");
+    return;
+  }
+  const btn = document.getElementById("verifyLumaBtn");
+  const label = document.getElementById("verifyLumaLabel");
+  label.textContent = "Verifying...";
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/verify-luma-key", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({luma_api_key: key})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showLumaKeyStatus("OK: " + (d.message || "Valid key!"), "success");
+    } else {
+      showLumaKeyStatus("Error: " + (d.error || "Invalid key"), "error");
+    }
+  } catch(e) {
+    showLumaKeyStatus("Network error: " + e.message, "error");
+  }
+  label.textContent = "Verify";
+  btn.disabled = false;
+}
+
+async function saveLumaKey() {
+  const inp = document.getElementById("lumaApiKeyInput");
+  const key = inp.value.trim();
+  if (!key || key.startsWith("*")) {
+    showLumaKeyStatus("Please enter the new Luma key before saving", "error");
+    return;
+  }
+  const r = await fetch("/api/save-config", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({luma_api_key: key})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showLumaKeyStatus("Luma key saved successfully", "success");
+    inp.type = "password";
+    inp.value = "*".repeat(20);
+    setTimeout(() => location.reload(), 1000);
+  }
+}
+
+function showLumaKeyStatus(msg, type) {
+  const el = document.getElementById("lumaKeyStatus");
   el.textContent = msg;
   el.className = "key-status " + type;
   el.style.display = "block";

@@ -18,6 +18,8 @@ Image_assets/reference_renders/*
 !Image_assets/reference_renders/.gitkeep
 Image_assets/videos/*
 !Image_assets/videos/.gitkeep
+Image_assets/edit_sessions/*
+!Image_assets/edit_sessions/.gitkeep
 
 # OS/editor noise
 .DS_Store

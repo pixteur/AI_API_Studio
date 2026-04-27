@@ -13,7 +13,7 @@ import subprocess
 import importlib.util
 import os as _os
 
-APP_VERSION = "1.3"
+APP_VERSION = "1.4"
 
 def _bootstrap():
     deps = [
@@ -59,6 +59,7 @@ import shutil
 import sqlite3
 import threading
 import tempfile
+import time
 import unicodedata
 import requests
 from datetime import datetime, timezone
@@ -93,6 +94,7 @@ IMAGE_ASSETS_DIR = os.path.join(BASE_DIR, "Image_assets")
 LOVED_DIR        = os.path.join(IMAGE_ASSETS_DIR, "loved")
 GENERATIONS_DIR  = os.path.join(IMAGE_ASSETS_DIR, "generations")
 VIDEOS_DIR       = os.path.join(IMAGE_ASSETS_DIR, "videos")
+EDIT_SESSIONS_DIR = os.path.join(IMAGE_ASSETS_DIR, "edit_sessions")
 ELEMENTS_DIR     = os.path.join(BASE_DIR, "Elements")
 STUDIO_DB_FILE   = os.path.join(BASE_DIR, "studio.db")
 REFERENCE_ARCHIVE_DIR = os.path.join(IMAGE_ASSETS_DIR, "reference_archive")
@@ -206,6 +208,7 @@ SAFE_REQUEST_SETTING_KEYS = {
     "negativePrompt",
     "videoSafetyChecker",
     "videoOutputSafetyChecker",
+    "videoWanMultiShots",
     "videoUpscaleMode",
     "videoUpscaleFactor",
     "videoUpscaleTargetResolution",
@@ -474,6 +477,8 @@ DEFAULT_CONFIG = {
     "fal_api_key": "",
     "byteplus_api_key": "",
     "kling_api_token": "",
+    "runway_api_key": "",
+    "luma_api_key": "",
     "flask_secret_key": "",
     "asset_metadata_memory": {
         "clients": [ASSET_UNCATEGORIZED_VALUE],
@@ -711,10 +716,53 @@ def _run_video_async_job(job_id: str, payload: dict) -> None:
         )
 
 
+def _run_edit_async_job(job_id: str, payload: dict) -> None:
+    update_async_job(job_id, status="running", error="", debug=None)
+    try:
+        result = run_edit_job(clone_jsonable(payload) or {}, load_config())
+        persist_generation_result(result)
+        update_async_job(
+            job_id,
+            status="completed",
+            completed_at=utc_now_iso(),
+            result=compact_generation_result(result),
+            error="",
+            debug=None,
+        )
+    except GenerationDebugError as exc:
+        update_async_job(
+            job_id,
+            status="failed",
+            completed_at=utc_now_iso(),
+            result=None,
+            error=str(exc),
+            debug=clone_jsonable(exc.debug),
+        )
+    except Exception as exc:
+        update_async_job(
+            job_id,
+            status="failed",
+            completed_at=utc_now_iso(),
+            result=None,
+            error=str(exc),
+            debug=None,
+        )
+
+
 def start_async_generate_job(payload: dict) -> dict:
     job = create_async_job("generate")
     threading.Thread(
         target=_run_generate_async_job,
+        args=(job["jobId"], clone_jsonable(payload) or {}),
+        daemon=True,
+    ).start()
+    return job
+
+
+def start_async_edit_job(payload: dict) -> dict:
+    job = create_async_job("generate")
+    threading.Thread(
+        target=_run_edit_async_job,
         args=(job["jobId"], clone_jsonable(payload) or {}),
         daemon=True,
     ).start()
@@ -765,6 +813,7 @@ PRICING = {
     "fal-ai/nano-banana-2": {
         "0.5K": 0.060, "1K": 0.080, "2K": 0.120, "4K": 0.160
     },
+    "fal-ai/gpt-image-2": {},
     "fal-ai/bytedance/seedream/v4.5/text-to-image": {
         "0.5K": 0.0, "1K": 0.0, "2K": 0.040, "4K": 0.040
     },
@@ -782,6 +831,7 @@ PRICING = {
 ASPECT_RATIOS_BASE      = ["1:1","16:9","9:16","4:3","3:4","3:2","2:3","21:9","5:4","4:5"]
 ASPECT_RATIOS_NB2_EXTRA = ["4:1","1:4","8:1","1:8"]
 ASPECT_RATIOS_FAL       = ["1:1","16:9","9:16","4:3","3:4","3:2","2:3","21:9","5:4","4:5"]
+ASPECT_RATIOS_GPT_IMAGE_2 = ["1:1","16:9","9:16","4:3","3:4"]
 ASPECT_RATIOS_BYTEPLUS  = ["1:1","16:9","9:16","4:3","3:4"]
 
 PROVIDER_LABELS = {
@@ -789,24 +839,34 @@ PROVIDER_LABELS = {
     "fal": "Fal",
     "byteplus": "BytePlus",
     "kling": "Kling",
+    "runway": "Runway",
+    "luma": "Luma",
 }
 
 GEMINI_BASE_URL                 = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 FAL_BASE_URL                    = "https://fal.run"
 BYTEPLUS_BASE_URL               = "https://ark.ap-southeast.bytepluses.com/api/v3/images/generations"
 KLING_BASE_URL                  = "https://api-singapore.klingai.com"
+RUNWAY_BASE_URL                 = "https://api.dev.runwayml.com"
+RUNWAY_API_VERSION              = "2024-11-06"
+LUMA_BASE_URL                   = "https://api.lumalabs.ai/dream-machine/v1"
+LUMA_GENERATIONS_URL            = f"{LUMA_BASE_URL}/generations"
 FAL_NANO_BANANA_TEXT_ID         = "fal-ai/gemini-25-flash-image"
 FAL_NANO_BANANA_EDIT_ID         = "fal-ai/gemini-25-flash-image/edit"
 FAL_NANO_BANANA_PRO_TEXT_ID     = "fal-ai/nano-banana-pro"
 FAL_NANO_BANANA_PRO_EDIT_ID     = "fal-ai/nano-banana-pro/edit"
 FAL_NANO_BANANA_2_TEXT_ID       = "fal-ai/nano-banana-2"
 FAL_NANO_BANANA_2_EDIT_ID       = "fal-ai/nano-banana-2/edit"
+FAL_GPT_IMAGE_2_TEXT_ID         = "fal-ai/gpt-image-2"
+FAL_GPT_IMAGE_2_EDIT_ID         = "fal-ai/gpt-image-2/edit"
 FAL_SEEDREAM_45_TEXT_ID         = "fal-ai/bytedance/seedream/v4.5/text-to-image"
 FAL_SEEDREAM_45_EDIT_ID         = "fal-ai/bytedance/seedream/v4.5/edit"
 FAL_SEEDREAM_5_TEXT_ID          = "fal-ai/bytedance/seedream/v5/lite/text-to-image"
 FAL_SEEDREAM_5_EDIT_ID          = "fal-ai/bytedance/seedream/v5/lite/edit"
 FAL_SEEDVR_UPSCALE_ID           = "fal-ai/seedvr/upscale/image"
 FAL_SEEDVR_VIDEO_ID             = "fal-ai/seedvr/upscale/video"
+FAL_SAM3_IMAGE_ID               = "fal-ai/sam-3/image"
+FAL_SAM3_VIDEO_ID               = "fal-ai/sam-3/video"
 FAL_KLING_V1_STD_T2V_ID         = "fal-ai/kling-video/v1/standard/text-to-video"
 FAL_KLING_V1_STD_I2V_ID         = "fal-ai/kling-video/v1/standard/image-to-video"
 FAL_KLING_V15_PRO_T2V_ID        = "fal-ai/kling-video/v1.5/pro/text-to-video"
@@ -832,6 +892,8 @@ FAL_KLING_V30_STD_T2V_ID        = "fal-ai/kling-video/v3/standard/text-to-video"
 FAL_KLING_V30_STD_I2V_ID        = "fal-ai/kling-video/v3/standard/image-to-video"
 FAL_KLING_V30_PRO_T2V_ID        = "fal-ai/kling-video/v3/pro/text-to-video"
 FAL_KLING_V30_PRO_I2V_ID        = "fal-ai/kling-video/v3/pro/image-to-video"
+FAL_KLING_V30_4K_T2V_ID         = "fal-ai/kling-video/v3/4k/text-to-video"
+FAL_KLING_V30_4K_I2V_ID         = "fal-ai/kling-video/v3/4k/image-to-video"
 FAL_KLING_O1_STD_I2V_ID         = "fal-ai/kling-video/o1/standard/image-to-video"
 FAL_KLING_O1_REF_I2V_ID         = "fal-ai/kling-video/o1/standard/reference-to-video"
 FAL_KLING_O1_PRO_I2V_ID         = "fal-ai/kling-video/o1/image-to-video"
@@ -844,6 +906,9 @@ FAL_KLING_O3_PRO_T2V_ID         = "fal-ai/kling-video/o3/pro/text-to-video"
 FAL_KLING_O3_PRO_I2V_ID         = "fal-ai/kling-video/o3/pro/image-to-video"
 FAL_KLING_O3_PRO_REF_I2V_ID     = "fal-ai/kling-video/o3/pro/reference-to-video"
 FAL_KLING_O3_PRO_V2V_ID         = "fal-ai/kling-video/o3/pro/video-to-video/edit"
+FAL_KLING_O3_4K_T2V_ID          = "fal-ai/kling-video/o3/4k/text-to-video"
+FAL_KLING_O3_4K_I2V_ID          = "fal-ai/kling-video/o3/4k/image-to-video"
+FAL_KLING_O3_4K_REF_I2V_ID      = "fal-ai/kling-video/o3/4k/reference-to-video"
 FAL_SEEDANCE_V1_LITE_T2V_ID     = "fal-ai/bytedance/seedance/v1/lite/text-to-video"
 FAL_SEEDANCE_V1_LITE_I2V_ID     = "fal-ai/bytedance/seedance/v1/lite/image-to-video"
 FAL_SEEDANCE_V1_LITE_REF_ID     = "fal-ai/bytedance/seedance/v1/lite/reference-to-video"
@@ -853,15 +918,259 @@ FAL_SEEDANCE_V1_PRO_FAST_T2V_ID = "fal-ai/bytedance/seedance/v1/pro/fast/text-to
 FAL_SEEDANCE_V1_PRO_FAST_I2V_ID = "fal-ai/bytedance/seedance/v1/pro/fast/image-to-video"
 FAL_SEEDANCE_V15_PRO_T2V_ID     = "fal-ai/bytedance/seedance/v1.5/pro/text-to-video"
 FAL_SEEDANCE_V15_PRO_I2V_ID     = "fal-ai/bytedance/seedance/v1.5/pro/image-to-video"
-FAL_WAN_T2V_ID                  = "fal-ai/wan/v2.2-a14b/text-to-video"
-FAL_WAN_I2V_ID                  = "fal-ai/wan/v2.2-a14b/image-to-video"
+FAL_SEEDANCE_V20_T2V_ID         = "bytedance/seedance-2.0/text-to-video"
+FAL_SEEDANCE_V20_I2V_ID         = "bytedance/seedance-2.0/image-to-video"
+FAL_SEEDANCE_V20_REF_ID         = "bytedance/seedance-2.0/reference-to-video"
+FAL_WAN_T2V_ID                  = "fal:wan2.7:text-to-video"
+FAL_WAN_I2V_ID                  = "fal:wan2.7:image-to-video"
+FAL_WAN_FIRST_LAST_ID           = "fal:wan2.7:first-last-frame"
+FAL_WAN_CONTINUE_ID             = "fal:wan2.7:continue-video"
+FAL_WAN_REF_ID                  = "fal:wan2.7:reference-to-video"
+FAL_WAN_EDIT_ID                 = "fal:wan2.7:edit-video"
+FAL_WAN_T2V_ENDPOINT            = "fal-ai/wan/v2.7/text-to-video"
+FAL_WAN_I2V_ENDPOINT            = "fal-ai/wan/v2.7/image-to-video"
+FAL_WAN_REF_ENDPOINT            = "fal-ai/wan/v2.7/reference-to-video"
+FAL_WAN_EDIT_ENDPOINT           = "fal-ai/wan/v2.7/edit-video"
+FAL_LTX_VIDEO_T2V_ID            = "fal-ai/ltx-video"
+FAL_LTX_VIDEO_I2V_ID            = "fal-ai/ltx-video/image-to-video"
+FAL_LTX_VIDEO_LORA_I2V_ID       = "fal-ai/ltx-video-lora/image-to-video"
+FAL_LTX_23_22B_I2V_ID           = "fal-ai/ltx-2.3-22b/image-to-video"
 KLING_DIRECT_TEXT_DEFAULT_ID    = "kling-v3-pro"
 KLING_DIRECT_IMAGE_DEFAULT_ID   = "kling-v3-pro"
+RUNWAY_GEN4_IMAGE_ID            = "runway:gen4_image"
+RUNWAY_GEN4_IMAGE_TURBO_ID      = "runway:gen4_image_turbo"
+RUNWAY_GEMINI_FLASH_IMAGE_ID    = "runway:gemini_2.5_flash"
+RUNWAY_GEN45_T2V_ID             = "runway:gen4.5:text_to_video"
+RUNWAY_VEO31_T2V_ID             = "runway:veo3.1:text_to_video"
+RUNWAY_VEO31_FAST_T2V_ID        = "runway:veo3.1_fast:text_to_video"
+RUNWAY_GEN45_I2V_ID             = "runway:gen4.5:image_to_video"
+RUNWAY_GEN4_TURBO_I2V_ID        = "runway:gen4_turbo:image_to_video"
+RUNWAY_GEN3A_TURBO_I2V_ID       = "runway:gen3a_turbo:image_to_video"
+RUNWAY_VEO3_I2V_ID              = "runway:veo3:image_to_video"
+RUNWAY_VEO31_I2V_ID             = "runway:veo3.1:image_to_video"
+RUNWAY_VEO31_FAST_I2V_ID        = "runway:veo3.1_fast:image_to_video"
+RUNWAY_GEN4_ALEPH_V2V_ID        = "runway:gen4_aleph:video_to_video"
+LUMA_RAY2_T2V_ID                = "luma:ray-2:text_to_video"
+LUMA_RAY2_I2V_ID                = "luma:ray-2:image_to_video"
+LUMA_RAY_FLASH2_T2V_ID          = "luma:ray-flash-2:text_to_video"
+LUMA_RAY_FLASH2_I2V_ID          = "luma:ray-flash-2:image_to_video"
 UPSCALER_MODELS = {
     "seedvr2": {"id": FAL_SEEDVR_UPSCALE_ID, "label": "SeedVR2"},
 }
 
 BYTEPLUS_SEEDREAM_45_MODEL_ID   = "seedream-4-5-251128"
+FAL_GPT_IMAGE_2_MAX_PIXELS      = 8_294_400
+FAL_GPT_IMAGE_2_MAX_SIDE_BY_SIZE = {
+    "1K": 1024,
+    "2K": 2048,
+    "4K": 3840,
+}
+FAL_GPT_IMAGE_2_HIGH_QUALITY_PRICING = {
+    (1024, 768): 0.15,
+    (768, 1024): 0.15,
+    (1024, 1024): 0.22,
+    (1024, 1536): 0.17,
+    (1536, 1024): 0.17,
+    (1920, 1080): 0.16,
+    (1080, 1920): 0.16,
+    (2560, 1440): 0.23,
+    (1440, 2560): 0.23,
+    (3840, 2160): 0.41,
+    (2160, 3840): 0.41,
+}
+
+RUNWAY_IMAGE_RATIO_MAPS = {
+    RUNWAY_GEN4_IMAGE_ID: {
+        "1:1": "1024:1024",
+        "16:9": "1360:768",
+        "9:16": "720:1280",
+        "4:3": "1440:1080",
+        "3:4": "1080:1440",
+    },
+    RUNWAY_GEN4_IMAGE_TURBO_ID: {
+        "1:1": "1024:1024",
+        "16:9": "1360:768",
+        "9:16": "720:1280",
+        "4:3": "1440:1080",
+        "3:4": "1080:1440",
+    },
+    RUNWAY_GEMINI_FLASH_IMAGE_ID: {
+        "1:1": "1024:1024",
+        "16:9": "1536:672",
+        "9:16": "768:1344",
+    },
+}
+
+RUNWAY_VIDEO_MODEL_SPECS = [
+    {
+        "id": RUNWAY_GEN45_T2V_ID,
+        "runway_model": "gen4.5",
+        "label": "Runway Gen-4.5",
+        "input_modes": ["text"],
+        "aspect_ratios": ["16:9", "9:16"],
+        "duration_options": list(range(2, 11)),
+        "sort_order": 410,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": RUNWAY_VEO31_T2V_ID,
+        "runway_model": "veo3.1",
+        "label": "Runway Veo 3.1",
+        "input_modes": ["text"],
+        "aspect_ratios": ["16:9", "9:16"],
+        "duration_options": [4, 6, 8],
+        "sort_order": 411,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": RUNWAY_VEO31_FAST_T2V_ID,
+        "runway_model": "veo3.1_fast",
+        "label": "Runway Veo 3.1 Fast",
+        "input_modes": ["text"],
+        "aspect_ratios": ["16:9", "9:16"],
+        "duration_options": [4, 6, 8],
+        "sort_order": 412,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": RUNWAY_GEN45_I2V_ID,
+        "runway_model": "gen4.5",
+        "label": "Runway Gen-4.5",
+        "input_modes": ["image"],
+        "aspect_ratios": ["16:9", "9:16", "4:3", "1:1", "3:4", "21:9"],
+        "duration_options": list(range(2, 11)),
+        "supports_start_image": True,
+        "start_image_required": True,
+        "sort_order": 420,
+        "video_mode_kind": "image_to_video",
+    },
+    {
+        "id": RUNWAY_GEN4_TURBO_I2V_ID,
+        "runway_model": "gen4_turbo",
+        "label": "Runway Gen-4 Turbo",
+        "input_modes": ["image"],
+        "aspect_ratios": ["16:9", "9:16", "4:3", "1:1", "3:4", "21:9"],
+        "duration_options": list(range(2, 11)),
+        "supports_start_image": True,
+        "start_image_required": True,
+        "sort_order": 421,
+        "video_mode_kind": "image_to_video",
+    },
+    {
+        "id": RUNWAY_GEN3A_TURBO_I2V_ID,
+        "runway_model": "gen3a_turbo",
+        "label": "Runway Gen-3 Alpha Turbo",
+        "input_modes": ["image"],
+        "aspect_ratios": ["16:9", "9:16"],
+        "duration_options": [5, 10],
+        "supports_start_image": True,
+        "start_image_required": True,
+        "sort_order": 422,
+        "video_mode_kind": "image_to_video",
+    },
+    {
+        "id": RUNWAY_VEO3_I2V_ID,
+        "runway_model": "veo3",
+        "label": "Runway Veo 3",
+        "input_modes": ["image"],
+        "aspect_ratios": ["16:9", "9:16"],
+        "duration_options": [8],
+        "supports_start_image": True,
+        "start_image_required": True,
+        "sort_order": 423,
+        "video_mode_kind": "image_to_video",
+    },
+    {
+        "id": RUNWAY_VEO31_I2V_ID,
+        "runway_model": "veo3.1",
+        "label": "Runway Veo 3.1",
+        "input_modes": ["image"],
+        "aspect_ratios": ["16:9", "9:16"],
+        "duration_options": [4, 6, 8],
+        "supports_start_image": True,
+        "start_image_required": True,
+        "sort_order": 424,
+        "video_mode_kind": "image_to_video",
+    },
+    {
+        "id": RUNWAY_VEO31_FAST_I2V_ID,
+        "runway_model": "veo3.1_fast",
+        "label": "Runway Veo 3.1 Fast",
+        "input_modes": ["image"],
+        "aspect_ratios": ["16:9", "9:16"],
+        "duration_options": [4, 6, 8],
+        "supports_start_image": True,
+        "start_image_required": True,
+        "sort_order": 425,
+        "video_mode_kind": "image_to_video",
+    },
+    {
+        "id": RUNWAY_GEN4_ALEPH_V2V_ID,
+        "runway_model": "gen4_aleph",
+        "label": "Runway Gen-4 Aleph",
+        "input_modes": ["video"],
+        "aspect_ratios": [],
+        "duration_options": [],
+        "supports_start_image": False,
+        "supports_source_video": True,
+        "source_video_required": True,
+        "supports_duration": False,
+        "supports_aspect_ratio": False,
+        "sort_order": 430,
+        "video_mode_kind": "video_to_video",
+    },
+]
+
+LUMA_VIDEO_MODEL_SPECS = [
+    {
+        "id": LUMA_RAY2_T2V_ID,
+        "native_model_name": "ray-2",
+        "label": "Luma Ray 2",
+        "input_modes": ["text"],
+        "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"],
+        "durations": [5, 9],
+        "resolutions": ["720p", "1080p", "4k", "540p"],
+        "sort_order": 510,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": LUMA_RAY2_I2V_ID,
+        "native_model_name": "ray-2",
+        "label": "Luma Ray 2",
+        "input_modes": ["image"],
+        "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"],
+        "durations": [5, 9],
+        "resolutions": ["720p", "1080p", "4k", "540p"],
+        "supports_start_image": True,
+        "start_image_required": True,
+        "sort_order": 511,
+        "video_mode_kind": "image_to_video",
+    },
+    {
+        "id": LUMA_RAY_FLASH2_T2V_ID,
+        "native_model_name": "ray-flash-2",
+        "label": "Luma Ray Flash 2",
+        "input_modes": ["text"],
+        "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"],
+        "durations": [5, 9],
+        "resolutions": ["720p", "1080p", "4k", "540p"],
+        "sort_order": 512,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": LUMA_RAY_FLASH2_I2V_ID,
+        "native_model_name": "ray-flash-2",
+        "label": "Luma Ray Flash 2",
+        "input_modes": ["image"],
+        "aspect_ratios": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21"],
+        "durations": [5, 9],
+        "resolutions": ["720p", "1080p", "4k", "540p"],
+        "supports_start_image": True,
+        "start_image_required": True,
+        "sort_order": 513,
+        "video_mode_kind": "image_to_video",
+    },
+]
 
 MODELS_INFO = {
     "gemini-2.5-flash-image": {
@@ -871,6 +1180,7 @@ MODELS_INFO = {
         "label":          "Nano Banana",
         "resolutions":    ["1K"],
         "thinking":       False,
+        "supports_search": True,
         "aspect_ratios":  ASPECT_RATIOS_BASE,
         "max_images":     4,
         "max_ref_images": 0,
@@ -883,6 +1193,7 @@ MODELS_INFO = {
         "label":          "Nano Banana",
         "resolutions":    ["1K"],
         "thinking":       False,
+        "supports_search": True,
         "aspect_ratios":  ASPECT_RATIOS_FAL,
         "max_images":     4,
         "max_ref_images": 14,
@@ -895,6 +1206,7 @@ MODELS_INFO = {
         "label":          "Nano Banana Pro",
         "resolutions":    ["1K","2K","4K"],
         "thinking":       False,
+        "supports_search": True,
         "aspect_ratios":  ASPECT_RATIOS_BASE,
         "max_images":     4,
         "max_ref_images": 8,
@@ -907,6 +1219,7 @@ MODELS_INFO = {
         "label":          "Nano Banana Pro",
         "resolutions":    ["1K","2K","4K"],
         "thinking":       False,
+        "supports_search": True,
         "aspect_ratios":  ASPECT_RATIOS_FAL,
         "max_images":     4,
         "max_ref_images": 14,
@@ -919,6 +1232,7 @@ MODELS_INFO = {
         "label":          "Nano Banana 2",
         "resolutions":    ["0.5K","1K","2K","4K"],
         "thinking":       True,
+        "supports_search": True,
         "aspect_ratios":  ASPECT_RATIOS_BASE + ASPECT_RATIOS_NB2_EXTRA,
         "max_images":     4,
         "max_ref_images": 14,
@@ -931,10 +1245,35 @@ MODELS_INFO = {
         "label":          "Nano Banana 2",
         "resolutions":    ["0.5K","1K","2K","4K"],
         "thinking":       False,
+        "supports_search": True,
         "aspect_ratios":  ASPECT_RATIOS_FAL,
         "max_images":     4,
         "max_ref_images": 14,
         "ref_note":       "Fal API mode - up to 14 reference images"
+    },
+    "fal-ai/gpt-image-2": {
+        "provider":       "fal",
+        "provider_label": "Fal",
+        "family":         "gpt-image-2",
+        "label":          "GPT Image 2",
+        "resolutions":    ["1K","2K","4K"],
+        "thinking":       False,
+        "aspect_ratios":  ASPECT_RATIOS_GPT_IMAGE_2,
+        "max_images":     4,
+        "max_ref_images": 0,
+        "ref_note":       "Fal API mode - text-to-image only (no reference images)"
+    },
+    "fal-ai/gpt-image-2/edit": {
+        "provider":       "fal",
+        "provider_label": "Fal",
+        "family":         "gpt-image-2-edit",
+        "label":          "GPT Image 2 Edit",
+        "resolutions":    ["1K","2K","4K"],
+        "thinking":       False,
+        "aspect_ratios":  ASPECT_RATIOS_GPT_IMAGE_2,
+        "max_images":     4,
+        "max_ref_images": 16,
+        "ref_note":       "Fal API mode - edit model, requires at least 1 reference image and supports up to 16"
     },
     "fal-ai/bytedance/seedream/v4.5/text-to-image": {
         "provider":       "fal",
@@ -971,10 +1310,67 @@ MODELS_INFO = {
         "max_images":     4,
         "max_ref_images": 10,
         "ref_note":       "Fal API mode - up to 10 reference images"
+    },
+    RUNWAY_GEN4_IMAGE_ID: {
+        "provider":       "runway",
+        "provider_label": "Runway",
+        "family":         "runway-gen4-image",
+        "label":          "Runway Gen-4 Image",
+        "runway_model":   "gen4_image",
+        "resolutions":    ["1K"],
+        "thinking":       False,
+        "aspect_ratios":  list(RUNWAY_IMAGE_RATIO_MAPS[RUNWAY_GEN4_IMAGE_ID].keys()),
+        "max_images":     1,
+        "max_ref_images": 3,
+        "ref_note":       "Runway API mode - up to 3 reference images"
+    },
+    RUNWAY_GEN4_IMAGE_TURBO_ID: {
+        "provider":       "runway",
+        "provider_label": "Runway",
+        "family":         "runway-gen4-image-turbo",
+        "label":          "Runway Gen-4 Image Turbo",
+        "runway_model":   "gen4_image_turbo",
+        "resolutions":    ["1K"],
+        "thinking":       False,
+        "aspect_ratios":  list(RUNWAY_IMAGE_RATIO_MAPS[RUNWAY_GEN4_IMAGE_TURBO_ID].keys()),
+        "max_images":     1,
+        "max_ref_images": 3,
+        "ref_note":       "Runway API mode - up to 3 reference images"
+    },
+    RUNWAY_GEMINI_FLASH_IMAGE_ID: {
+        "provider":       "runway",
+        "provider_label": "Runway",
+        "family":         "runway-gemini-25-flash",
+        "label":          "Runway Gemini 2.5 Flash",
+        "runway_model":   "gemini_2.5_flash",
+        "resolutions":    ["1K"],
+        "thinking":       False,
+        "aspect_ratios":  list(RUNWAY_IMAGE_RATIO_MAPS[RUNWAY_GEMINI_FLASH_IMAGE_ID].keys()),
+        "max_images":     1,
+        "max_ref_images": 3,
+        "ref_note":       "Runway API mode - up to 3 reference images"
     }
 }
 
 MODEL_FAMILIES = {
+    "gpt-image-2-edit": {
+        "label": "GPT Image 2 Edit",
+        "badge": "GPT2E",
+        "default_provider": "fal",
+        "provider_order": ["fal"],
+        "providers": {
+            "fal": FAL_GPT_IMAGE_2_EDIT_ID,
+        },
+    },
+    "gpt-image-2": {
+        "label": "GPT Image 2",
+        "badge": "GPT2",
+        "default_provider": "fal",
+        "provider_order": ["fal"],
+        "providers": {
+            "fal": FAL_GPT_IMAGE_2_TEXT_ID,
+        },
+    },
     "nano-banana-2": {
         "label": "Nano Banana 2",
         "badge": "NB2",
@@ -1022,6 +1418,33 @@ MODEL_FAMILIES = {
         "providers": {
             "gemini": "gemini-2.5-flash-image",
             "fal": FAL_NANO_BANANA_TEXT_ID,
+        },
+    },
+    "runway-gen4-image": {
+        "label": "Runway Gen-4 Image",
+        "badge": "RW4",
+        "default_provider": "runway",
+        "provider_order": ["runway"],
+        "providers": {
+            "runway": RUNWAY_GEN4_IMAGE_ID,
+        },
+    },
+    "runway-gen4-image-turbo": {
+        "label": "Runway Gen-4 Image Turbo",
+        "badge": "RW4T",
+        "default_provider": "runway",
+        "provider_order": ["runway"],
+        "providers": {
+            "runway": RUNWAY_GEN4_IMAGE_TURBO_ID,
+        },
+    },
+    "runway-gemini-25-flash": {
+        "label": "Runway Gemini 2.5 Flash",
+        "badge": "RWG",
+        "default_provider": "runway",
+        "provider_order": ["runway"],
+        "providers": {
+            "runway": RUNWAY_GEMINI_FLASH_IMAGE_ID,
         },
     },
 }
@@ -1126,7 +1549,7 @@ def normalize_video_duration(value, default: int = 5) -> int:
 
 def normalize_video_resolution(value: str) -> str:
     resolution = str(value or "720p").strip().lower()
-    return resolution if resolution in {"480p", "720p", "1080p", "1440p", "2160p"} else "720p"
+    return resolution if resolution in {"480p", "540p", "580p", "720p", "1080p", "1440p", "2160p", "4k"} else "720p"
 
 
 def normalize_video_input_mode(value: str) -> str:
@@ -1184,6 +1607,30 @@ def normalize_video_file_payload(video: dict | None, default_name: str) -> dict:
         "data": str(video.get("data") or ""),
         "name": os.path.basename(str(video.get("name") or default_name)) or default_name,
         "url": str(video.get("url") or ""),
+    }
+    return payload
+
+
+def normalize_video_file_payloads(items, default_prefix: str = "video-reference") -> list[dict]:
+    if not isinstance(items, list):
+        return []
+    normalized = []
+    for idx, item in enumerate(items, start=1):
+        payload = normalize_video_file_payload(item, f"{default_prefix}-{idx}.mp4")
+        if str(payload.get("data") or payload.get("url") or "").strip():
+            normalized.append(payload)
+    return normalized
+
+
+def normalize_audio_file_payload(audio: dict | None, default_name: str = "driving-audio.mp3") -> dict:
+    if not isinstance(audio, dict):
+        audio = {}
+    mime_type = str(audio.get("mime_type") or "audio/mpeg").split(";", 1)[0].strip().lower() or "audio/mpeg"
+    payload = {
+        "mime_type": mime_type,
+        "data": str(audio.get("data") or ""),
+        "name": os.path.basename(str(audio.get("name") or default_name)) or default_name,
+        "url": str(audio.get("url") or ""),
     }
     return payload
 
@@ -1259,23 +1706,51 @@ def normalize_video_request(body: dict | None) -> dict:
     supports_start_image = bool(model_info.get("supports_start_image")) and input_mode != "text"
     supports_reference_images = bool(model_info.get("supports_reference_images")) and input_mode == "reference"
     supports_source_video = bool(model_info.get("supports_source_video")) and input_mode == "video"
-    payload["duration"] = normalize_video_duration(payload.get("duration", 5))
-    payload["aspectRatio"] = str(payload.get("aspectRatio", "16:9") or "16:9").strip()
-    if payload["aspectRatio"] not in VIDEO_ASPECT_RATIOS:
-        payload["aspectRatio"] = "16:9"
-    payload["resolution"] = normalize_video_resolution(payload.get("resolution", "720p"))
+    supports_driving_audio = bool(model_info.get("supports_driving_audio"))
+    supports_reference_videos = bool(model_info.get("supports_reference_videos")) and input_mode == "reference"
+    allowed_durations = [int(x) for x in (model_info.get("durations") or []) if str(x).strip()]
+    allowed_ratios = [str(x).strip() for x in (model_info.get("aspect_ratios") or []) if str(x).strip()]
+    allowed_resolutions = [str(x).strip() for x in (model_info.get("resolutions") or []) if str(x).strip()]
+    payload["duration"] = normalize_video_duration(payload.get("duration", allowed_durations[0] if allowed_durations else 5))
+    if allowed_durations and payload["duration"] not in allowed_durations:
+        payload["duration"] = allowed_durations[0]
+
+    requested_aspect_ratio = str(payload.get("aspectRatio", allowed_ratios[0] if allowed_ratios else "16:9") or "").strip()
+    if allowed_ratios:
+        allowed_ratio_lookup = {value.lower(): value for value in allowed_ratios}
+        payload["aspectRatio"] = allowed_ratio_lookup.get(requested_aspect_ratio.lower(), allowed_ratios[0])
+    else:
+        payload["aspectRatio"] = requested_aspect_ratio if requested_aspect_ratio in VIDEO_ASPECT_RATIOS else "16:9"
+
+    requested_resolution = str(payload.get("resolution", allowed_resolutions[0] if allowed_resolutions else "720p") or "").strip()
+    if allowed_resolutions:
+        allowed_resolution_lookup = {value.lower(): value for value in allowed_resolutions}
+        payload["resolution"] = allowed_resolution_lookup.get(requested_resolution.lower(), allowed_resolutions[0])
+    else:
+        payload["resolution"] = normalize_video_resolution(requested_resolution)
+
     payload["negativePrompt"] = str(payload.get("negativePrompt", "") or "").strip()
     payload["videoSafetyChecker"] = bool(payload.get("videoSafetyChecker", True))
     payload["videoOutputSafetyChecker"] = bool(payload.get("videoOutputSafetyChecker", True))
+    payload["videoGenerateAudio"] = bool(payload.get("videoGenerateAudio", False))
     payload["sourceImage"] = normalize_video_image_payload(payload.get("sourceImage"), "video-source.png") if supports_start_image else {}
     payload["sourceVideo"] = normalize_video_file_payload(payload.get("sourceVideo"), "video-source.mp4") if supports_source_video else {}
+    payload["sourceAudio"] = normalize_audio_file_payload(payload.get("sourceAudio"), "driving-audio.mp3") if supports_driving_audio else {}
     payload["referenceImages"] = normalize_video_image_payloads(payload.get("referenceImages")) if supports_reference_images else []
+    payload["referenceVideos"] = normalize_video_file_payloads(payload.get("referenceVideos"), "video-reference") if supports_reference_videos else []
     if not supports_reference_images:
         payload["referenceImages"] = []
     else:
         max_refs = max(0, int(model_info.get("max_reference_images", 0) or 0))
         if max_refs:
             payload["referenceImages"] = payload["referenceImages"][:max_refs]
+    if not supports_reference_videos:
+        payload["referenceVideos"] = []
+    else:
+        max_ref_videos = max(0, int(model_info.get("max_reference_videos", 0) or 0))
+        if max_ref_videos:
+            payload["referenceVideos"] = payload["referenceVideos"][:max_ref_videos]
+    payload["videoWanMultiShots"] = bool(payload.get("videoWanMultiShots", False)) if model_info.get("supports_multi_shots") else False
     payload["videoUpscaleMode"] = normalize_video_upscale_mode(payload.get("videoUpscaleMode", "factor"))
     payload["videoUpscaleFactor"] = normalize_video_upscale_factor(payload.get("videoUpscaleFactor", 2))
     payload["videoUpscaleTargetResolution"] = normalize_video_upscale_target_resolution(payload.get("videoUpscaleTargetResolution", payload.get("resolution", "1080p")))
@@ -3000,6 +3475,104 @@ def build_fal_nano_banana_resolution(model_id: str, image_size: str) -> str:
     return normalized
 
 
+def compute_fal_gpt_image_2_dimensions(aspect_ratio: str, image_size: str) -> tuple[int, int]:
+    ratio_text = str(aspect_ratio or "1:1").strip()
+    try:
+        width_ratio_raw, height_ratio_raw = ratio_text.split(":", 1)
+        width_ratio = max(1, int(width_ratio_raw))
+        height_ratio = max(1, int(height_ratio_raw))
+    except Exception as exc:
+        raise ValueError("Unsupported GPT Image 2 aspect ratio.") from exc
+
+    normalized_size = str(image_size or "1K").strip().upper()
+    max_side = FAL_GPT_IMAGE_2_MAX_SIDE_BY_SIZE.get(normalized_size, FAL_GPT_IMAGE_2_MAX_SIDE_BY_SIZE["1K"])
+    ratio_value = width_ratio / height_ratio
+
+    if ratio_value >= 1:
+        width = max_side
+        height = max(16, int((width / ratio_value) // 16 * 16))
+    else:
+        height = max_side
+        width = max(16, int((height * ratio_value) // 16 * 16))
+
+    if width * height > FAL_GPT_IMAGE_2_MAX_PIXELS:
+        scale = (FAL_GPT_IMAGE_2_MAX_PIXELS / float(width * height)) ** 0.5
+        width = max(16, int((width * scale) // 16 * 16))
+        height = max(16, int((height * scale) // 16 * 16))
+
+    while width > max_side or height > max_side or (width * height) > FAL_GPT_IMAGE_2_MAX_PIXELS:
+        if width >= height:
+            width = max(16, width - 16)
+            height = max(16, int((width / ratio_value) // 16 * 16))
+        else:
+            height = max(16, height - 16)
+            width = max(16, int((height * ratio_value) // 16 * 16))
+
+    return width, height
+
+
+def build_fal_gpt_image_2_image_size(image_size: str, aspect_ratio: str) -> str | dict:
+    normalized_size = str(image_size or "1K").strip().upper()
+    normalized_ratio = str(aspect_ratio or "1:1").strip()
+    preset_map = {
+        "1:1": "square_hd",
+        "16:9": "landscape_16_9",
+        "9:16": "portrait_16_9",
+        "4:3": "landscape_4_3",
+        "3:4": "portrait_4_3",
+    }
+    if normalized_size == "1K" and normalized_ratio in preset_map:
+        return preset_map[normalized_ratio]
+    width, height = compute_fal_gpt_image_2_dimensions(normalized_ratio, normalized_size)
+    return {"width": width, "height": height}
+
+
+def resolve_fal_gpt_image_2_dimensions(image_size_value: str | dict) -> tuple[int, int]:
+    if isinstance(image_size_value, dict):
+        width = int(image_size_value.get("width") or 0)
+        height = int(image_size_value.get("height") or 0)
+        if width > 0 and height > 0:
+            return width, height
+    preset_dimensions = {
+        "square_hd": (1024, 1024),
+        "square": (512, 512),
+        "portrait_4_3": (768, 1024),
+        "portrait_16_9": (576, 1024),
+        "landscape_4_3": (1024, 768),
+        "landscape_16_9": (1024, 576),
+    }
+    if isinstance(image_size_value, str):
+        dims = preset_dimensions.get(str(image_size_value or "").strip().lower())
+        if dims:
+            return dims
+    return 0, 0
+
+
+def estimate_fal_gpt_image_2_price_per_image(image_size_value: str | dict) -> float:
+    width, height = resolve_fal_gpt_image_2_dimensions(image_size_value)
+    if width <= 0 or height <= 0:
+        return 0.0
+
+    exact = FAL_GPT_IMAGE_2_HIGH_QUALITY_PRICING.get((width, height))
+    if exact is not None:
+        return float(exact)
+
+    target_area = float(width * height)
+    target_aspect = float(max(width, height)) / float(max(1, min(width, height)))
+    best_price = 0.0
+    best_score = None
+    for (candidate_width, candidate_height), candidate_price in FAL_GPT_IMAGE_2_HIGH_QUALITY_PRICING.items():
+        candidate_area = float(candidate_width * candidate_height)
+        candidate_aspect = float(max(candidate_width, candidate_height)) / float(max(1, min(candidate_width, candidate_height)))
+        area_ratio = max(target_area, candidate_area) / max(1.0, min(target_area, candidate_area))
+        aspect_ratio = max(target_aspect, candidate_aspect) / max(1.0, min(target_aspect, candidate_aspect))
+        score = abs(area_ratio - 1.0) + (abs(aspect_ratio - 1.0) * 1.35)
+        if best_score is None or score < best_score:
+            best_score = score
+            best_price = float(candidate_price)
+    return best_price
+
+
 def normalize_seedvr_preset(value: str | None) -> tuple[str, float | None, str | None, str]:
     presets = {
         "factor:2": ("factor", 2.0, None, "2X"),
@@ -3217,8 +3790,8 @@ def save_reference_mask_assets(date_str: str, filename: str, mask_png_b64: str) 
     if mask_img.size != original_img.size:
         mask_img = mask_img.resize(original_img.size, Image.Resampling.LANCZOS)
 
-    render_img = original_img.copy()
-    render_img.putalpha(mask_img)
+    transparent_img = Image.new("RGBA", original_img.size, (0, 0, 0, 0))
+    render_img = Image.composite(original_img, transparent_img, mask_img)
 
     os.makedirs(paths["mask_dir"], exist_ok=True)
     os.makedirs(paths["render_dir"], exist_ok=True)
@@ -3471,9 +4044,13 @@ def index():
     return render_template("index.html",
                            models=MODELS_INFO,
                            model_families=MODEL_FAMILIES,
+                           pricing=PRICING,
                            video_models=VIDEO_MODELS_INFO,
                            video_model_families=VIDEO_MODEL_FAMILIES,
+                           video_pricing=VIDEO_PRICING,
+                           gpt_image_2_dimension_pricing={f"{width}x{height}": price for (width, height), price in FAL_GPT_IMAGE_2_HIGH_QUALITY_PRICING.items()},
                            provider_labels=PROVIDER_LABELS,
+                           initial_gallery_history_items=collect_generation_records(max_load=None),
                            has_key=has_key,
                            user=session["user"])
 
@@ -3487,6 +4064,7 @@ def settings():
     fal_api_key = config.get("fal_api_key", "")
     byteplus_api_key = config.get("byteplus_api_key", "") or config.get("seedream_api_key", "")
     kling_api_token = config.get("kling_api_token", "")
+    luma_api_key = config.get("luma_api_key", "")
     return render_template("settings.html",
                            masked_key=mask_api_key(api_key),
                            has_key=bool(api_key),
@@ -3496,6 +4074,8 @@ def settings():
                            has_byteplus_key=bool(byteplus_api_key),
                            masked_kling_token=mask_api_key(kling_api_token),
                            has_kling_token=bool(kling_api_token),
+                           masked_luma_key=mask_api_key(luma_api_key),
+                           has_luma_key=bool(luma_api_key),
                            stats=stats,
                            vision_models=VISION_MODELS_INFO,
                            analysis_model=TALENT_ANALYSIS_MODEL,
@@ -3571,12 +4151,126 @@ ASSET_GALLERY_PAGE_CONFIG = {
 
 VIDEO_ASPECT_RATIOS = ["16:9", "9:16", "1:1"]
 VIDEO_DURATION_OPTIONS = [5, 10]
-VIDEO_DURATION_EXTENDED_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+VIDEO_DURATION_EXTENDED_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
 VIDEO_DURATION_OMNI_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10]
 VIDEO_DURATION_ALL_OPTIONS = sorted({*VIDEO_DURATION_OPTIONS, *VIDEO_DURATION_EXTENDED_OPTIONS})
 KLING_RESOLUTION_OPTIONS = ["1080p"]
+KLING_4K_RESOLUTION_OPTIONS = ["2160p"]
 WAN_RESOLUTION_OPTIONS = ["720p", "1080p"]
+WAN_DURATION_OPTIONS = list(range(2, 16))
+WAN_REFERENCE_DURATION_OPTIONS = list(range(2, 11))
+WAN_EDIT_DURATION_OPTIONS = list(range(2, 11))
+WAN_ASPECT_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4"]
 SEEDANCE_RESOLUTION_OPTIONS = ["480p", "720p", "1080p"]
+SEEDANCE_20_RESOLUTION_OPTIONS = ["480p", "720p"]
+SEEDANCE_20_ASPECT_RATIOS = ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]
+SEEDANCE_20_DURATION_OPTIONS = list(range(4, 16))
+LTX_VIDEO_LORA_RESOLUTION_OPTIONS = ["480p", "720p"]
+LTX_VIDEO_LORA_ASPECT_RATIOS = ["auto", "16:9", "1:1", "9:16"]
+LTX_23_VIDEO_SIZE_OPTIONS = ["auto", "square_hd", "square", "portrait_4_3", "portrait_16_9", "landscape_4_3", "landscape_16_9"]
+
+FAL_WAN_MODEL_SPECS = [
+    {
+        "id": FAL_WAN_T2V_ID,
+        "fal_endpoint": FAL_WAN_T2V_ENDPOINT,
+        "label": "Wan Video 2.7",
+        "input_modes": ["text"],
+        "durations": WAN_DURATION_OPTIONS,
+        "aspect_ratios": WAN_ASPECT_RATIOS,
+        "resolutions": WAN_RESOLUTION_OPTIONS,
+        "supports_safety_checker": True,
+        "supports_output_safety_checker": True,
+        "supports_driving_audio": True,
+        "sort_order": 210,
+        "video_mode_kind": "text_to_video",
+    },
+    {
+        "id": FAL_WAN_I2V_ID,
+        "fal_endpoint": FAL_WAN_I2V_ENDPOINT,
+        "label": "Wan Video 2.7",
+        "input_modes": ["image"],
+        "durations": WAN_DURATION_OPTIONS,
+        "aspect_ratios": WAN_ASPECT_RATIOS,
+        "resolutions": WAN_RESOLUTION_OPTIONS,
+        "supports_safety_checker": True,
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+        "supports_driving_audio": True,
+        "sort_order": 211,
+        "video_mode_kind": "image_to_video",
+    },
+    {
+        "id": FAL_WAN_FIRST_LAST_ID,
+        "fal_endpoint": FAL_WAN_I2V_ENDPOINT,
+        "label": "Wan 2.7 First+Last",
+        "input_modes": ["reference"],
+        "durations": WAN_DURATION_OPTIONS,
+        "aspect_ratios": WAN_ASPECT_RATIOS,
+        "resolutions": WAN_RESOLUTION_OPTIONS,
+        "supports_safety_checker": True,
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "reference_images_field": "end_image_url",
+        "max_reference_images": 1,
+        "supports_driving_audio": True,
+        "sort_order": 212,
+        "video_mode_kind": "first_last_frame_to_video",
+    },
+    {
+        "id": FAL_WAN_CONTINUE_ID,
+        "fal_endpoint": FAL_WAN_I2V_ENDPOINT,
+        "label": "Wan 2.7 Continue",
+        "input_modes": ["video"],
+        "durations": WAN_DURATION_OPTIONS,
+        "aspect_ratios": WAN_ASPECT_RATIOS,
+        "resolutions": WAN_RESOLUTION_OPTIONS,
+        "supports_safety_checker": True,
+        "supports_source_video": True,
+        "source_video_required": True,
+        "source_video_field": "video_url",
+        "supports_driving_audio": True,
+        "sort_order": 213,
+        "video_mode_kind": "video_continuation",
+    },
+    {
+        "id": FAL_WAN_REF_ID,
+        "fal_endpoint": FAL_WAN_REF_ENDPOINT,
+        "label": "Wan 2.7 Reference",
+        "input_modes": ["reference"],
+        "durations": WAN_REFERENCE_DURATION_OPTIONS,
+        "aspect_ratios": WAN_ASPECT_RATIOS,
+        "resolutions": WAN_RESOLUTION_OPTIONS,
+        "supports_safety_checker": True,
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "reference_images_field": "reference_image_urls",
+        "max_reference_images": 9,
+        "supports_reference_videos": True,
+        "max_reference_videos": 8,
+        "supports_multi_shots": True,
+        "sort_order": 214,
+        "video_mode_kind": "reference_to_video",
+    },
+    {
+        "id": FAL_WAN_EDIT_ID,
+        "fal_endpoint": FAL_WAN_EDIT_ENDPOINT,
+        "label": "Wan 2.7 Edit",
+        "input_modes": ["video"],
+        "durations": WAN_EDIT_DURATION_OPTIONS,
+        "aspect_ratios": WAN_ASPECT_RATIOS,
+        "resolutions": WAN_RESOLUTION_OPTIONS,
+        "supports_safety_checker": True,
+        "supports_source_video": True,
+        "source_video_required": True,
+        "source_video_field": "video_url",
+        "sort_order": 215,
+        "video_mode_kind": "video_edit",
+    },
+]
 
 KLING_DIRECT_MODEL_SPECS = [
     {
@@ -3784,6 +4478,30 @@ KLING_DIRECT_MODEL_SPECS = [
         "kling_mode": "pro",
         "supports_start_image": True,
         "start_image_required": True,
+    },
+    {
+        "id": "kling-v3-4k-std",
+        "native_model_name": "kling-v3",
+        "label": "Kling 3.0 Standard 4K",
+        "input_modes": ["text", "image"],
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "sort_order": 82,
+        "kling_mode": "std",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "resolutions": KLING_4K_RESOLUTION_OPTIONS,
+    },
+    {
+        "id": "kling-v3-4k-pro",
+        "native_model_name": "kling-v3",
+        "label": "Kling 3.0 Pro 4K",
+        "input_modes": ["text", "image"],
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "sort_order": 83,
+        "kling_mode": "pro",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "resolutions": KLING_4K_RESOLUTION_OPTIONS,
     },
     {
         "id": "kling-video-o1-std",
@@ -4104,6 +4822,29 @@ FAL_KLING_MODEL_SPECS = [
         "start_image_field": "start_image_url",
     },
     {
+        "id": FAL_KLING_V30_4K_T2V_ID,
+        "label": "Kling 3.0 4K",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["text"],
+        "sort_order": 152,
+        "video_mode_kind": "text_to_video",
+        "resolutions": KLING_4K_RESOLUTION_OPTIONS,
+        "supports_generate_audio": True,
+    },
+    {
+        "id": FAL_KLING_V30_4K_I2V_ID,
+        "label": "Kling 3.0 4K",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["image"],
+        "sort_order": 153,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+        "resolutions": KLING_4K_RESOLUTION_OPTIONS,
+        "supports_generate_audio": True,
+    },
+    {
         "id": FAL_KLING_O1_STD_I2V_ID,
         "label": "Kling O1 Standard",
         "durations": [3, 4, 5, 6, 7, 8, 9, 10],
@@ -4239,6 +4980,46 @@ FAL_KLING_MODEL_SPECS = [
         "reference_images_field": "image_urls",
         "max_reference_images": 4,
     },
+    {
+        "id": FAL_KLING_O3_4K_T2V_ID,
+        "label": "Kling O3 4K",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["text"],
+        "sort_order": 178,
+        "video_mode_kind": "text_to_video",
+        "resolutions": KLING_4K_RESOLUTION_OPTIONS,
+        "supports_generate_audio": True,
+    },
+    {
+        "id": FAL_KLING_O3_4K_I2V_ID,
+        "label": "Kling O3 4K",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["image"],
+        "sort_order": 179,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+        "resolutions": KLING_4K_RESOLUTION_OPTIONS,
+        "supports_generate_audio": True,
+    },
+    {
+        "id": FAL_KLING_O3_4K_REF_I2V_ID,
+        "label": "Kling O3 4K Reference",
+        "durations": VIDEO_DURATION_EXTENDED_OPTIONS,
+        "input_modes": ["reference"],
+        "sort_order": 180,
+        "video_mode_kind": "reference_to_video",
+        "supports_start_image": True,
+        "start_image_required": False,
+        "start_image_field": "image_url",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "reference_images_field": "image_urls",
+        "max_reference_images": 7,
+        "resolutions": KLING_4K_RESOLUTION_OPTIONS,
+        "supports_generate_audio": True,
+    },
 ]
 
 for _spec in KLING_DIRECT_MODEL_SPECS:
@@ -4345,6 +5126,49 @@ FAL_SEEDANCE_MODEL_SPECS = [
         "start_image_required": True,
         "start_image_field": "image_url",
     },
+    {
+        "id": FAL_SEEDANCE_V20_T2V_ID,
+        "label": "Seedance 2.0",
+        "input_modes": ["text"],
+        "durations": SEEDANCE_20_DURATION_OPTIONS,
+        "aspect_ratios": SEEDANCE_20_ASPECT_RATIOS,
+        "resolutions": SEEDANCE_20_RESOLUTION_OPTIONS,
+        "sort_order": 250,
+        "video_mode_kind": "text_to_video",
+        "supports_safety_checker": False,
+        "supports_generate_audio": True,
+    },
+    {
+        "id": FAL_SEEDANCE_V20_I2V_ID,
+        "label": "Seedance 2.0",
+        "input_modes": ["image"],
+        "durations": SEEDANCE_20_DURATION_OPTIONS,
+        "aspect_ratios": SEEDANCE_20_ASPECT_RATIOS,
+        "resolutions": SEEDANCE_20_RESOLUTION_OPTIONS,
+        "sort_order": 251,
+        "video_mode_kind": "image_to_video",
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+        "supports_safety_checker": False,
+        "supports_generate_audio": True,
+    },
+    {
+        "id": FAL_SEEDANCE_V20_REF_ID,
+        "label": "Seedance 2.0 Reference",
+        "input_modes": ["reference"],
+        "durations": SEEDANCE_20_DURATION_OPTIONS,
+        "aspect_ratios": SEEDANCE_20_ASPECT_RATIOS,
+        "resolutions": SEEDANCE_20_RESOLUTION_OPTIONS,
+        "sort_order": 252,
+        "video_mode_kind": "reference_to_video",
+        "supports_reference_images": True,
+        "reference_images_required": True,
+        "reference_images_field": "image_urls",
+        "max_reference_images": 9,
+        "supports_safety_checker": False,
+        "supports_generate_audio": True,
+    },
 ]
 
 
@@ -4368,6 +5192,7 @@ def _build_video_models_info() -> dict:
             "supports_reference_images": bool(spec.get("supports_reference_images", False)),
             "reference_images_required": bool(spec.get("reference_images_required", False)),
             "max_reference_images": int(spec.get("max_reference_images", 0) or 0),
+            "supports_generate_audio": bool(spec.get("supports_generate_audio", False)),
             "direct_image_limit_mb": 10,
             "sort_order": int(spec.get("sort_order", 999)),
             "video_mode_kind": spec.get("video_mode_kind", "hybrid"),
@@ -4397,6 +5222,7 @@ def _build_video_models_info() -> dict:
             "reference_images_required": bool(spec.get("reference_images_required", False)),
             "reference_images_field": spec.get("reference_images_field", "image_urls"),
             "max_reference_images": int(spec.get("max_reference_images", 0) or 0),
+            "supports_generate_audio": bool(spec.get("supports_generate_audio", False)),
             "supports_source_video": bool(spec.get("supports_source_video", False)),
             "source_video_required": bool(spec.get("source_video_required", False)),
             "source_video_field": spec.get("source_video_field", "video_url"),
@@ -4414,7 +5240,7 @@ def _build_video_models_info() -> dict:
             "durations": list(spec.get("durations", VIDEO_DURATION_OPTIONS)),
             "aspect_ratios": list(spec.get("aspect_ratios", VIDEO_ASPECT_RATIOS)),
             "supports_negative_prompt": True,
-            "supports_safety_checker": True,
+            "supports_safety_checker": bool(spec.get("supports_safety_checker", True)),
             "supports_resolution": True,
             "resolutions": list(spec.get("resolutions", SEEDANCE_RESOLUTION_OPTIONS)),
             "supports_start_image": bool(spec.get("supports_start_image", False)),
@@ -4424,51 +5250,188 @@ def _build_video_models_info() -> dict:
             "reference_images_required": bool(spec.get("reference_images_required", False)),
             "reference_images_field": spec.get("reference_images_field", "reference_image_urls"),
             "max_reference_images": int(spec.get("max_reference_images", 0) or 0),
+            "supports_generate_audio": bool(spec.get("supports_generate_audio", False)),
             "sort_order": int(spec.get("sort_order", 999)),
             "video_mode_kind": spec.get("video_mode_kind", "text_to_video"),
         }
 
-    info[FAL_WAN_T2V_ID] = {
+    for spec in RUNWAY_VIDEO_MODEL_SPECS:
+        info[spec["id"]] = {
+            "provider": "runway",
+            "provider_label": "Runway",
+            "family": "runway-video",
+            "label": spec["label"],
+            "runway_model": spec.get("runway_model", ""),
+            "input_modes": list(spec.get("input_modes", ["text"])),
+            "durations": list(spec.get("duration_options", [])),
+            "aspect_ratios": list(spec.get("aspect_ratios", [])),
+            "supports_prompt": True,
+            "supports_negative_prompt": False,
+            "supports_safety_checker": False,
+            "supports_resolution": False,
+            "supports_duration": bool(spec.get("supports_duration", True)),
+            "supports_aspect_ratio": bool(spec.get("supports_aspect_ratio", True)),
+            "supports_start_image": bool(spec.get("supports_start_image", False)),
+            "start_image_required": bool(spec.get("start_image_required", False)),
+            "supports_source_video": bool(spec.get("supports_source_video", False)),
+            "source_video_required": bool(spec.get("source_video_required", False)),
+            "supports_reference_images": False,
+            "reference_images_required": False,
+            "max_reference_images": 0,
+            "sort_order": int(spec.get("sort_order", 999)),
+            "video_mode_kind": spec.get("video_mode_kind", "text_to_video"),
+        }
+
+    for spec in LUMA_VIDEO_MODEL_SPECS:
+        info[spec["id"]] = {
+            "provider": "luma",
+            "provider_label": "Luma",
+            "family": "luma-video",
+            "label": spec["label"],
+            "native_model_name": spec.get("native_model_name", ""),
+            "input_modes": list(spec.get("input_modes", ["text"])),
+            "durations": list(spec.get("durations", [5, 9])),
+            "aspect_ratios": list(spec.get("aspect_ratios", ["16:9", "9:16", "1:1"])),
+            "supports_prompt": True,
+            "supports_negative_prompt": False,
+            "supports_safety_checker": False,
+            "supports_resolution": True,
+            "resolutions": list(spec.get("resolutions", ["540p", "720p", "1080p", "4k"])),
+            "supports_start_image": bool(spec.get("supports_start_image", False)),
+            "start_image_required": bool(spec.get("start_image_required", False)),
+            "supports_source_video": False,
+            "source_video_required": False,
+            "supports_reference_images": False,
+            "reference_images_required": False,
+            "max_reference_images": 0,
+            "sort_order": int(spec.get("sort_order", 999)),
+            "video_mode_kind": spec.get("video_mode_kind", "text_to_video"),
+        }
+
+    for spec in FAL_WAN_MODEL_SPECS:
+        info[spec["id"]] = {
+            "provider": "fal",
+            "provider_label": "Fal",
+            "family": "wan-video",
+            "label": spec["label"],
+            "fal_endpoint": spec.get("fal_endpoint", ""),
+            "input_modes": list(spec.get("input_modes", ["text"])),
+            "durations": list(spec.get("durations", WAN_DURATION_OPTIONS)),
+            "aspect_ratios": list(spec.get("aspect_ratios", WAN_ASPECT_RATIOS)),
+            "supports_negative_prompt": True,
+            "supports_safety_checker": bool(spec.get("supports_safety_checker", True)),
+            "supports_output_safety_checker": bool(spec.get("supports_output_safety_checker", False)),
+            "supports_resolution": True,
+            "resolutions": list(spec.get("resolutions", WAN_RESOLUTION_OPTIONS)),
+            "supports_start_image": bool(spec.get("supports_start_image", False)),
+            "start_image_required": bool(spec.get("start_image_required", False)),
+            "start_image_field": spec.get("start_image_field", "image_url"),
+            "supports_reference_images": bool(spec.get("supports_reference_images", False)),
+            "reference_images_required": bool(spec.get("reference_images_required", False)),
+            "reference_images_field": spec.get("reference_images_field", "reference_image_urls"),
+            "max_reference_images": int(spec.get("max_reference_images", 0) or 0),
+            "supports_source_video": bool(spec.get("supports_source_video", False)),
+            "source_video_required": bool(spec.get("source_video_required", False)),
+            "source_video_field": spec.get("source_video_field", "video_url"),
+            "supports_driving_audio": bool(spec.get("supports_driving_audio", False)),
+            "supports_reference_videos": bool(spec.get("supports_reference_videos", False)),
+            "max_reference_videos": int(spec.get("max_reference_videos", 0) or 0),
+            "supports_multi_shots": bool(spec.get("supports_multi_shots", False)),
+            "sort_order": int(spec.get("sort_order", 999)),
+            "video_mode_kind": spec.get("video_mode_kind", "text_to_video"),
+        }
+    info[FAL_LTX_VIDEO_T2V_ID] = {
         "provider": "fal",
         "provider_label": "Fal",
-        "family": "wan-video",
-        "label": "Wan Video 2.2",
+        "family": "ltx-video",
+        "label": "LTX Video",
         "input_modes": ["text"],
-        "durations": VIDEO_DURATION_OPTIONS,
-        "aspect_ratios": VIDEO_ASPECT_RATIOS,
+        "durations": [5],
+        "aspect_ratios": [],
         "supports_negative_prompt": True,
-        "supports_safety_checker": True,
-        "supports_output_safety_checker": True,
-        "supports_resolution": True,
-        "resolutions": WAN_RESOLUTION_OPTIONS,
+        "supports_safety_checker": False,
+        "supports_output_safety_checker": False,
+        "supports_resolution": False,
+        "supports_duration": False,
+        "supports_aspect_ratio": False,
         "supports_start_image": False,
         "start_image_required": False,
         "supports_reference_images": False,
         "reference_images_required": False,
         "max_reference_images": 0,
-        "sort_order": 210,
+        "sort_order": 260,
         "video_mode_kind": "text_to_video",
     }
-    info[FAL_WAN_I2V_ID] = {
+    info[FAL_LTX_VIDEO_I2V_ID] = {
         "provider": "fal",
         "provider_label": "Fal",
-        "family": "wan-video",
-        "label": "Wan Video 2.2",
+        "family": "ltx-video",
+        "label": "LTX Video",
         "input_modes": ["image"],
-        "durations": VIDEO_DURATION_OPTIONS,
-        "aspect_ratios": VIDEO_ASPECT_RATIOS,
+        "durations": [5],
+        "aspect_ratios": [],
         "supports_negative_prompt": True,
-        "supports_safety_checker": True,
-        "supports_output_safety_checker": True,
-        "supports_resolution": True,
-        "resolutions": WAN_RESOLUTION_OPTIONS,
+        "supports_safety_checker": False,
+        "supports_output_safety_checker": False,
+        "supports_resolution": False,
+        "supports_duration": False,
+        "supports_aspect_ratio": False,
         "supports_start_image": True,
         "start_image_required": True,
         "start_image_field": "image_url",
         "supports_reference_images": False,
         "reference_images_required": False,
         "max_reference_images": 0,
-        "sort_order": 211,
+        "sort_order": 261,
+        "video_mode_kind": "image_to_video",
+    }
+    info[FAL_LTX_VIDEO_LORA_I2V_ID] = {
+        "provider": "fal",
+        "provider_label": "Fal",
+        "family": "ltx-video",
+        "label": "LTX Video LoRA",
+        "input_modes": ["image"],
+        "durations": [5],
+        "aspect_ratios": LTX_VIDEO_LORA_ASPECT_RATIOS,
+        "supports_negative_prompt": True,
+        "supports_safety_checker": True,
+        "supports_output_safety_checker": False,
+        "supports_resolution": True,
+        "resolutions": LTX_VIDEO_LORA_RESOLUTION_OPTIONS,
+        "supports_duration": False,
+        "supports_aspect_ratio": True,
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+        "supports_reference_images": False,
+        "reference_images_required": False,
+        "max_reference_images": 0,
+        "sort_order": 262,
+        "video_mode_kind": "image_to_video",
+    }
+    info[FAL_LTX_23_22B_I2V_ID] = {
+        "provider": "fal",
+        "provider_label": "Fal",
+        "family": "ltx-video",
+        "label": "LTX 2.3 22B",
+        "input_modes": ["image"],
+        "durations": [5],
+        "aspect_ratios": [],
+        "supports_negative_prompt": False,
+        "supports_safety_checker": True,
+        "supports_output_safety_checker": False,
+        "supports_resolution": True,
+        "resolutions": LTX_23_VIDEO_SIZE_OPTIONS,
+        "supports_duration": False,
+        "supports_aspect_ratio": False,
+        "supports_start_image": True,
+        "start_image_required": True,
+        "start_image_field": "image_url",
+        "supports_reference_images": False,
+        "reference_images_required": False,
+        "max_reference_images": 0,
+        "supports_generate_audio": True,
+        "sort_order": 263,
         "video_mode_kind": "image_to_video",
     }
     info[FAL_SEEDVR_VIDEO_ID] = {
@@ -4520,15 +5483,23 @@ VIDEO_MODEL_FAMILIES = {
         "default_provider": "fal",
         "provider_order": ["fal"],
         "providers": {
-            "fal": FAL_SEEDANCE_V15_PRO_T2V_ID,
+            "fal": FAL_SEEDANCE_V20_T2V_ID,
         },
     },
     "wan-video": {
-        "label": "Wan Video",
+        "label": "Wan 2.7",
         "default_provider": "fal",
         "provider_order": ["fal"],
         "providers": {
             "fal": FAL_WAN_T2V_ID,
+        },
+    },
+    "ltx-video": {
+        "label": "LTX Video",
+        "default_provider": "fal",
+        "provider_order": ["fal"],
+        "providers": {
+            "fal": FAL_LTX_VIDEO_T2V_ID,
         },
     },
     "seedvr-video": {
@@ -4537,6 +5508,22 @@ VIDEO_MODEL_FAMILIES = {
         "provider_order": ["fal"],
         "providers": {
             "fal": FAL_SEEDVR_VIDEO_ID,
+        },
+    },
+    "runway-video": {
+        "label": "Runway",
+        "default_provider": "runway",
+        "provider_order": ["runway"],
+        "providers": {
+            "runway": RUNWAY_GEN45_T2V_ID,
+        },
+    },
+    "luma-video": {
+        "label": "Luma",
+        "default_provider": "luma",
+        "provider_order": ["luma"],
+        "providers": {
+            "luma": LUMA_RAY2_T2V_ID,
         },
     },
 }
@@ -4562,6 +5549,28 @@ VIDEO_PRICING = {
     model_id: {str(duration): 0.0 for duration in VIDEO_DURATION_ALL_OPTIONS}
     for model_id in VIDEO_MODELS_INFO
 }
+VIDEO_PRICING["kling-v3-4k-std"] = {str(duration): round(duration * 0.05, 4) for duration in VIDEO_DURATION_ALL_OPTIONS}
+VIDEO_PRICING["kling-v3-4k-pro"] = {str(duration): round(duration * 0.10, 4) for duration in VIDEO_DURATION_ALL_OPTIONS}
+for model_id in (
+    FAL_WAN_T2V_ID,
+    FAL_WAN_I2V_ID,
+    FAL_WAN_FIRST_LAST_ID,
+    FAL_WAN_CONTINUE_ID,
+    FAL_WAN_REF_ID,
+    FAL_WAN_EDIT_ID,
+):
+    VIDEO_PRICING[model_id] = {str(duration): round(duration * 0.10, 4) for duration in VIDEO_DURATION_ALL_OPTIONS}
+for model_id in (
+    FAL_KLING_V30_4K_T2V_ID,
+    FAL_KLING_V30_4K_I2V_ID,
+    FAL_KLING_O3_4K_T2V_ID,
+    FAL_KLING_O3_4K_I2V_ID,
+    FAL_KLING_O3_4K_REF_I2V_ID,
+):
+    VIDEO_PRICING[model_id] = {str(duration): round(duration * 0.42, 4) for duration in VIDEO_DURATION_ALL_OPTIONS}
+for model_id in (FAL_LTX_VIDEO_T2V_ID, FAL_LTX_VIDEO_I2V_ID):
+    VIDEO_PRICING[model_id] = {str(duration): 0.02 for duration in VIDEO_DURATION_ALL_OPTIONS}
+VIDEO_PRICING[FAL_LTX_VIDEO_LORA_I2V_ID] = {str(duration): 0.20 for duration in VIDEO_DURATION_ALL_OPTIONS}
 
 
 def build_asset_page_context(kind: str) -> dict:
@@ -4699,6 +5708,14 @@ def serve_video(asset_relpath):
     return send_from_directory(os.path.dirname(local_path), os.path.basename(local_path))
 
 
+@app.route("/edit-sessions/<path:asset_relpath>")
+@login_required
+def serve_edit_session(asset_relpath):
+    safe_relpath = resolve_asset_relpath(relpath=asset_relpath)
+    local_path = safe_asset_path(EDIT_SESSIONS_DIR, safe_relpath)
+    return send_from_directory(os.path.dirname(local_path), os.path.basename(local_path))
+
+
 def open_file_in_folder(img_path: str):
     if sys.platform.startswith("win"):
         subprocess.Popen(["explorer", "/select,", img_path])
@@ -4725,6 +5742,916 @@ def resolve_asset_image_path(kind: str, date_str: str = "", filename: str = "", 
     safe_relpath = resolve_asset_relpath(relpath=relpath, date_str=date_str, filename=filename)
     img_path = safe_asset_path(root_dir, safe_relpath)
     return os.path.realpath(root_dir), img_path, safe_relpath
+
+
+def build_edit_session_relpath(asset_relpath: str) -> str:
+    safe_relpath = resolve_asset_relpath(relpath=asset_relpath)
+    stem, _ = os.path.splitext(safe_relpath)
+    return f"{stem}.json"
+
+
+def normalize_edit_session_kind(kind: str) -> str:
+    kind = str(kind or "").strip().lower()
+    mapping = {
+        "history": "history",
+        "generations": "history",
+        "videos": "videos",
+        "video": "videos",
+        "loved": "loved",
+        "references": "references",
+        "reference_archive": "references",
+    }
+    session_kind = mapping.get(kind)
+    if not session_kind:
+        raise ValueError("Invalid edit session kind.")
+    return session_kind
+
+
+def prefix_edit_session_asset_relpath(kind: str, relpath: str) -> str:
+    session_kind = normalize_edit_session_kind(kind)
+    safe_relpath = str(relpath or "").strip().replace("\\", "/").strip("/")
+    if not safe_relpath:
+        return ""
+    if safe_relpath == session_kind or safe_relpath.startswith(f"{session_kind}/"):
+        return safe_relpath
+    known_prefixes = ("history/", "videos/", "loved/", "references/")
+    if safe_relpath in {"history", "videos", "loved", "references"} or safe_relpath.startswith(known_prefixes):
+        return safe_relpath
+    return f"{session_kind}/{safe_relpath}"
+
+
+def resolve_edit_session_path(kind: str, asset_relpath: str) -> tuple[str, str, str]:
+    kind = str(kind or "").strip().lower()
+    session_kind = normalize_edit_session_kind(kind)
+    root_dir = os.path.realpath(EDIT_SESSIONS_DIR)
+    session_relpath = prefix_edit_session_asset_relpath(session_kind, build_edit_session_relpath(asset_relpath))
+    abs_path = os.path.realpath(os.path.join(root_dir, session_relpath.replace("/", os.sep)))
+    if not abs_path.startswith(root_dir + os.sep):
+        raise ValueError("Invalid edit session path.")
+    return root_dir, abs_path, session_relpath
+
+
+def build_edit_session_segments_relpath(asset_relpath: str) -> str:
+    safe_relpath = resolve_asset_relpath(relpath=asset_relpath)
+    stem, _ = os.path.splitext(safe_relpath)
+    return f"{stem}__segments"
+
+
+def resolve_edit_session_segments_dir(kind: str, asset_relpath: str) -> tuple[str, str, str]:
+    session_kind = normalize_edit_session_kind(kind)
+    root_dir = os.path.realpath(EDIT_SESSIONS_DIR)
+    segment_relpath = prefix_edit_session_asset_relpath(session_kind, build_edit_session_segments_relpath(asset_relpath))
+    abs_dir = os.path.realpath(os.path.join(root_dir, segment_relpath.replace("/", os.sep)))
+    if not abs_dir.startswith(root_dir + os.sep):
+        raise ValueError("Invalid edit segment path.")
+    return root_dir, abs_dir, segment_relpath
+
+
+def build_edit_session_mask_url(mask_relpath: str) -> str:
+    return build_asset_public_url("edit-sessions", resolve_asset_relpath(relpath=mask_relpath))
+
+
+def build_edit_session_asset_url(asset_relpath: str) -> str:
+    return build_asset_public_url("edit-sessions", resolve_asset_relpath(relpath=asset_relpath))
+
+
+def build_edit_session_preview_url(asset_relpath: str) -> str:
+    return build_asset_public_url("edit-sessions", resolve_asset_relpath(relpath=asset_relpath))
+
+
+def create_edit_selection_preview_image(source_asset_path: str, mask_path: str, preview_path: str, max_side: int = 768) -> None:
+    with Image.open(source_asset_path) as base_image:
+        base_rgba = ImageOps.exif_transpose(base_image).convert("RGBA")
+    with Image.open(mask_path) as mask_image:
+        mask_rgba = ImageOps.exif_transpose(mask_image).convert("RGBA")
+    if mask_rgba.size != base_rgba.size:
+        mask_rgba = mask_rgba.resize(base_rgba.size, Image.Resampling.LANCZOS)
+
+    isolated = Image.new("RGBA", base_rgba.size, (0, 0, 0, 0))
+    isolated.paste(base_rgba, (0, 0), mask_rgba.getchannel("A"))
+    alpha = isolated.getchannel("A")
+    bbox = alpha.getbbox()
+    if bbox:
+        isolated = isolated.crop(bbox)
+    width, height = isolated.size
+    if width <= 0 or height <= 0:
+        isolated = base_rgba.copy()
+        width, height = isolated.size
+    scale = min(1.0, float(max_side) / float(max(width, height) or 1))
+    if scale < 1.0:
+        isolated = isolated.resize(
+            (max(1, int(round(width * scale))), max(1, int(round(height * scale)))),
+            Image.Resampling.LANCZOS,
+        )
+    os.makedirs(os.path.dirname(preview_path), exist_ok=True)
+    isolated.save(preview_path, format="PNG")
+
+
+def ensure_edit_selection_preview(kind: str, source_asset_path: str, selection: dict) -> dict:
+    if not isinstance(selection, dict):
+        return selection
+    mask_relpath = str(selection.get("maskRelpath") or "").strip().replace("\\", "/").strip("/")
+    if not mask_relpath:
+        return selection
+
+    preview_relpath = str(selection.get("previewRelpath") or "").strip().replace("\\", "/").strip("/")
+    if preview_relpath:
+        try:
+            preview_relpath = prefix_edit_session_asset_relpath(kind, resolve_asset_relpath(relpath=preview_relpath))
+            safe_root = os.path.realpath(EDIT_SESSIONS_DIR)
+            preview_abs_path = os.path.realpath(os.path.join(EDIT_SESSIONS_DIR, preview_relpath.replace("/", os.sep)))
+            if preview_abs_path.startswith(safe_root + os.sep) and os.path.isfile(preview_abs_path):
+                selection["previewRelpath"] = preview_relpath
+                selection["previewUrl"] = build_edit_session_preview_url(preview_relpath)
+                return selection
+            selection["previewRelpath"] = ""
+            selection["previewUrl"] = ""
+        except Exception:
+            selection["previewRelpath"] = ""
+            selection["previewUrl"] = ""
+
+    try:
+        safe_root = os.path.realpath(EDIT_SESSIONS_DIR)
+        mask_abs_path = os.path.realpath(os.path.join(EDIT_SESSIONS_DIR, mask_relpath.replace("/", os.sep)))
+        if not mask_abs_path.startswith(safe_root + os.sep) or not os.path.isfile(mask_abs_path):
+            return selection
+        stem, _ = os.path.splitext(mask_relpath)
+        preview_relpath = f"{stem}__preview.png"
+        preview_abs_path = os.path.realpath(os.path.join(EDIT_SESSIONS_DIR, preview_relpath.replace("/", os.sep)))
+        if not preview_abs_path.startswith(safe_root + os.sep):
+            return selection
+        if not os.path.isfile(preview_abs_path):
+            create_edit_selection_preview_image(source_asset_path, mask_abs_path, preview_abs_path)
+        selection["previewRelpath"] = preview_relpath
+        selection["previewUrl"] = build_edit_session_preview_url(preview_relpath)
+    except Exception:
+        selection["previewRelpath"] = ""
+        selection["previewUrl"] = ""
+    return selection
+
+
+def normalize_edit_session_selection_payload(selection: dict | None, fallback_index: int = 0, kind: str = "") -> dict:
+    source = selection if isinstance(selection, dict) else {}
+    result = {
+        "id": str(source.get("id") or f"selection-{fallback_index + 1}"),
+        "name": str(source.get("name") or f"Selection {fallback_index + 1}"),
+        "prompt": str(source.get("prompt") or ""),
+        "describedPrompt": str(source.get("describedPrompt") or ""),
+        "notes": str(source.get("notes") or ""),
+        "visible": bool(source.get("visible", True)),
+        "geometry": source.get("geometry") if isinstance(source.get("geometry"), dict) else None,
+        "sourcePrompt": str(source.get("sourcePrompt") or ""),
+        "score": source.get("score"),
+        "box": source.get("box") if isinstance(source.get("box"), list) else None,
+        "refImages": normalize_ref_image_payloads(source.get("refImages"), 16),
+        "targetType": str(source.get("targetType") or "image").strip().lower() or "image",
+        "previewRelpath": "",
+        "previewUrl": "",
+    }
+    raw_mask_relpath = str(source.get("maskRelpath") or "").strip().replace("\\", "/").strip("/")
+    if raw_mask_relpath:
+        try:
+            result["maskRelpath"] = prefix_edit_session_asset_relpath(kind, resolve_asset_relpath(relpath=raw_mask_relpath))
+        except Exception:
+            result["maskRelpath"] = ""
+    else:
+        result["maskRelpath"] = ""
+    raw_mask_url = str(source.get("maskUrl") or "").strip()
+    result["maskUrl"] = build_edit_session_mask_url(result["maskRelpath"]) if result["maskRelpath"] else raw_mask_url
+    raw_track_relpath = str(source.get("trackVideoRelpath") or "").strip().replace("\\", "/").strip("/")
+    if raw_track_relpath:
+        try:
+            result["trackVideoRelpath"] = prefix_edit_session_asset_relpath(kind, resolve_asset_relpath(relpath=raw_track_relpath))
+        except Exception:
+            result["trackVideoRelpath"] = ""
+    else:
+        result["trackVideoRelpath"] = ""
+    raw_track_url = str(source.get("trackVideoUrl") or "").strip()
+    result["trackVideoUrl"] = build_edit_session_asset_url(result["trackVideoRelpath"]) if result["trackVideoRelpath"] else raw_track_url
+    raw_bbox_relpath = str(source.get("bboxZipRelpath") or "").strip().replace("\\", "/").strip("/")
+    if raw_bbox_relpath:
+        try:
+            result["bboxZipRelpath"] = prefix_edit_session_asset_relpath(kind, resolve_asset_relpath(relpath=raw_bbox_relpath))
+        except Exception:
+            result["bboxZipRelpath"] = ""
+    else:
+        result["bboxZipRelpath"] = ""
+    raw_bbox_url = str(source.get("bboxZipUrl") or "").strip()
+    result["bboxZipUrl"] = build_edit_session_asset_url(result["bboxZipRelpath"]) if result["bboxZipRelpath"] else raw_bbox_url
+    raw_preview_relpath = str(source.get("previewRelpath") or "").strip().replace("\\", "/").strip("/")
+    if raw_preview_relpath:
+        try:
+            result["previewRelpath"] = prefix_edit_session_asset_relpath(kind, resolve_asset_relpath(relpath=raw_preview_relpath))
+        except Exception:
+            result["previewRelpath"] = ""
+    raw_preview_url = str(source.get("previewUrl") or "").strip()
+    result["previewUrl"] = build_edit_session_preview_url(result["previewRelpath"]) if result["previewRelpath"] else raw_preview_url
+    return result
+
+
+def collect_edit_session_mask_relpaths(selections: list[dict] | None, kind: str = "") -> set[str]:
+    relpaths: set[str] = set()
+    for index, selection in enumerate(selections or []):
+        normalized = normalize_edit_session_selection_payload(selection, index, kind=kind)
+        if normalized.get("maskRelpath"):
+            relpaths.add(normalized["maskRelpath"])
+    return relpaths
+
+
+def delete_edit_session_mask_relpaths(mask_relpaths: set[str]) -> None:
+    safe_root = os.path.realpath(EDIT_SESSIONS_DIR)
+    for relpath in mask_relpaths:
+        try:
+            local_path = os.path.realpath(os.path.join(EDIT_SESSIONS_DIR, relpath.replace("/", os.sep)))
+        except Exception:
+            continue
+        if not local_path.startswith(safe_root + os.sep):
+            continue
+        if os.path.isfile(local_path):
+            try:
+                os.remove(local_path)
+            except Exception:
+                pass
+
+
+def resolve_local_image_url_to_path(image_url: str) -> str:
+    parsed = urlparse(str(image_url or "").strip())
+    path = unquote(parsed.path or "")
+    if path.startswith("/generations/"):
+        relpath = "/".join([part for part in path.split("/") if part][1:])
+        root_dir = GENERATIONS_DIR
+    elif path.startswith("/reference-archive/"):
+        relpath = "/".join([part for part in path.split("/") if part][1:])
+        root_dir = REFERENCE_ARCHIVE_DIR
+    elif path.startswith("/reference-render/"):
+        relpath = "/".join([part for part in path.split("/") if part][1:])
+        root_dir = REFERENCE_RENDERS_DIR
+    else:
+        return ""
+    if not relpath:
+        return ""
+    try:
+        local_path = safe_asset_path(root_dir, relpath)
+    except Exception:
+        return ""
+    return local_path if os.path.exists(local_path) else ""
+
+
+def upload_image_payload_to_fal(client: fal_client.SyncClient, image_payload: dict) -> str:
+    if not isinstance(image_payload, dict):
+        raise ValueError("Choose or drop a source image for this model.")
+
+    candidate_urls = [
+        str(image_payload.get("url") or "").strip(),
+        str(image_payload.get("masked_url") or "").strip(),
+        str(image_payload.get("original_url") or "").strip(),
+        str(image_payload.get("mask_url") or "").strip(),
+    ]
+    for direct_url in candidate_urls:
+        if direct_url.startswith("http://") or direct_url.startswith("https://"):
+            return direct_url
+        local_path = resolve_local_image_url_to_path(direct_url)
+        if local_path:
+            return str(client.upload_file(local_path))
+
+    data_b64 = str(image_payload.get("data") or "").strip()
+    mime_type = str(image_payload.get("mime_type") or "image/png").split(";", 1)[0].strip() or "image/png"
+    name = os.path.basename(str(image_payload.get("name") or "video-source.png")) or "video-source.png"
+    if not data_b64:
+        raise ValueError("Choose or drop a source image for this model.")
+
+    ext = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/webp": ".webp",
+    }.get(mime_type, os.path.splitext(name)[1] or ".png")
+
+    temp_path = ""
+    try:
+        raw_bytes = base64.b64decode(data_b64, validate=False)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
+            temp_file.write(raw_bytes)
+            temp_path = temp_file.name
+        return str(client.upload_file(temp_path))
+    except Exception as exc:
+        raise RuntimeError(f"Could not upload the selected source image: {exc}") from exc
+    finally:
+        if temp_path:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+
+def build_luma_headers(api_key: str) -> dict:
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
+def extract_luma_error(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+    except Exception:
+        return f"HTTP {response.status_code}: {response.text[:300]}"
+    if isinstance(payload, dict):
+        for key in ("error", "message", "detail"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+            if isinstance(value, dict):
+                nested = str(value.get("message") or value.get("detail") or "").strip()
+                if nested:
+                    return nested
+    return f"HTTP {response.status_code}: {str(payload)[:300]}"
+
+
+LUMA_VIDEO_COST_PER_MEGAPIXEL = {
+    "ray-2": 0.0064,
+    "ray-flash-2": 0.0022,
+}
+LUMA_RESOLUTION_BASE_DIMENSIONS = {
+    "540p": (960, 540),
+    "720p": (1280, 720),
+    "1080p": (1920, 1080),
+    "4k": (3840, 2160),
+}
+LUMA_ASPECT_RATIO_DIMENSIONS = {
+    "16:9": {
+        "540p": (960, 540),
+        "720p": (1280, 720),
+        "1080p": (1920, 1080),
+        "4k": (3840, 2160),
+    },
+    "9:16": {
+        "540p": (540, 960),
+        "720p": (720, 1280),
+        "1080p": (1080, 1920),
+        "4k": (2160, 3840),
+    },
+    "1:1": {
+        "540p": (540, 540),
+        "720p": (720, 720),
+        "1080p": (1080, 1080),
+        "4k": (2160, 2160),
+    },
+    "4:3": {
+        "540p": (720, 540),
+        "720p": (960, 720),
+        "1080p": (1440, 1080),
+        "4k": (2880, 2160),
+    },
+    "3:4": {
+        "540p": (540, 720),
+        "720p": (720, 960),
+        "1080p": (1080, 1440),
+        "4k": (2160, 2880),
+    },
+    "21:9": {
+        "540p": (1260, 540),
+        "720p": (1680, 720),
+        "1080p": (2520, 1080),
+        "4k": (5040, 2160),
+    },
+    "9:21": {
+        "540p": (540, 1260),
+        "720p": (720, 1680),
+        "1080p": (1080, 2520),
+        "4k": (2160, 5040),
+    },
+}
+
+
+def estimate_luma_video_cost(model_name: str, resolution: str, duration: int, aspect_ratio: str = "16:9") -> float:
+    model_key = str(model_name or "ray-2").strip().lower() or "ray-2"
+    resolution_key = str(resolution or "720p").strip().lower() or "720p"
+    aspect_key = str(aspect_ratio or "16:9").strip() or "16:9"
+    width, height = LUMA_ASPECT_RATIO_DIMENSIONS.get(aspect_key, {}).get(
+        resolution_key,
+        LUMA_RESOLUTION_BASE_DIMENSIONS.get(resolution_key, (1280, 720)),
+    )
+    pixels_million = (max(1, int(width)) * max(1, int(height)) * 24 * max(1, int(duration))) / 1_000_000
+    rate = float(LUMA_VIDEO_COST_PER_MEGAPIXEL.get(model_key, 0.0))
+    return round(pixels_million * rate, 4)
+
+
+def poll_luma_generation(api_key: str, generation_id: str, *, timeout_seconds: int = 1800, poll_interval_seconds: float = 3.0) -> dict:
+    headers = build_luma_headers(api_key)
+    deadline = time.time() + max(30, int(timeout_seconds))
+    last_payload = None
+    while time.time() < deadline:
+        try:
+            response = requests.get(f"{LUMA_GENERATIONS_URL}/{generation_id}", headers=headers, timeout=90)
+        except requests.exceptions.Timeout as exc:
+            raise TimeoutError("Timeout: Luma status polling took too long.") from exc
+        except Exception as exc:
+            raise RuntimeError(f"Network error: {exc}") from exc
+        if response.status_code != 200:
+            raise RuntimeError(extract_luma_error(response))
+        last_payload = response.json() if response.content else {}
+        state = str((last_payload or {}).get("state") or "").strip().lower()
+        if state == "completed":
+            return last_payload
+        if state == "failed":
+            failure_reason = str((last_payload or {}).get("failure_reason") or (last_payload or {}).get("error") or "").strip()
+            raise RuntimeError(failure_reason or "Luma generation failed.")
+        time.sleep(max(0.5, float(poll_interval_seconds)))
+    raise TimeoutError("Timeout: Luma generation did not finish in time.")
+
+
+def build_default_edit_session(kind: str, asset_relpath: str, asset_url: str = "") -> dict:
+    return {
+        "version": 4,
+        "kind": str(kind or "").strip().lower(),
+        "assetRelpath": resolve_asset_relpath(relpath=asset_relpath),
+        "assetUrl": str(asset_url or "").strip(),
+        "selectionCounter": 0,
+        "editModel": "fal-ai/nano-banana-pro",
+        "editImageSize": "2K",
+        "editAspectRatio": "16:9",
+        "editPromptMode": "combined",
+        "globalInstruction": "",
+        "globalRefImages": [],
+        "selections": [],
+        "updatedAt": utc_now_iso(),
+    }
+
+
+@app.route("/api/edit-session", methods=["GET"])
+@login_required
+def api_get_edit_session():
+    kind = str(request.args.get("kind") or "").strip()
+    relpath = str(request.args.get("relpath") or "").strip()
+    asset_url = str(request.args.get("asset_url") or "").strip()
+    date_str = str(request.args.get("date") or "").strip()
+    filename = os.path.basename(str(request.args.get("filename") or "").strip())
+
+    try:
+        _, asset_path, safe_relpath = resolve_asset_image_path(kind, date_str, filename, relpath)
+        _, session_path, session_relpath = resolve_edit_session_path(kind, safe_relpath)
+    except FileNotFoundError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    session = build_default_edit_session(kind, safe_relpath, asset_url)
+    if os.path.exists(session_path):
+        try:
+            with open(session_path, "r", encoding="utf-8") as handle:
+                stored = json.load(handle)
+            if isinstance(stored, dict):
+                session.update(stored)
+        except Exception:
+            pass
+    session["kind"] = str(kind or "").strip().lower()
+    session["assetRelpath"] = safe_relpath
+    if asset_url:
+        session["assetUrl"] = asset_url
+    raw_selections = session.get("selections") if isinstance(session.get("selections"), list) else []
+    session["selections"] = [
+        normalize_edit_session_selection_payload(selection, index, kind=kind)
+        for index, selection in enumerate(raw_selections)
+    ]
+    updated_previews = False
+    if os.path.isfile(asset_path):
+        refreshed_selections = []
+        for selection in session["selections"]:
+            previous_preview = str(selection.get("previewRelpath") or "")
+            refreshed = ensure_edit_selection_preview(kind, asset_path, selection)
+            if str(refreshed.get("previewRelpath") or "") != previous_preview:
+                updated_previews = True
+            refreshed_selections.append(refreshed)
+        session["selections"] = refreshed_selections
+    session["globalRefImages"] = normalize_ref_image_payloads(session.get("globalRefImages"), 16)
+    session["selectionCounter"] = max(
+        int(session.get("selectionCounter") or 0),
+        len(session["selections"]),
+    )
+    session["version"] = max(int(session.get("version") or 1), 4)
+    session["sessionRelpath"] = session_relpath
+    if updated_previews:
+        try:
+            os.makedirs(os.path.dirname(session_path), exist_ok=True)
+            with open(session_path, "w", encoding="utf-8") as handle:
+                json.dump(session, handle, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+    return jsonify({"ok": True, "session": session})
+
+
+@app.route("/api/edit-session", methods=["POST"])
+@login_required
+def api_save_edit_session():
+    body = request.get_json(silent=True) or {}
+    kind = str(body.get("kind") or "").strip()
+    relpath = str(body.get("relpath") or body.get("assetRelpath") or "").strip()
+    asset_url = str(body.get("assetUrl") or "").strip()
+    date_str = str(body.get("date") or "").strip()
+    filename = os.path.basename(str(body.get("filename") or "").strip())
+    session = body.get("session") if isinstance(body.get("session"), dict) else {}
+
+    try:
+        _, _, safe_relpath = resolve_asset_image_path(kind, date_str, filename, relpath)
+        session_root, session_path, session_relpath = resolve_edit_session_path(kind, safe_relpath)
+    except FileNotFoundError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    existing_mask_relpaths: set[str] = set()
+    if os.path.exists(session_path):
+        try:
+            with open(session_path, "r", encoding="utf-8") as handle:
+                previous_payload = json.load(handle)
+            if isinstance(previous_payload, dict):
+                existing_mask_relpaths = collect_edit_session_mask_relpaths(previous_payload.get("selections"), kind=kind)
+        except Exception:
+            existing_mask_relpaths = set()
+
+    payload = build_default_edit_session(kind, safe_relpath, asset_url)
+    payload.update(session)
+    payload["kind"] = str(kind or "").strip().lower()
+    payload["assetRelpath"] = safe_relpath
+    if asset_url:
+        payload["assetUrl"] = asset_url
+    payload["selectionCounter"] = max(0, int(payload.get("selectionCounter") or 0))
+    raw_selections = payload.get("selections") if isinstance(payload.get("selections"), list) else []
+    payload["selections"] = [
+        normalize_edit_session_selection_payload(selection, index, kind=kind)
+        for index, selection in enumerate(raw_selections)
+    ]
+    payload["globalRefImages"] = normalize_ref_image_payloads(payload.get("globalRefImages"), 16)
+    payload["updatedAt"] = utc_now_iso()
+    payload["version"] = max(int(payload.get("version") or 1), 4)
+
+    os.makedirs(os.path.dirname(session_path), exist_ok=True)
+    with open(session_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, ensure_ascii=False)
+
+    current_mask_relpaths = collect_edit_session_mask_relpaths(payload.get("selections"), kind=kind)
+    orphaned_mask_relpaths = existing_mask_relpaths - current_mask_relpaths
+    if orphaned_mask_relpaths:
+        delete_edit_session_mask_relpaths(orphaned_mask_relpaths)
+
+    return jsonify({
+        "ok": True,
+        "session": payload,
+        "session_relpath": session_relpath,
+        "session_url": build_asset_public_url("edit-sessions", session_relpath),
+    })
+
+
+@app.route("/api/edit-session/sam3-image", methods=["POST"])
+@login_required
+def api_run_edit_session_sam3_image():
+    body = request.get_json(silent=True) or {}
+    kind = str(body.get("kind") or "").strip()
+    relpath = str(body.get("relpath") or body.get("assetRelpath") or "").strip()
+    asset_url = str(body.get("assetUrl") or "").strip()
+    date_str = str(body.get("date") or "").strip()
+    filename = os.path.basename(str(body.get("filename") or "").strip())
+    prompt = str(body.get("prompt") or "").strip()
+    point_prompts = body.get("pointPrompts") if isinstance(body.get("pointPrompts"), list) else []
+    box_prompts = body.get("boxPrompts") if isinstance(body.get("boxPrompts"), list) else []
+    return_multiple_masks = bool(body.get("returnMultipleMasks", True))
+    try:
+        max_masks = max(1, min(int(body.get("maxMasks") or 3), 8))
+    except Exception:
+        max_masks = 3
+
+    config = load_config()
+    fal_api_key = str(config.get("fal_api_key", "") or "").strip()
+    if not fal_api_key:
+        return jsonify({"ok": False, "error": "Fal API key not configured."}), 400
+
+    try:
+        _, img_path, safe_relpath = resolve_asset_image_path(kind, date_str, filename, relpath)
+        _, session_path, session_relpath = resolve_edit_session_path(kind, safe_relpath)
+        _, segment_dir, segment_rel_dir = resolve_edit_session_segments_dir(kind, safe_relpath)
+    except FileNotFoundError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    normalized_points: list[dict] = []
+    for item in point_prompts:
+        if not isinstance(item, dict):
+            continue
+        try:
+            x = int(round(float(item.get("x"))))
+            y = int(round(float(item.get("y"))))
+            label = 1 if int(item.get("label", 1)) == 1 else 0
+        except Exception:
+            continue
+        point_payload = {"x": x, "y": y, "label": label}
+        object_id = item.get("object_id")
+        if isinstance(object_id, int):
+            point_payload["object_id"] = object_id
+        normalized_points.append(point_payload)
+
+    normalized_boxes: list[dict] = []
+    for item in box_prompts:
+        if not isinstance(item, dict):
+            continue
+        try:
+            x_min = int(round(float(item.get("x_min"))))
+            y_min = int(round(float(item.get("y_min"))))
+            x_max = int(round(float(item.get("x_max"))))
+            y_max = int(round(float(item.get("y_max"))))
+        except Exception:
+            continue
+        if x_max <= x_min or y_max <= y_min:
+            continue
+        box_payload = {
+            "x_min": x_min,
+            "y_min": y_min,
+            "x_max": x_max,
+            "y_max": y_max,
+        }
+        object_id = item.get("object_id")
+        if isinstance(object_id, int):
+            box_payload["object_id"] = object_id
+        normalized_boxes.append(box_payload)
+
+    if not prompt and not normalized_points and not normalized_boxes:
+        return jsonify({"ok": False, "error": "Add a text prompt, point prompt, or box prompt first."}), 400
+
+    try:
+        client = fal_client.SyncClient(key=fal_api_key, default_timeout=900.0)
+        uploaded_image_url = str(client.upload_file(img_path))
+        arguments = {
+            "image_url": uploaded_image_url,
+            "apply_mask": True,
+            "sync_mode": False,
+            "output_format": "png",
+            "return_multiple_masks": return_multiple_masks,
+            "max_masks": max_masks,
+            "include_scores": True,
+            "include_boxes": True,
+        }
+        if prompt:
+            arguments["prompt"] = prompt
+        if normalized_points:
+            arguments["point_prompts"] = normalized_points
+        if normalized_boxes:
+            arguments["box_prompts"] = normalized_boxes
+        result = client.run(FAL_SAM3_IMAGE_ID, arguments=arguments)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"SAM 3 request failed: {exc}"}), 500
+
+    masks = result.get("masks") if isinstance(result, dict) and isinstance(result.get("masks"), list) else []
+    if not masks:
+        return jsonify({"ok": False, "error": "SAM 3 returned no masks for this request."}), 500
+
+    metadata_entries = result.get("metadata") if isinstance(result, dict) and isinstance(result.get("metadata"), list) else []
+    score_entries = result.get("scores") if isinstance(result, dict) and isinstance(result.get("scores"), list) else []
+    box_entries = result.get("boxes") if isinstance(result, dict) and isinstance(result.get("boxes"), list) else []
+
+    session_payload = build_default_edit_session(kind, safe_relpath, asset_url)
+    if os.path.exists(session_path):
+        try:
+            with open(session_path, "r", encoding="utf-8") as handle:
+                previous_payload = json.load(handle)
+            if isinstance(previous_payload, dict):
+                session_payload.update(previous_payload)
+        except Exception:
+            pass
+    session_payload["kind"] = str(kind or "").strip().lower()
+    session_payload["assetRelpath"] = safe_relpath
+    if asset_url:
+        session_payload["assetUrl"] = asset_url
+    session_payload["version"] = max(int(session_payload.get("version") or 1), 4)
+    session_payload["selectionCounter"] = max(
+        int(session_payload.get("selectionCounter") or 0),
+        len(session_payload.get("selections") or []),
+    )
+    session_payload["selections"] = [
+        normalize_edit_session_selection_payload(selection, index, kind=kind)
+        for index, selection in enumerate(session_payload.get("selections") or [])
+    ]
+
+    os.makedirs(segment_dir, exist_ok=True)
+    new_selections: list[dict] = []
+    existing_count = len(session_payload["selections"])
+
+    for index, mask_item in enumerate(masks):
+        if not isinstance(mask_item, dict):
+            continue
+        mask_url = str(mask_item.get("url") or "").strip()
+        if not mask_url:
+            continue
+        try:
+            raw_bytes, detected_mime = download_remote_binary(mask_url, timeout=240)
+            raw_b64 = base64.b64encode(raw_bytes).decode("utf-8")
+            mask_png_b64, _ = convert_image_b64_to_png(raw_b64, detected_mime or str(mask_item.get("content_type") or "image/png"))
+            mask_png_bytes = base64.b64decode(mask_png_b64)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"Could not download mask {index + 1}: {exc}"}), 500
+
+        session_payload["selectionCounter"] += 1
+        selection_number = existing_count + len(new_selections) + 1
+        selection_id = f"selection-{session_payload['selectionCounter']}"
+        mask_filename = f"{selection_id}.png"
+        mask_abs_path = os.path.join(segment_dir, mask_filename)
+        with open(mask_abs_path, "wb") as handle:
+            handle.write(mask_png_bytes)
+
+        mask_relpath = f"{segment_rel_dir}/{mask_filename}".replace("\\", "/")
+        meta_entry = metadata_entries[index] if index < len(metadata_entries) and isinstance(metadata_entries[index], dict) else {}
+        score = meta_entry.get("score")
+        if score is None and index < len(score_entries):
+            score = score_entries[index]
+        box = meta_entry.get("box")
+        if not isinstance(box, list) and index < len(box_entries):
+            box = box_entries[index]
+        selection = normalize_edit_session_selection_payload({
+            "id": selection_id,
+            "name": f"Segment {selection_number}",
+            "prompt": "",
+            "describedPrompt": "",
+            "notes": "",
+            "visible": True,
+            "geometry": {
+                "source": "sam3",
+                "mode": "image",
+                "prompt": prompt,
+                "pointPrompts": normalized_points,
+                "boxPrompts": normalized_boxes,
+            },
+            "sourcePrompt": prompt,
+            "score": score,
+            "box": box if isinstance(box, list) else None,
+            "maskRelpath": mask_relpath,
+            "maskUrl": build_edit_session_mask_url(mask_relpath),
+        }, existing_count + len(new_selections), kind=kind)
+        selection = ensure_edit_selection_preview(kind, img_path, selection)
+        session_payload["selections"].append(selection)
+        new_selections.append(selection)
+
+    if not new_selections:
+        return jsonify({"ok": False, "error": "SAM 3 returned no usable mask images."}), 500
+
+    session_payload["updatedAt"] = utc_now_iso()
+    os.makedirs(os.path.dirname(session_path), exist_ok=True)
+    with open(session_path, "w", encoding="utf-8") as handle:
+        json.dump(session_payload, handle, indent=2, ensure_ascii=False)
+
+    return jsonify({
+        "ok": True,
+        "session": session_payload,
+        "session_relpath": session_relpath,
+        "session_url": build_asset_public_url("edit-sessions", session_relpath),
+        "newSelections": new_selections,
+        "maskCount": len(new_selections),
+    })
+
+
+@app.route("/api/edit-session/sam3-video", methods=["POST"])
+@login_required
+def api_run_edit_session_sam3_video():
+    body = request.get_json(silent=True) or {}
+    kind = str(body.get("kind") or "").strip()
+    relpath = str(body.get("relpath") or body.get("assetRelpath") or "").strip()
+    asset_url = str(body.get("assetUrl") or "").strip()
+    date_str = str(body.get("date") or "").strip()
+    filename = os.path.basename(str(body.get("filename") or "").strip())
+    prompt = str(body.get("prompt") or "").strip()
+
+    if not prompt:
+        return jsonify({"ok": False, "error": "Add a text prompt before running SAM 3 video."}), 400
+
+    config = load_config()
+    fal_api_key = str(config.get("fal_api_key", "") or "").strip()
+    if not fal_api_key:
+        return jsonify({"ok": False, "error": "Fal API key not configured."}), 400
+
+    try:
+        _, video_path, safe_relpath = resolve_asset_image_path(kind, date_str, filename, relpath)
+        _, session_path, session_relpath = resolve_edit_session_path(kind, safe_relpath)
+        _, segment_dir, segment_rel_dir = resolve_edit_session_segments_dir(kind, safe_relpath)
+    except FileNotFoundError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    try:
+        client = fal_client.SyncClient(key=fal_api_key, default_timeout=1800.0)
+        uploaded_video_url = str(client.upload_file(video_path))
+        result = client.run(FAL_SAM3_VIDEO_ID, arguments={
+            "video_url": uploaded_video_url,
+            "prompt": prompt,
+            "sync_mode": False,
+        })
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"SAM 3 video request failed: {exc}"}), 500
+
+    segmented_video = result.get("video") if isinstance(result, dict) and isinstance(result.get("video"), dict) else {}
+    segmented_video_url = str(segmented_video.get("url") or "").strip()
+    bbox_zip = result.get("bounding_box_frames_zip") if isinstance(result, dict) and isinstance(result.get("bounding_box_frames_zip"), dict) else {}
+    bbox_zip_url = str(bbox_zip.get("url") or "").strip()
+
+    if not segmented_video_url:
+        return jsonify({"ok": False, "error": "SAM 3 video returned no tracked video output."}), 500
+
+    session_payload = build_default_edit_session(kind, safe_relpath, asset_url)
+    if os.path.exists(session_path):
+        try:
+            with open(session_path, "r", encoding="utf-8") as handle:
+                previous_payload = json.load(handle)
+            if isinstance(previous_payload, dict):
+                session_payload.update(previous_payload)
+        except Exception:
+            pass
+    session_payload["kind"] = str(kind or "").strip().lower()
+    session_payload["assetRelpath"] = safe_relpath
+    if asset_url:
+        session_payload["assetUrl"] = asset_url
+    session_payload["version"] = max(int(session_payload.get("version") or 1), 4)
+    session_payload["selectionCounter"] = max(
+        int(session_payload.get("selectionCounter") or 0),
+        len(session_payload.get("selections") or []),
+    )
+    session_payload["selections"] = [
+        normalize_edit_session_selection_payload(selection, index, kind=kind)
+        for index, selection in enumerate(session_payload.get("selections") or [])
+    ]
+
+    os.makedirs(segment_dir, exist_ok=True)
+
+    try:
+        segmented_bytes, segmented_mime = download_remote_binary(segmented_video_url, timeout=600)
+        segmented_ext, segmented_mime_type = normalize_video_extension(
+            segmented_video.get("mime_type") or segmented_mime,
+            segmented_video_url,
+        )
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Could not download tracked SAM 3 video: {exc}"}), 500
+
+    bbox_bytes = b""
+    if bbox_zip_url:
+        try:
+            bbox_bytes, _bbox_mime = download_remote_binary(bbox_zip_url, timeout=600)
+        except Exception:
+            bbox_bytes = b""
+
+    session_payload["selectionCounter"] += 1
+    selection_id = f"selection-{session_payload['selectionCounter']}"
+    selection_number = len(session_payload["selections"]) + 1
+    track_filename = f"{selection_id}{segmented_ext}"
+    track_abs_path = os.path.join(segment_dir, track_filename)
+    with open(track_abs_path, "wb") as handle:
+        handle.write(segmented_bytes)
+    track_relpath = f"{segment_rel_dir}/{track_filename}".replace("\\", "/")
+
+    bbox_relpath = ""
+    bbox_url = ""
+    if bbox_bytes:
+        bbox_filename = f"{selection_id}_boxes.zip"
+        bbox_abs_path = os.path.join(segment_dir, bbox_filename)
+        with open(bbox_abs_path, "wb") as handle:
+            handle.write(bbox_bytes)
+        bbox_relpath = f"{segment_rel_dir}/{bbox_filename}".replace("\\", "/")
+        bbox_url = build_edit_session_asset_url(bbox_relpath)
+
+    selection = normalize_edit_session_selection_payload({
+        "id": selection_id,
+        "name": f"Track {selection_number}",
+        "prompt": "",
+        "describedPrompt": "",
+        "notes": "",
+        "visible": True,
+        "geometry": {
+            "source": "sam3",
+            "mode": "video",
+            "prompt": prompt,
+        },
+        "sourcePrompt": prompt,
+        "targetType": "video",
+        "trackVideoRelpath": track_relpath,
+        "trackVideoUrl": build_edit_session_asset_url(track_relpath),
+        "bboxZipRelpath": bbox_relpath,
+        "bboxZipUrl": bbox_url,
+        "notes": "Tracked SAM 3 video selection",
+    }, len(session_payload["selections"]), kind=kind)
+    session_payload["selections"].append(selection)
+    session_payload["updatedAt"] = utc_now_iso()
+
+    os.makedirs(os.path.dirname(session_path), exist_ok=True)
+    with open(session_path, "w", encoding="utf-8") as handle:
+        json.dump(session_payload, handle, indent=2, ensure_ascii=False)
+
+    return jsonify({
+        "ok": True,
+        "session": session_payload,
+        "session_relpath": session_relpath,
+        "session_url": build_asset_public_url("edit-sessions", session_relpath),
+        "newSelections": [selection],
+        "trackCount": 1,
+        "trackedVideoUrl": selection.get("trackVideoUrl", ""),
+        "bboxZipUrl": selection.get("bboxZipUrl", ""),
+    })
 
 
 @app.route("/api/generations/open-folder", methods=["POST"])
@@ -6155,6 +8082,8 @@ def api_save_config():
         config["seedream_api_key"] = data["seedream_api_key"].strip()
     if "kling_api_token" in data:
         config["kling_api_token"] = data["kling_api_token"].strip()
+    if "luma_api_key" in data:
+        config["luma_api_key"] = data["luma_api_key"].strip()
     save_config(config)
     return jsonify({"ok": True})
 
@@ -6221,6 +8150,28 @@ def api_verify_byteplus_key():
         return jsonify({"ok": False, "error": "Connection timeout"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/verify-luma-key", methods=["POST"])
+@login_required
+def api_verify_luma_key():
+    data = request.get_json() or {}
+    key = (data.get("luma_api_key") or "").strip()
+    if not key:
+        return jsonify({"ok": False, "error": "Luma API key is empty"})
+    try:
+        response = requests.get(
+            f"{LUMA_GENERATIONS_URL}?limit=1&offset=0",
+            headers=build_luma_headers(key),
+            timeout=45,
+        )
+    except requests.exceptions.Timeout:
+        return jsonify({"ok": False, "error": "Connection timeout"})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+    if response.status_code == 200:
+        return jsonify({"ok": True, "message": "Valid Luma key and API access confirmed."})
+    return jsonify({"ok": False, "error": extract_luma_error(response)})
 
 
 @app.route("/api/verify-kling-token", methods=["POST"])
@@ -6447,6 +8398,7 @@ def run_gemini_generation_job(body: dict, api_key: str) -> dict:
         "thinkingLevel": thinking_lvl,
         "useSearch": use_search,
         "geminiSafetyPreset": gemini_safety_preset,
+        "geminiSafetySettingsSent": bool(gemini_safety_settings),
         "outputMode": output_mode,
         "prompt": prompt,
         "ref_count": len(ref_images),
@@ -6866,6 +8818,7 @@ def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
     duration = normalize_video_duration(body.get("duration", 5))
     aspect_ratio = body.get("aspectRatio", "16:9")
     negative_prompt = str(body.get("negativePrompt") or "").strip()
+    generate_audio = bool(body.get("videoGenerateAudio", False))
     source_image = body.get("sourceImage") or {}
     source_video = body.get("sourceVideo") or {}
     reference_images = list(body.get("referenceImages") or [])
@@ -6886,6 +8839,8 @@ def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
     }
     if negative_prompt:
         payload["negative_prompt"] = negative_prompt
+    if model_info.get("supports_generate_audio"):
+        payload["generate_audio"] = generate_audio
     if input_mode != "text" and model_info.get("supports_start_image"):
         if model_info.get("start_image_required") and not source_image.get("data"):
             raise ValueError("Choose a start image for this Kling video model.")
@@ -6942,6 +8897,7 @@ def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
         "negativePrompt": negative_prompt,
         "prompt": prompt,
         "resolution": body.get("resolution", "720p"),
+        "videoGenerateAudio": generate_audio if model_info.get("supports_generate_audio") else None,
     }, body), body)
     return {
         "ok": True,
@@ -6956,37 +8912,201 @@ def run_fal_kling_video_job(body: dict, api_key: str) -> dict:
     }
 
 
+def run_luma_video_job(body: dict, api_key: str, fal_api_key: str = "") -> dict:
+    body = normalize_video_request(body)
+    input_mode = body.get("videoInputMode", "text")
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt:
+        raise ValueError("Please enter a video prompt.")
+
+    selected_model_id = str(body.get("model") or LUMA_RAY2_T2V_ID).strip() or LUMA_RAY2_T2V_ID
+    model_info = VIDEO_MODELS_INFO.get(selected_model_id, {})
+    if model_info.get("provider") != "luma":
+        raise ValueError("Choose a valid Luma video model.")
+
+    native_model_name = str(model_info.get("native_model_name") or "ray-2").strip() or "ray-2"
+    duration = normalize_video_duration(body.get("duration", 5))
+    aspect_ratio = str(body.get("aspectRatio") or "16:9").strip() or "16:9"
+    resolution = str(body.get("resolution") or "720p").strip().lower() or "720p"
+    source_image = body.get("sourceImage") or {}
+
+    payload = {
+        "prompt": prompt,
+        "model": native_model_name,
+        "aspect_ratio": aspect_ratio,
+        "duration": f"{duration}s",
+        "resolution": resolution,
+    }
+    if input_mode == "image":
+        if not str(source_image.get("data") or source_image.get("original_url") or source_image.get("masked_url") or "").strip():
+            raise ValueError("Choose a source image for image-to-video.")
+        public_image_url = ""
+        candidate_urls = [
+            str(source_image.get("url") or "").strip(),
+            str(source_image.get("masked_url") or "").strip(),
+            str(source_image.get("original_url") or "").strip(),
+        ]
+        for candidate_url in candidate_urls:
+            if candidate_url.startswith("http://") or candidate_url.startswith("https://"):
+                public_image_url = candidate_url
+                break
+        if not public_image_url:
+            if not fal_api_key:
+                raise ValueError("Luma image-to-video needs a public source image URL. Add a Fal API key in Settings so Studio can upload the image temporarily.")
+            try:
+                client = fal_client.SyncClient(key=fal_api_key)
+                public_image_url = upload_image_payload_to_fal(client, source_image)
+            except Exception as exc:
+                raise RuntimeError(str(exc)) from exc
+        payload["keyframes"] = {
+            "frame0": {
+                "type": "image",
+                "url": public_image_url,
+            }
+        }
+
+    headers = build_luma_headers(api_key)
+    try:
+        create_response = requests.post(LUMA_GENERATIONS_URL, headers=headers, json=payload, timeout=120)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: Luma request took too long to start.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+    if create_response.status_code not in {200, 201}:
+        raise RuntimeError(extract_luma_error(create_response))
+
+    created_payload = create_response.json() if create_response.content else {}
+    generation_id = str(created_payload.get("id") or created_payload.get("generation_id") or "").strip()
+    if not generation_id:
+        raise RuntimeError("Luma did not return a generation id.")
+
+    result_payload = poll_luma_generation(api_key, generation_id)
+    assets = result_payload.get("assets") or {}
+    raw_video_asset = assets.get("video")
+    video_url = ""
+    if isinstance(raw_video_asset, dict):
+        video_url = str(raw_video_asset.get("url") or raw_video_asset.get("video_url") or "").strip()
+    else:
+        video_url = str(raw_video_asset or assets.get("video_url") or "").strip()
+    if not video_url:
+        raise RuntimeError("Luma returned no video for this request.")
+
+    video_item = {
+        "url": video_url,
+        "mime_type": "video/mp4",
+        "poster_url": str(assets.get("image") or assets.get("thumbnail") or assets.get("preview_image") or "").strip(),
+        "width": 0,
+        "height": 0,
+    }
+    cost = estimate_luma_video_cost(native_model_name, resolution, duration, aspect_ratio)
+    params_meta = merge_request_settings(merge_asset_metadata({
+        "model": selected_model_id,
+        "modelFamily": body.get("modelFamily", "luma-video"),
+        "model_label": model_info.get("label", "Luma"),
+        "provider": "luma",
+        "provider_label": "Luma",
+        "videoInputMode": input_mode,
+        "duration": duration,
+        "aspectRatio": aspect_ratio,
+        "prompt": prompt,
+        "resolution": resolution,
+        "lumaGenerationId": generation_id,
+    }, body), body)
+    return {
+        "ok": True,
+        "videos": [video_item],
+        "text": "",
+        "cost": cost,
+        "model_label": model_info.get("label", "Luma"),
+        "params": params_meta,
+        "_input_source_image": source_image if str(source_image.get("data") or "").strip() else None,
+        "_input_reference_images": [],
+    }
+
+
 def run_fal_wan_video_job(body: dict, api_key: str) -> dict:
     body = normalize_video_request(body)
     input_mode = body.get("videoInputMode", "text")
     prompt = str(body.get("prompt") or "").strip()
     if not prompt:
         raise ValueError("Please enter a video prompt.")
+    selected_model_id = str(body.get("model") or FAL_WAN_T2V_ID).strip() or FAL_WAN_T2V_ID
+    model_info = VIDEO_MODELS_INFO.get(selected_model_id, {})
+    if not model_info or model_info.get("provider") != "fal" or model_info.get("family") != "wan-video":
+        raise ValueError("Choose a valid Fal Wan model.")
+    endpoint = str(model_info.get("fal_endpoint") or "").strip()
+    if not endpoint:
+        raise ValueError("Wan endpoint is not configured for this model.")
     duration = normalize_video_duration(body.get("duration", 5))
-    num_frames = (duration * 16) + 1
     aspect_ratio = body.get("aspectRatio", "16:9")
     negative_prompt = str(body.get("negativePrompt") or "").strip()
     resolution = normalize_video_resolution(body.get("resolution", "720p"))
     safety_checker = bool(body.get("videoSafetyChecker", True))
     output_safety_checker = bool(body.get("videoOutputSafetyChecker", True))
     source_image = body.get("sourceImage") or {}
-    endpoint = FAL_WAN_T2V_ID if input_mode == "text" else FAL_WAN_I2V_ID
+    source_video = body.get("sourceVideo") or {}
+    source_audio = body.get("sourceAudio") or {}
+    reference_images = list(body.get("referenceImages") or [])
+    reference_videos = list(body.get("referenceVideos") or [])
+    multi_shots = bool(body.get("videoWanMultiShots", False))
     payload = {
         "prompt": prompt,
-        "negative_prompt": negative_prompt,
-        "num_frames": num_frames,
-        "frames_per_second": 16,
+        "duration": duration,
         "resolution": resolution,
         "aspect_ratio": aspect_ratio,
         "enable_safety_checker": safety_checker,
-        "enable_output_safety_checker": output_safety_checker,
         "enable_prompt_expansion": True,
         "sync_mode": True,
     }
+    if negative_prompt:
+        payload["negative_prompt"] = negative_prompt
+    if model_info.get("supports_output_safety_checker"):
+        payload["enable_output_safety_checker"] = output_safety_checker
+    if model_info.get("supports_driving_audio"):
+        audio_url = str(source_audio.get("url") or "").strip()
+        if audio_url.startswith("http://") or audio_url.startswith("https://"):
+            payload["audio_url"] = audio_url
+        elif str(source_audio.get("data") or "").strip():
+            payload["audio_url"] = f"data:{source_audio.get('mime_type', 'audio/mpeg')};base64,{source_audio.get('data', '')}"
     if input_mode == "image":
         if not source_image.get("data"):
             raise ValueError("Choose a source image for image-to-video.")
         payload["image_url"] = f"data:{source_image.get('mime_type', 'image/png')};base64,{source_image.get('data', '')}"
+    elif input_mode == "reference":
+        if model_info.get("video_mode_kind") == "first_last_frame_to_video":
+            if not source_image.get("data"):
+                raise ValueError("Choose a start image for this Wan first+last model.")
+            end_image = next((img for img in reference_images if str(img.get("data") or "").strip()), {})
+            if not end_image.get("data"):
+                raise ValueError("Add one end frame image for this Wan first+last model.")
+            payload["image_url"] = f"data:{source_image.get('mime_type', 'image/png')};base64,{source_image.get('data', '')}"
+            payload["end_image_url"] = f"data:{end_image.get('mime_type', 'image/png')};base64,{end_image.get('data', '')}"
+        else:
+            reference_urls = [
+                f"data:{img.get('mime_type', 'image/png')};base64,{img.get('data', '')}"
+                for img in reference_images
+                if str(img.get("data") or "").strip()
+            ]
+            if model_info.get("reference_images_required") and not reference_urls:
+                raise ValueError("Add at least one reference image for this Wan reference model.")
+            if reference_urls:
+                payload["reference_image_urls"] = reference_urls
+            if model_info.get("supports_reference_videos"):
+                client = fal_client.SyncClient(key=api_key, default_timeout=1800.0)
+                reference_video_urls = []
+                for video_item in reference_videos:
+                    if not str(video_item.get("data") or video_item.get("url") or "").strip():
+                        continue
+                    reference_video_urls.append(upload_video_payload_to_fal(client, video_item))
+                if reference_video_urls:
+                    payload["reference_video_urls"] = reference_video_urls
+            if model_info.get("supports_multi_shots"):
+                payload["multi_shots"] = multi_shots
+    elif input_mode == "video":
+        if not str(source_video.get("data") or source_video.get("url") or "").strip():
+            raise ValueError("Choose a source video for this Wan model.")
+        client = fal_client.SyncClient(key=api_key, default_timeout=1800.0)
+        payload["video_url"] = upload_video_payload_to_fal(client, source_video)
     headers = {
         "Authorization": f"Key {api_key}",
         "Content-Type": "application/json",
@@ -7005,9 +9125,9 @@ def run_fal_wan_video_job(body: dict, api_key: str) -> dict:
     if not video_item:
         raise RuntimeError("Fal Wan returned no video for this request.")
     params_meta = merge_request_settings(merge_asset_metadata({
-        "model": endpoint,
+        "model": selected_model_id,
         "modelFamily": body.get("modelFamily", "wan-video"),
-        "model_label": "Wan Video",
+        "model_label": model_info.get("label", "Wan 2.7"),
         "provider": "fal",
         "provider_label": "Fal",
         "videoInputMode": input_mode,
@@ -7017,17 +9137,21 @@ def run_fal_wan_video_job(body: dict, api_key: str) -> dict:
         "prompt": prompt,
         "resolution": resolution,
         "videoSafetyChecker": safety_checker,
-        "videoOutputSafetyChecker": output_safety_checker,
+        "videoOutputSafetyChecker": output_safety_checker if model_info.get("supports_output_safety_checker") else None,
+        "videoWanMultiShots": multi_shots if model_info.get("supports_multi_shots") else None,
+        "videoWanHasDrivingAudio": bool(payload.get("audio_url")),
+        "videoWanReferenceVideoCount": len(payload.get("reference_video_urls") or []),
     }, body), body)
     return {
         "ok": True,
         "videos": [video_item],
         "text": "",
-        "cost": round(float(VIDEO_PRICING.get(FAL_WAN_T2V_ID, {}).get(str(duration), 0.0)), 4),
-        "model_label": "Wan Video",
+        "cost": round(float(VIDEO_PRICING.get(selected_model_id, {}).get(str(duration), 0.0)), 4),
+        "model_label": model_info.get("label", "Wan 2.7"),
         "params": params_meta,
         "_input_source_image": source_image if str(source_image.get("data") or "").strip() else None,
-        "_input_reference_images": [],
+        "_input_source_video": source_video if str(source_video.get("data") or source_video.get("url") or "").strip() else None,
+        "_input_reference_images": reference_images,
     }
 
 
@@ -7042,6 +9166,7 @@ def run_fal_seedance_video_job(body: dict, api_key: str) -> dict:
     negative_prompt = str(body.get("negativePrompt") or "").strip()
     resolution = normalize_video_resolution(body.get("resolution", "720p"))
     safety_checker = bool(body.get("videoSafetyChecker", True))
+    generate_audio = bool(body.get("videoGenerateAudio", False))
     source_image = body.get("sourceImage") or {}
     reference_images = list(body.get("referenceImages") or [])
     endpoint = str(body.get("model") or "").strip()
@@ -7058,9 +9183,12 @@ def run_fal_seedance_video_job(body: dict, api_key: str) -> dict:
         "duration": duration,
         "aspect_ratio": aspect_ratio,
         "resolution": resolution,
-        "enable_safety_checker": safety_checker,
         "sync_mode": True,
     }
+    if model_info.get("supports_safety_checker"):
+        payload["enable_safety_checker"] = safety_checker
+    if model_info.get("supports_generate_audio"):
+        payload["generate_audio"] = generate_audio
     if negative_prompt:
         payload["negative_prompt"] = negative_prompt
     if input_mode != "text" and model_info.get("supports_start_image"):
@@ -7113,6 +9241,7 @@ def run_fal_seedance_video_job(body: dict, api_key: str) -> dict:
         "prompt": prompt,
         "resolution": resolution,
         "videoSafetyChecker": safety_checker,
+        "videoGenerateAudio": generate_audio,
     }, body), body)
     return {
         "ok": True,
@@ -7123,6 +9252,86 @@ def run_fal_seedance_video_job(body: dict, api_key: str) -> dict:
         "params": params_meta,
         "_input_source_image": source_image if str(source_image.get("data") or "").strip() else None,
         "_input_reference_images": reference_images,
+    }
+
+
+def run_fal_ltx_video_job(body: dict, api_key: str) -> dict:
+    body = normalize_video_request(body)
+    input_mode = body.get("videoInputMode", "text")
+    prompt = str(body.get("prompt") or "").strip()
+    if not prompt:
+        raise ValueError("Please enter a video prompt.")
+    negative_prompt = str(body.get("negativePrompt") or "").strip()
+    resolution = str(body.get("resolution") or "").strip()
+    aspect_ratio = str(body.get("aspectRatio") or "").strip()
+    safety_checker = bool(body.get("videoSafetyChecker", True))
+    generate_audio = bool(body.get("videoGenerateAudio", False))
+    source_image = body.get("sourceImage") or {}
+    endpoint = str(body.get("model") or (FAL_LTX_VIDEO_I2V_ID if input_mode == "image" else FAL_LTX_VIDEO_T2V_ID)).strip()
+    model_info = VIDEO_MODELS_INFO.get(endpoint, {})
+    if not endpoint or model_info.get("provider") != "fal" or model_info.get("family") != "ltx-video":
+        raise ValueError("Choose a valid Fal LTX Video model.")
+    payload = {
+        "prompt": prompt,
+        "sync_mode": True,
+    }
+    if negative_prompt:
+        payload["negative_prompt"] = negative_prompt
+    if input_mode == "image":
+        if not source_image.get("data"):
+            raise ValueError("Choose a start image for LTX Video image-to-video.")
+        payload["image_url"] = f"data:{source_image.get('mime_type', 'image/png')};base64,{source_image.get('data', '')}"
+    if endpoint == FAL_LTX_VIDEO_LORA_I2V_ID:
+        if resolution:
+            payload["resolution"] = resolution
+        if aspect_ratio:
+            payload["aspect_ratio"] = aspect_ratio
+        payload["enable_safety_checker"] = safety_checker
+    elif endpoint == FAL_LTX_23_22B_I2V_ID:
+        if resolution:
+            payload["video_size"] = resolution
+        payload["enable_safety_checker"] = safety_checker
+        payload["generate_audio"] = generate_audio
+    headers = {
+        "Authorization": f"Key {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.post(f"{FAL_BASE_URL}/{endpoint}", headers=headers, json=payload, timeout=900)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: Fal LTX Video generation took too long.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+    if response.status_code != 200:
+        raise RuntimeError(extract_fal_error(response))
+    result = response.json()
+    video_item = extract_fal_video_result(result)
+    if not video_item:
+        raise RuntimeError("Fal LTX Video returned no video for this request.")
+    params_meta = merge_request_settings(merge_asset_metadata({
+        "model": endpoint,
+        "modelFamily": body.get("modelFamily", "ltx-video"),
+        "model_label": model_info.get("label", "LTX Video"),
+        "provider": "fal",
+        "provider_label": "Fal",
+        "videoInputMode": input_mode,
+        "negativePrompt": negative_prompt,
+        "prompt": prompt,
+        "resolution": resolution,
+        "aspectRatio": aspect_ratio,
+        "videoSafetyChecker": safety_checker if model_info.get("supports_safety_checker") else None,
+        "videoGenerateAudio": generate_audio if model_info.get("supports_generate_audio") else None,
+    }, body), body)
+    return {
+        "ok": True,
+        "videos": [video_item],
+        "text": "",
+        "cost": round(float(VIDEO_PRICING.get(endpoint, {}).get("5", 0.0)), 4),
+        "model_label": model_info.get("label", "LTX Video"),
+        "params": params_meta,
+        "_input_source_image": source_image if str(source_image.get("data") or "").strip() else None,
+        "_input_reference_images": [],
     }
 
 
@@ -7455,6 +9664,246 @@ def run_fal_nano_banana_generation_job(body: dict, api_key: str) -> dict:
     }
 
 
+def run_fal_gpt_image_2_generation_job(body: dict, api_key: str) -> dict:
+    body = normalize_generation_request(body)
+    model_id = body.get("model", FAL_GPT_IMAGE_2_TEXT_ID)
+    image_size = body.get("imageSize", "1K")
+    num_images = max(1, min(int(body.get("numberOfImages", 1)), 4))
+    aspect_ratio = body.get("aspectRatio", "1:1")
+    ref_images = body.get("refImages", [])
+    seed_mode = normalize_seed_mode(body.get("seedMode", "random"))
+    seed_value = coerce_seed_value(body.get("seedValue", 1))
+
+    raw_prompt = body.get("prompt", "")
+    if isinstance(raw_prompt, dict):
+        prompt = json.dumps(raw_prompt, ensure_ascii=False, indent=2)
+    else:
+        prompt = str(raw_prompt).strip()
+
+    if not prompt:
+        raise ValueError("Please enter a prompt")
+    if model_id != FAL_GPT_IMAGE_2_TEXT_ID or model_id not in MODELS_INFO:
+        raise ValueError("Invalid model")
+    if ref_images:
+        raise ValueError("GPT Image 2 does not support reference images in the generation tab.")
+
+    requested_image_size = build_fal_gpt_image_2_image_size(image_size, aspect_ratio)
+    payload = {
+        "prompt": prompt,
+        "image_size": requested_image_size,
+        "quality": "high",
+        "num_images": num_images,
+        "output_format": "png",
+        "sync_mode": True,
+    }
+
+    actual_seed = None
+    if seed_mode != "random":
+        actual_seed = seed_value
+        payload["seed"] = actual_seed
+
+    headers = {
+        "Authorization": f"Key {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.post(f"{FAL_BASE_URL}/{model_id}", headers=headers, json=payload, timeout=240)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: Fal GPT Image 2 generation took too long.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+
+    if response.status_code != 200:
+        raise RuntimeError(extract_fal_error(response))
+
+    result = response.json()
+    returned_seed = result.get("seed") if isinstance(result, dict) else None
+    items = result.get("images") or result.get("data") or []
+    images = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        decoded = decode_fal_image_result(item)
+        if decoded:
+            images.append(decoded)
+
+    if not images:
+        raise RuntimeError("Fal GPT Image 2 returned no image for this request.")
+
+    png_images = []
+    for img in images:
+        try:
+            png_b64, png_mime = convert_image_b64_to_png(img.get("data", ""), img.get("mime_type", "image/png"))
+            png_images.append({"mime_type": png_mime, "data": png_b64})
+        except Exception:
+            png_images.append(img)
+
+    delivered_image_size = requested_image_size
+    if items and isinstance(items[0], dict):
+        try:
+            delivered_width = int(items[0].get("width") or 0)
+            delivered_height = int(items[0].get("height") or 0)
+        except Exception:
+            delivered_width = 0
+            delivered_height = 0
+        if delivered_width > 0 and delivered_height > 0:
+            delivered_image_size = {"width": delivered_width, "height": delivered_height}
+
+    model_info = MODELS_INFO[model_id]
+    price_per_image = estimate_fal_gpt_image_2_price_per_image(delivered_image_size)
+    cost = price_per_image * len(png_images)
+    params_meta = merge_request_settings(merge_asset_metadata({
+        "model": model_id,
+        "modelFamily": body.get("modelFamily", model_info.get("family", "")),
+        "model_label": model_info["label"],
+        "provider": body.get("provider", model_info.get("provider", "fal")),
+        "provider_label": model_info.get("provider_label", PROVIDER_LABELS.get(body.get("provider", "fal"), "Fal")),
+        "imageSize": image_size,
+        "aspectRatio": aspect_ratio,
+        "temperature": float(body.get("temperature", 1.0)),
+        "topP": float(body.get("topP", 0.95)),
+        "thinkingLevel": body.get("thinkingLevel", "Minimal"),
+        "useSearch": False,
+        "outputMode": body.get("outputMode", "images_only"),
+        "prompt": prompt,
+        "ref_count": 0,
+        "seedMode": seed_mode,
+        "seedValue": int(returned_seed if returned_seed is not None else actual_seed if actual_seed is not None else seed_value),
+    }, body), body)
+    return {
+        "ok": True,
+        "images": png_images,
+        "text": "",
+        "cost": round(cost, 4),
+        "model_label": model_info["label"],
+        "params": params_meta,
+        "_input_ref_images": [],
+    }
+
+
+def run_fal_gpt_image_2_edit_job(body: dict, api_key: str) -> dict:
+    body = normalize_generation_request(body)
+    model_id = body.get("model", FAL_GPT_IMAGE_2_EDIT_ID)
+    image_size = body.get("imageSize", "1K")
+    num_images = max(1, min(int(body.get("numberOfImages", 1)), 4))
+    aspect_ratio = body.get("aspectRatio", "1:1")
+    ref_images = body.get("refImages", [])
+    seed_mode = normalize_seed_mode(body.get("seedMode", "random"))
+    seed_value = coerce_seed_value(body.get("seedValue", 1))
+
+    raw_prompt = body.get("prompt", "")
+    if isinstance(raw_prompt, dict):
+        prompt = json.dumps(raw_prompt, ensure_ascii=False, indent=2)
+    else:
+        prompt = str(raw_prompt).strip()
+
+    if not prompt:
+        raise ValueError("Please enter a prompt")
+    if model_id != FAL_GPT_IMAGE_2_EDIT_ID or model_id not in MODELS_INFO:
+        raise ValueError("Invalid model")
+
+    model_info = MODELS_INFO[model_id]
+    max_ref = model_info["max_ref_images"]
+    ref_images = normalize_ref_image_payloads(ref_images, max_ref)
+    if not ref_images:
+        raise ValueError("GPT Image 2 Edit requires at least 1 reference image.")
+
+    requested_image_size = build_fal_gpt_image_2_image_size(image_size, aspect_ratio)
+    payload = {
+        "prompt": prompt,
+        "image_urls": build_data_uri_ref_inputs(ref_images),
+        "image_size": requested_image_size,
+        "quality": "high",
+        "num_images": num_images,
+        "output_format": "png",
+        "sync_mode": True,
+    }
+
+    actual_seed = None
+    if seed_mode != "random":
+        actual_seed = seed_value
+        payload["seed"] = actual_seed
+
+    headers = {
+        "Authorization": f"Key {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.post(f"{FAL_BASE_URL}/{model_id}", headers=headers, json=payload, timeout=240)
+    except requests.exceptions.Timeout as exc:
+        raise TimeoutError("Timeout: Fal GPT Image 2 Edit took too long.") from exc
+    except Exception as exc:
+        raise RuntimeError(f"Network error: {exc}") from exc
+
+    if response.status_code != 200:
+        raise RuntimeError(extract_fal_error(response))
+
+    result = response.json()
+    returned_seed = result.get("seed") if isinstance(result, dict) else None
+    items = result.get("images") or result.get("data") or []
+    images = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        decoded = decode_fal_image_result(item)
+        if decoded:
+            images.append(decoded)
+
+    if not images:
+        raise RuntimeError("Fal GPT Image 2 Edit returned no image for this request.")
+
+    png_images = []
+    for img in images:
+        try:
+            png_b64, png_mime = convert_image_b64_to_png(img.get("data", ""), img.get("mime_type", "image/png"))
+            png_images.append({"mime_type": png_mime, "data": png_b64})
+        except Exception:
+            png_images.append(img)
+
+    delivered_image_size = requested_image_size
+    if items and isinstance(items[0], dict):
+        try:
+            delivered_width = int(items[0].get("width") or 0)
+            delivered_height = int(items[0].get("height") or 0)
+        except Exception:
+            delivered_width = 0
+            delivered_height = 0
+        if delivered_width > 0 and delivered_height > 0:
+            delivered_image_size = {"width": delivered_width, "height": delivered_height}
+
+    price_per_image = estimate_fal_gpt_image_2_price_per_image(delivered_image_size)
+    cost = price_per_image * len(png_images)
+    params_meta = merge_request_settings(merge_asset_metadata({
+        "model": model_id,
+        "modelFamily": body.get("modelFamily", model_info.get("family", "")),
+        "model_label": model_info["label"],
+        "provider": body.get("provider", model_info.get("provider", "fal")),
+        "provider_label": model_info.get("provider_label", PROVIDER_LABELS.get(body.get("provider", "fal"), "Fal")),
+        "imageSize": image_size,
+        "aspectRatio": aspect_ratio,
+        "temperature": float(body.get("temperature", 1.0)),
+        "topP": float(body.get("topP", 0.95)),
+        "thinkingLevel": body.get("thinkingLevel", "Minimal"),
+        "useSearch": False,
+        "outputMode": body.get("outputMode", "images_only"),
+        "prompt": prompt,
+        "ref_count": len(ref_images),
+        "seedMode": seed_mode,
+        "seedValue": int(returned_seed if returned_seed is not None else actual_seed if actual_seed is not None else seed_value),
+    }, body), body)
+    return {
+        "ok": True,
+        "images": png_images,
+        "text": "",
+        "cost": round(cost, 4),
+        "model_label": model_info["label"],
+        "params": params_meta,
+        "_input_ref_images": ref_images,
+    }
+
+
 def run_byteplus_seedream_generation_job(body: dict, api_key: str) -> dict:
     body = normalize_generation_request(body)
     model_id = body.get("model", BYTEPLUS_SEEDREAM_45_MODEL_ID)
@@ -7703,6 +10152,10 @@ def run_generation_job(body: dict, config: dict) -> dict:
         fal_key = (config.get("fal_api_key", "") or "").strip()
         if not fal_key:
             raise ValueError("Fal API key not configured. Go to Settings.")
+        if family == "gpt-image-2":
+            return run_fal_gpt_image_2_generation_job(payload, fal_key)
+        if family == "gpt-image-2-edit":
+            return run_fal_gpt_image_2_edit_job(payload, fal_key)
         if family.startswith("seedream"):
             return run_fal_seedream_generation_job(payload, fal_key)
         return run_fal_nano_banana_generation_job(payload, fal_key)
@@ -7714,6 +10167,84 @@ def run_generation_job(body: dict, config: dict) -> dict:
         return run_byteplus_seedream_generation_job(payload, byteplus_key)
 
     raise ValueError("Unsupported provider")
+
+
+def run_edit_job(body: dict, config: dict) -> dict:
+    payload = normalize_generation_request(body)
+    model_id = payload.get("model", FAL_NANO_BANANA_PRO_TEXT_ID)
+    if model_id not in MODELS_INFO:
+        raise ValueError("Invalid edit model")
+
+    model_info = MODELS_INFO[model_id]
+    provider = payload.get("provider") or model_info.get("provider", "fal")
+    family = payload.get("modelFamily") or model_info.get("family", "")
+    if provider != "fal":
+        raise ValueError("Selective edit currently supports Fal image edit models only.")
+    if family not in {"nano-banana", "nano-banana-pro", "nano-banana-2", "seedream-45", "seedream-5-lite", "gpt-image-2-edit"}:
+        raise ValueError("Selective edit currently supports Nano Banana, Seedream, and GPT Image 2 Edit models only.")
+
+    fal_key = (config.get("fal_api_key", "") or "").strip()
+    if not fal_key:
+        raise ValueError("Fal API key not configured. Go to Settings.")
+
+    base_image_raw = body.get("baseImage") if isinstance(body.get("baseImage"), dict) else {}
+    selection_image_raw = body.get("selectionImage") if isinstance(body.get("selectionImage"), dict) else {}
+    global_ref_images_raw = body.get("globalRefImages") if isinstance(body.get("globalRefImages"), list) else []
+    segment_ref_images_raw = body.get("segmentRefImages") if isinstance(body.get("segmentRefImages"), list) else []
+
+    base_images = normalize_ref_image_payloads([base_image_raw], 1) if base_image_raw else []
+    selection_images = normalize_ref_image_payloads([selection_image_raw], 1) if selection_image_raw else []
+    if not base_images:
+        raise ValueError("Edit source image is missing.")
+    if not selection_images:
+        raise ValueError("Segment selection image is missing.")
+
+    global_ref_images = normalize_ref_image_payloads(global_ref_images_raw, 16)
+    segment_ref_images = normalize_ref_image_payloads(segment_ref_images_raw, 16)
+
+    max_ref = max(2, int(model_info.get("max_ref_images", 0) or 0))
+    available_ref_slots = max(0, max_ref - 2)
+    kept_segment_ref_images = segment_ref_images[:available_ref_slots]
+    remaining_slots = max(0, available_ref_slots - len(kept_segment_ref_images))
+    kept_global_ref_images = global_ref_images[:remaining_slots]
+
+    edit_payload = dict(payload)
+    edit_payload["refImages"] = (
+        base_images
+        + selection_images
+        + kept_segment_ref_images
+        + kept_global_ref_images
+    )[:max_ref]
+    edit_payload["numberOfImages"] = 1
+    edit_payload["outputMode"] = "images_only"
+
+    if family == "gpt-image-2-edit":
+        result = run_fal_gpt_image_2_edit_job(edit_payload, fal_key)
+    elif family.startswith("seedream"):
+        result = run_fal_seedream_generation_job(edit_payload, fal_key)
+    else:
+        result = run_fal_nano_banana_generation_job(edit_payload, fal_key)
+
+    result["_input_ref_images"] = kept_segment_ref_images + kept_global_ref_images
+    params_meta = dict(result.get("params") or {})
+    params_meta.update({
+        "editMode": True,
+        "editSourceKind": str(body.get("editSourceKind") or ""),
+        "editSourceRelpath": str(body.get("editSourceRelpath") or ""),
+        "editSelectionId": str(body.get("editSelectionId") or ""),
+        "editSelectionName": str(body.get("editSelectionName") or ""),
+        "editSelectionPrompt": str(body.get("editSelectionPrompt") or ""),
+        "editSelectionDescribedPrompt": str(body.get("editSelectionDescribedPrompt") or ""),
+        "editSelectionNotes": str(body.get("editSelectionNotes") or ""),
+        "editPromptMode": str(body.get("editPromptMode") or ""),
+        "editSelectionMaskRelpath": str(body.get("editSelectionMaskRelpath") or ""),
+        "editSegmentRefCount": len(kept_segment_ref_images),
+        "editGlobalRefCount": len(kept_global_ref_images),
+        "editTotalRefCount": len(edit_payload["refImages"]),
+        "ref_count": len(kept_segment_ref_images) + len(kept_global_ref_images),
+    })
+    result["params"] = params_meta
+    return result
 
 
 def run_video_job(body: dict, config: dict) -> dict:
@@ -7735,9 +10266,18 @@ def run_video_job(body: dict, config: dict) -> dict:
             return run_fal_seedvr_video_job(payload, fal_key)
         if family == "wan-video":
             return run_fal_wan_video_job(payload, fal_key)
+        if family == "ltx-video":
+            return run_fal_ltx_video_job(payload, fal_key)
         if family == "seedance":
             return run_fal_seedance_video_job(payload, fal_key)
         return run_fal_kling_video_job(payload, fal_key)
+
+    if provider == "luma":
+        luma_key = (config.get("luma_api_key", "") or "").strip()
+        if not luma_key:
+            raise ValueError("Luma API key not configured. Go to Settings.")
+        fal_key = (config.get("fal_api_key", "") or "").strip()
+        return run_luma_video_job(payload, luma_key, fal_key)
 
     raise ValueError("Unsupported video provider")
 
@@ -7767,6 +10307,17 @@ def api_generate_async():
     body = request.get_json(silent=True) or {}
     try:
         job = start_async_generate_job(body)
+        return jsonify(job), 202
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/api/jobs/edit", methods=["POST"])
+@login_required
+def api_edit_async():
+    body = request.get_json(silent=True) or {}
+    try:
+        job = start_async_edit_job(body)
         return jsonify(job), 202
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
@@ -8146,6 +10697,7 @@ if __name__ == "__main__":
     os.makedirs(LOVED_DIR, exist_ok=True)
     os.makedirs(GENERATIONS_DIR, exist_ok=True)
     os.makedirs(VIDEOS_DIR, exist_ok=True)
+    os.makedirs(EDIT_SESSIONS_DIR, exist_ok=True)
     os.makedirs(REFERENCE_ARCHIVE_DIR, exist_ok=True)
     os.makedirs(REFERENCE_MASKS_DIR, exist_ok=True)
     os.makedirs(REFERENCE_RENDERS_DIR, exist_ok=True)
